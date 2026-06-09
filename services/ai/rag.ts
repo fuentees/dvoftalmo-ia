@@ -1,7 +1,8 @@
 import type { AgentKind, AiSource } from "@/lib/types";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createEmbedding, getOpenAI, chatModel } from "@/services/ai/openai";
+import { createEmbedding } from "@/services/ai/openai";
 import { buildSystemPrompt } from "@/services/ai/prompts";
+import { generateCompletion } from "@/services/ai/provider";
 
 interface RagContext {
   content: string;
@@ -78,18 +79,16 @@ export async function answerWithRag(input: {
     });
   }
 
-  const response = await getOpenAI().chat.completions.create({
-    model: chatModel,
-    temperature: 0.2,
-    messages: [
-      ...systemMessages,
-      ...(input.conversationMessages ?? []),
-      { role: "user", content: input.message }
-    ]
-  });
+  const messages = [
+    ...systemMessages,
+    ...(input.conversationMessages ?? []),
+    { role: "user" as const, content: input.message }
+  ];
+
+  const answer = await generateCompletion(messages, { temperature: 0.2 });
 
   return {
-    answer: response.choices[0]?.message.content ?? "Nao foi possivel gerar uma resposta.",
+    answer: answer || "Nao foi possivel gerar uma resposta.",
     sources: context.sources
   };
 }

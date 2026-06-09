@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import {
   BarChart3, Bell, Bot, Brain, CheckSquare, ChevronRight,
   FileText, GraduationCap, LayoutDashboard, Library,
-  LogOut, Moon, Sun, User
+  LogOut, Moon, Settings, Sun, User
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
@@ -38,6 +38,12 @@ const groups = [
       { href: "/base-conhecimento", label: "Base de Conhecimento", icon: Brain },
       { href: "/documentos", label: "Documentos", icon: Library },
       { href: "/templates", label: "Templates", icon: FileText }
+    ]
+  },
+  {
+    label: "Sistema",
+    items: [
+      { href: "/configuracoes", label: "Configurações de IA", icon: Settings }
     ]
   }
 ];

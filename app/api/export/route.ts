@@ -3,25 +3,20 @@ import { Document, Packer, Paragraph, TextRun } from "docx";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
-import { getOpenAI, chatModel } from "@/services/ai/openai";
 import { buildSystemPrompt } from "@/services/ai/prompts";
+import { generateCompletion } from "@/services/ai/provider";
 import type { AgentKind } from "@/lib/types";
 
 async function generateContent(agent: AgentKind, userPrompt: string): Promise<string> {
-  const response = await getOpenAI().chat.completions.create({
-    model: chatModel,
-    temperature: 0.4,
-    messages: [
-      { role: "system", content: buildSystemPrompt(agent) },
-      {
-        role: "user",
-        content:
-          `Gere o documento completo conforme solicitado abaixo. Produza apenas o conteudo final, ` +
-          `formatado para exportacao (sem explicacoes ou comentarios adicionais):\n\n${userPrompt}`
-      }
-    ]
-  });
-  return response.choices[0]?.message.content?.trim() ?? userPrompt;
+  return generateCompletion([
+    { role: "system", content: buildSystemPrompt(agent) },
+    {
+      role: "user",
+      content:
+        `Gere o documento completo conforme solicitado abaixo. Produza apenas o conteudo final, ` +
+        `formatado para exportacao (sem explicacoes ou comentarios adicionais):\n\n${userPrompt}`
+    }
+  ], { temperature: 0.4 });
 }
 
 export async function POST(request: NextRequest) {
