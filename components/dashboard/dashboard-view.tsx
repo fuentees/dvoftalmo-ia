@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import type { AIProvider } from "@/services/ai/provider";
 import {
   Area,
   AreaChart,
@@ -44,6 +45,12 @@ function DeltaBadge({ delta }: { delta: number | null }) {
   );
 }
 
+const PROVIDER_LABELS: Record<AIProvider, string> = {
+  openai: "OpenAI GPT-4.1-mini",
+  anthropic: "Anthropic Claude Haiku",
+  gemini: "Google Gemini Flash"
+};
+
 export function DashboardView() {
   const kpis = useQuery<CevespKpis>({
     queryKey: ["cevesp-kpis"],
@@ -55,6 +62,15 @@ export function DashboardView() {
     },
     retry: false,
     staleTime: 5 * 60 * 1000
+  });
+
+  const settings = useQuery<{ ai_provider: AIProvider }>({
+    queryKey: ["settings"],
+    queryFn: async () => {
+      const res = await fetch("/api/settings");
+      return res.ok ? res.json() : { ai_provider: "openai" as AIProvider };
+    },
+    staleTime: 60 * 1000
   });
 
   const weekData = kpis.data
@@ -79,14 +95,16 @@ export function DashboardView() {
       <div className="space-y-6 p-6">
 
       {kpis.isError && (
-        <Card className="border-yellow-300">
+        <Card className="border-yellow-300 bg-yellow-50">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-yellow-700">
               <AlertTriangle className="h-4 w-4" />
               Banco CEVESP indisponível
             </CardTitle>
-            <CardDescription>
-              Configure as variáveis NOTIFY_DB_* no .env.local para exibir os KPIs em tempo real.
+            <CardDescription className="text-yellow-700/80">
+              O banco MySQL do CEVESP (192.168.1.204) não está acessível neste ambiente.
+              Os KPIs e gráficos precisam ser executados dentro da rede da SES-SP ou via VPN.
+              O chat com IA funciona normalmente.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -217,8 +235,8 @@ export function DashboardView() {
         </CardHeader>
         <CardContent className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
           {[
-            { label: "Banco de dados", value: "CEVESP — MariaDB externo (leitura)" },
-            { label: "IA utilizada", value: "OpenAI GPT-4.1-mini + embeddings" },
+            { label: "Banco de dados", value: kpis.isError ? "CEVESP — offline neste ambiente" : "CEVESP — MariaDB externo (leitura)" },
+            { label: "IA utilizada", value: PROVIDER_LABELS[settings.data?.ai_provider ?? "openai"] + " + embeddings" },
             { label: "Especialidade", value: "Vigilância das Conjuntivites — SP" },
             { label: "Cobertura", value: "Estado de São Paulo — todas as GVEs" }
           ].map((item) => (

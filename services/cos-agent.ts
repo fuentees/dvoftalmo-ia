@@ -511,7 +511,7 @@ async function runWithGemini(input: CosAgentInput): Promise<CosAgentResult> {
 
   // Auto-execute CEVESP query and inject as context
   try {
-    const cevesp = await executeTool("consultar_cevesp", { question: input.message }, input.userId);
+    const cevesp = await executeTool("consultar_cevesp", { pergunta: input.message }, input.userId);
     contextParts.push(`Dados CEVESP:\n${cevesp.content}`);
     toolsUsed.push("consultar_cevesp");
   } catch { /* skip */ }
