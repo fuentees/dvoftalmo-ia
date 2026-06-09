@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createNotificationConnection, getNotificationTableName } from "@/lib/external/notification-db";
-import { getOpenAI, chatModel } from "@/services/ai/openai";
+import { generateCompletion } from "@/services/ai/provider";
 
 const identifierPattern = /^[a-zA-Z0-9_]+$/;
 
@@ -360,15 +360,13 @@ function fallbackParse(question: string): CevespAnalysis {
 
 export async function parseCevespQuestion(question: string): Promise<CevespAnalysis> {
   try {
-    const response = await getOpenAI().chat.completions.create({
-      model: chatModel,
-      temperature: 0,
-      response_format: { type: "json_object" },
-      messages: [
+    const content = await generateCompletion(
+      [
         {
           role: "system",
           content: `Converta perguntas sobre conjuntivites CEVESP em JSON.
 Data atual do sistema: ${new Date().toISOString().slice(0, 10)}.
+Responda APENAS com JSON valido, sem texto adicional.
 Use apenas:
 metric: total_casos, notificacoes, unidades_notificadoras, municipios_notificadores, surtos, numero_surtos, coletas, acoes_educativas, treinamentos, afastamentos, encaminhamentos, menor_1_ano, faixa_1_4, faixa_5_9, faixa_10_14, faixa_15_mais, sexo_masculino, sexo_feminino, registros_excluidos.
 dimensions: ano_cadastro, mes_cadastro, semana_epidemiologica, gve, gve_numero, macro_gve, subgrupo_ve, drs, drs_numero, municipio, ibge, unidade, cnes, uvis, nome_notificante, cargo_funcao, surto, coleta_biologica, medida_adotada, afastamento, excluido, editavel.
@@ -383,10 +381,11 @@ filters: campo permitido com eq ou contains.
 limit maximo 500. Nao gere SQL.`
         },
         { role: "user", content: question }
-      ]
-    });
-    const content = response.choices[0]?.message.content ?? "{}";
-    return applyQuestionHints(question, analysisSchema.parse(JSON.parse(content)));
+      ],
+      { temperature: 0, jsonMode: true }
+    );
+    const json = content.match(/\{[\s\S]*\}/)?.[0] ?? content;
+    return applyQuestionHints(question, analysisSchema.parse(JSON.parse(json)));
   } catch {
     return applyQuestionHints(question, analysisSchema.parse(fallbackParse(question)));
   }

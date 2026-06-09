@@ -40,7 +40,13 @@ const STATUS_COLORS: Record<Status, string> = {
 
 export function CorrectionQueueView() {
   const [statusFilter, setStatusFilter] = useState<Status>("pending");
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const queryClient = useQueryClient();
+
+  function showToast(message: string, type: "success" | "error") {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
+  }
 
   const items = useQuery<CorrectionItem[]>({
     queryKey: ["corrections", statusFilter],
@@ -58,9 +64,17 @@ export function CorrectionQueueView() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, action })
       });
-      if (!res.ok) throw new Error("Erro ao processar.");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Erro ao processar.");
+      }
+      return action;
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["corrections"] })
+    onSuccess: (action) => {
+      showToast(action === "approve" ? "Correção aprovada." : "Correção rejeitada.", "success");
+      queryClient.invalidateQueries({ queryKey: ["corrections"] });
+    },
+    onError: (err: Error) => showToast(err.message, "error")
   });
 
   const apply = useMutation({
@@ -73,7 +87,11 @@ export function CorrectionQueueView() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Erro ao aplicar.");
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["corrections"] })
+    onSuccess: () => {
+      showToast("Correção aplicada ao CEVESP com sucesso.", "success");
+      queryClient.invalidateQueries({ queryKey: ["corrections"] });
+    },
+    onError: (err: Error) => showToast(err.message, "error")
   });
 
   return (
@@ -83,6 +101,16 @@ export function CorrectionQueueView() {
         <p className="mt-0.5 text-sm text-muted-foreground">Correções propostas pelo Agente COS. Somente coordenadores e administradores podem aprovar e aplicar.</p>
       </div>
     <div className="space-y-6 p-6">
+
+      {toast && (
+        <div className={`rounded-md border px-4 py-2 text-sm font-medium ${
+          toast.type === "success"
+            ? "border-green-300 bg-green-50 text-green-800"
+            : "border-red-300 bg-red-50 text-red-800"
+        }`}>
+          {toast.message}
+        </div>
+      )}
 
       <div className="flex gap-2">
         {(["pending", "approved", "rejected", "applied"] as Status[]).map((s) => (
@@ -177,9 +205,6 @@ export function CorrectionQueueView() {
                 </Button>
               )}
 
-              {apply.isError && (
-                <p className="text-xs text-destructive">{(apply.error as Error).message}</p>
-              )}
             </CardContent>
           </Card>
         ))}

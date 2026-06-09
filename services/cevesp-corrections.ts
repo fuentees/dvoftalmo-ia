@@ -187,13 +187,29 @@ export async function applyCorrection(correctionId: string, reviewerId: string):
     await conn.end();
   }
 
+  const now = new Date().toISOString();
   await supabase
     .from("correction_queue")
     .update({
       status: "applied",
       reviewed_by: reviewerId,
-      reviewed_at: new Date().toISOString(),
-      applied_at: new Date().toISOString()
+      reviewed_at: now,
+      applied_at: now
     })
     .eq("id", correctionId);
+
+  // Write audit entry (best-effort — don't fail the apply if this errors)
+  try {
+    await supabase.from("correction_audit_log").insert({
+      correction_id: correctionId,
+      action: "applied",
+      applied_by: reviewerId,
+      table_name: item.table_name,
+      record_id: String(item.record_id),
+      field_name: item.field_name,
+      old_value: String(item.old_value ?? ""),
+      new_value: String(item.new_value),
+      applied_at: now
+    });
+  } catch { /* non-critical */ }
 }

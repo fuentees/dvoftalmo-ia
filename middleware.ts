@@ -17,17 +17,40 @@ function checkRateLimit(key: string, limit = 10, windowMs = 60_000): boolean {
   return true;
 }
 
-const AI_PATHS = ["/api/chat", "/api/export", "/api/dados/analyze"];
+const AI_PATHS     = ["/api/chat", "/api/export", "/api/dados/analyze"];
+const UPLOAD_PATHS = ["/api/documents/upload"];
+const CEVESP_PATHS = ["/api/cevesp"];
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
 
-  // Rate limit AI endpoints
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
+
+  // Rate limit AI endpoints — 10 req/min
   if (AI_PATHS.some((p) => request.nextUrl.pathname.startsWith(p)) && request.method === "POST") {
-    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
     if (!checkRateLimit(`${ip}:${request.nextUrl.pathname}`, 10, 60_000)) {
       return NextResponse.json(
         { error: "Muitas requisições. Aguarde 1 minuto antes de tentar novamente." },
+        { status: 429 }
+      );
+    }
+  }
+
+  // Rate limit document uploads — 5 uploads/min per IP
+  if (UPLOAD_PATHS.some((p) => request.nextUrl.pathname.startsWith(p)) && request.method === "POST") {
+    if (!checkRateLimit(`${ip}:upload`, 5, 60_000)) {
+      return NextResponse.json(
+        { error: "Muitos uploads. Aguarde 1 minuto." },
+        { status: 429 }
+      );
+    }
+  }
+
+  // Rate limit CEVESP data queries — 30 req/min per IP
+  if (CEVESP_PATHS.some((p) => request.nextUrl.pathname.startsWith(p))) {
+    if (!checkRateLimit(`${ip}:cevesp`, 30, 60_000)) {
+      return NextResponse.json(
+        { error: "Muitas consultas ao CEVESP. Aguarde 1 minuto." },
         { status: 429 }
       );
     }

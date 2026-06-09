@@ -133,3 +133,70 @@ export async function generateCompletion(
   const result = await chat.sendMessage(lastMsg);
   return result.response.text().trim();
 }
+
+export async function* streamCompletion(
+  messages: ChatMessage[],
+  options: { temperature?: number } = {}
+): AsyncGenerator<string> {
+  const config = await getAIConfig();
+  const { temperature = 0.3 } = options;
+
+  if (config.provider === "openai") {
+    const client = new OpenAI({ apiKey: config.apiKey });
+    const stream = await client.chat.completions.create({
+      model: config.model,
+      temperature,
+      messages: messages.map((m) => ({ role: m.role, content: m.content })),
+      stream: true
+    });
+    for await (const chunk of stream) {
+      const text = chunk.choices[0]?.delta?.content ?? "";
+      if (text) yield text;
+    }
+    return;
+  }
+
+  if (config.provider === "anthropic") {
+    const client = new Anthropic({ apiKey: config.apiKey });
+    const systemParts = messages.filter((m) => m.role === "system").map((m) => m.content);
+    const userMsgs = messages
+      .filter((m) => m.role !== "system")
+      .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+    const stream = await client.messages.create({
+      model: config.model,
+      max_tokens: 4096,
+      temperature,
+      stream: true,
+      system: systemParts.join("\n\n") || undefined,
+      messages: userMsgs
+    });
+    for await (const event of stream) {
+      if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+        yield event.delta.text;
+      }
+    }
+    return;
+  }
+
+  // Gemini — stream via generateContentStream
+  const genAI = new GoogleGenerativeAI(config.apiKey);
+  const sysParts = messages.filter((m) => m.role === "system").map((m) => m.content);
+  const geminiModel = genAI.getGenerativeModel({
+    model: config.model,
+    systemInstruction: sysParts.join("\n\n") || undefined
+  });
+  const hist = messages
+    .filter((m) => m.role !== "system")
+    .slice(0, -1)
+    .map((m) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: m.content }]
+    }));
+  const lastMsg = messages.filter((m) => m.role !== "system").at(-1)?.content ?? "";
+  const chat = geminiModel.startChat({ history: hist });
+  const result = await chat.sendMessageStream(lastMsg);
+  for await (const chunk of result.stream) {
+    const text = chunk.text();
+    if (text) yield text;
+  }
+}

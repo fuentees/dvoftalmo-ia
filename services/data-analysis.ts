@@ -266,27 +266,3 @@ export async function analyzeFile(file: File): Promise<DataAnalysisResult> {
   };
 }
 
-export function buildAnalysisContext(result: DataAnalysisResult): string {
-  const lines = [
-    `Arquivo: ${result.fileName} (${result.rows} linhas, ${result.columns.length} colunas)`,
-    "",
-    "Estatisticas descritivas:"
-  ];
-
-  for (const [col, stats] of Object.entries(result.summary).slice(0, 15)) {
-    if (stats.type === "numeric") {
-      lines.push(`  ${col}: media=${stats.mean}, mediana=${stats.median}, DP=${stats.stdDev}, min=${stats.min}, max=${stats.max}`);
-    } else if (stats.type === "categorical") {
-      const top = Object.entries(stats.frequencies ?? {}).slice(0, 5).map(([k, v]) => `${k}(${v})`).join(", ");
-      lines.push(`  ${col} [cat]: ${top}`);
-    } else {
-      lines.push(`  ${col} [data]: ${stats.count} registros`);
-    }
-  }
-
-  if (result.interpretation.length) {
-    lines.push("", "Interpretacao:", ...result.interpretation);
-  }
-
-  return lines.join("\n");
-}

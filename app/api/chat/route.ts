@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { chatSchema } from "@/lib/validation/domain";
-import { answerWithRag } from "@/services/ai/rag";
+import { streamRagAnswer } from "@/services/ai/rag";
 import { runCevespAnalysis } from "@/services/cevesp-analytics";
 import { runTracomaContextQuery } from "@/services/tracoma-analytics";
 import { runCosAgent } from "@/services/cos-agent";
-import { buildAnalysisContext } from "@/services/data-analysis";
+import type { AiSource } from "@/lib/types";
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -134,7 +134,9 @@ export async function POST(request: NextRequest) {
     })()
   ]);
 
-  const result = await answerWithRag({
+  // ── Streaming SSE response ─────────────────────────────────────────────────
+  const encoder = new TextEncoder();
+  const ragInput = {
     userId: user.id,
     message: body.message,
     agent: body.agent,
@@ -142,18 +144,49 @@ export async function POST(request: NextRequest) {
     cevespContext,
     tracomaContext,
     dataContext
+  };
+
+  const readableStream = new ReadableStream({
+    async start(controller) {
+      let fullAnswer = "";
+      let sources: AiSource[] = [];
+      const send = (obj: Record<string, unknown>) =>
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+      try {
+        for await (const event of streamRagAnswer(ragInput)) {
+          if (event.type === "sources") {
+            sources = event.sources;
+          } else {
+            fullAnswer += event.text;
+            send({ t: "c", v: event.text });
+          }
+        }
+        await supabase.from("messages").insert({
+          conversation_id: conversationId,
+          user_id: user.id,
+          role: "assistant",
+          content: fullAnswer || "Nao foi possivel gerar uma resposta.",
+          sources
+        });
+        await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
+        send({ t: "done", conversationId, sources });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const isQuota = msg.includes("429") || msg.includes("quota") || msg.includes("insufficient_quota");
+        send({ t: "err", e: isQuota ? "Cota esgotada. Verifique os créditos do provedor ativo." : msg });
+      } finally {
+        controller.close();
+      }
+    }
   });
 
-  await supabase.from("messages").insert({
-    conversation_id: conversationId,
-    user_id: user.id,
-    role: "assistant",
-    content: result.answer,
-    sources: result.sources
+  return new Response(readableStream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no"
+    }
   });
-
-  await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
-  return NextResponse.json({ conversationId, ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("[/api/chat] Erro:", message);

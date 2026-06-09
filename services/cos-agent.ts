@@ -1,6 +1,6 @@
 import type OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
-import type { AiSource } from "@/lib/types";
+import type { AiSource, TracomaSurveyResult } from "@/lib/types";
 import { getOpenAI, chatModel } from "@/services/ai/openai";
 import { buildSystemPrompt } from "@/services/ai/prompts";
 import { getAIConfig, generateCompletion } from "@/services/ai/provider";
@@ -9,6 +9,8 @@ import { fetchTracomaSurveys, estimateAzithromycin } from "@/services/tracoma-an
 import { retrieveContext } from "@/services/ai/rag";
 import { findInvalidRecords, saveCorrectionsToQueue } from "@/services/cevesp-corrections";
 import { getNotificationTableName } from "@/lib/external/notification-db";
+// 5-min in-memory cache for tracoma queries (REDCap is slow and data rarely changes)
+const tracomaCache = new Map<string, { data: TracomaSurveyResult[]; expiresAt: number }>();
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
 
@@ -294,12 +296,24 @@ async function executeTool(
 
   if (name === "consultar_tracoma") {
     try {
-      const surveys = await fetchTracomaSurveys({
-        municipality: args.municipio ? String(args.municipio) : undefined,
-        uf: args.uf ? String(args.uf) : undefined,
-        yearFrom: args.ano_inicio ? Number(args.ano_inicio) : undefined,
-        yearTo: args.ano_fim ? Number(args.ano_fim) : undefined
+      const cacheKey = JSON.stringify({
+        m: args.municipio ?? null,
+        u: args.uf ?? null,
+        a: args.ano_inicio ?? null,
+        b: args.ano_fim ?? null
       });
+      const cached = tracomaCache.get(cacheKey);
+      const surveys = (cached && Date.now() < cached.expiresAt)
+        ? cached.data
+        : await fetchTracomaSurveys({
+            municipality: args.municipio ? String(args.municipio) : undefined,
+            uf: args.uf ? String(args.uf) : undefined,
+            yearFrom: args.ano_inicio ? Number(args.ano_inicio) : undefined,
+            yearTo: args.ano_fim ? Number(args.ano_fim) : undefined
+          }).then((data) => {
+            tracomaCache.set(cacheKey, { data, expiresAt: Date.now() + 5 * 60_000 });
+            return data;
+          });
       if (!surveys.length) return { content: "Nenhum dado de tracoma encontrado." };
       const lines = surveys.map((s) =>
         `${s.municipality} (${s.uf}) ${s.examYear}: TF=${s.tfPrevalence.toFixed(1)}% ` +

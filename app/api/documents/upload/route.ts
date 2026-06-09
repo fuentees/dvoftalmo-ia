@@ -17,6 +17,20 @@ export async function POST(request: NextRequest) {
 
   if (!file) return NextResponse.json({ error: "Arquivo obrigatorio" }, { status: 400 });
 
+  const ALLOWED_TYPES = [
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/msword",
+    "text/csv",
+    "text/plain",
+    "application/csv"
+  ];
+  const allowedExt = /\.(pdf|docx|doc|xlsx|csv|txt)$/i;
+  if (!ALLOWED_TYPES.includes(file.type) && !allowedExt.test(file.name)) {
+    return NextResponse.json({ error: "Tipo de arquivo não permitido. Use PDF, DOCX, XLSX, CSV ou TXT." }, { status: 400 });
+  }
+
   const filePath = `${user.id}/${crypto.randomUUID()}-${file.name}`;
   const { error: uploadError } = await supabase.storage.from("documents").upload(filePath, file, {
     contentType: file.type,

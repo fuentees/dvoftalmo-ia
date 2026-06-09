@@ -145,42 +145,18 @@ export function ChatView() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [localMessages]);
 
-  const send = useMutation({
-    mutationFn: async (text: string) => {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId, message: text, agent, fileIds: [] })
-      });
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error ?? "Falha ao enviar mensagem.");
-      }
-      return response.json();
-    },
-    onMutate: (text) => {
-      setLocalMessages((items) => [
-        ...items,
-        { id: crypto.randomUUID(), role: "user", content: text }
-      ]);
-      setMessage("");
-    },
-    onSuccess: (data) => {
-      setConversationId(data.conversationId);
-      setLocalMessages((items) => [
-        ...items,
-        { id: crypto.randomUUID(), role: "assistant", content: data.answer, sources: data.sources }
-      ]);
-      queryClient.invalidateQueries({ queryKey: ["conversations"] });
-    }
-  });
+  const [isSending, setIsSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   const deleteConversation = useMutation({
     mutationFn: async (id: string) => {
+      if (!confirm("Excluir esta conversa?")) return;
       const response = await fetch(`/api/chat?conversationId=${id}`, { method: "DELETE" });
       if (!response.ok) throw new Error("Erro ao excluir.");
+      return id;
     },
-    onSuccess: (_, id) => {
+    onSuccess: (id) => {
+      if (!id) return;
       if (conversationId === id) {
         setConversationId(undefined);
         setLocalMessages([]);
@@ -231,10 +207,80 @@ export function ChatView() {
     }
   }
 
-  function submitMessage() {
+  async function submitMessage() {
     const text = message.trim();
-    if (!text || send.isPending) return;
-    send.mutate(text);
+    if (!text || isSending) return;
+
+    setIsSending(true);
+    setSendError(null);
+
+    const userMsgId = crypto.randomUUID();
+    const assistantMsgId = crypto.randomUUID();
+    setLocalMessages((prev) => [
+      ...prev,
+      { id: userMsgId, role: "user", content: text },
+      { id: assistantMsgId, role: "assistant", content: "" }
+    ]);
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId, message: text, agent, fileIds: [] })
+      });
+
+      if (response.headers.get("content-type")?.includes("text/event-stream")) {
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            try {
+              const event = JSON.parse(line.slice(6)) as Record<string, unknown>;
+              if (event.t === "c") {
+                setLocalMessages((prev) =>
+                  prev.map((m) => m.id === assistantMsgId ? { ...m, content: m.content + String(event.v) } : m)
+                );
+              } else if (event.t === "done") {
+                setConversationId(event.conversationId as string);
+                setLocalMessages((prev) =>
+                  prev.map((m) => m.id === assistantMsgId ? { ...m, sources: event.sources as Message["sources"] } : m)
+                );
+                queryClient.invalidateQueries({ queryKey: ["conversations"] });
+              } else if (event.t === "err") {
+                setSendError(String(event.e));
+                setLocalMessages((prev) => prev.filter((m) => m.id !== assistantMsgId));
+              }
+            } catch { /* ignore malformed lines */ }
+          }
+        }
+      } else {
+        // COS agent or error — JSON response
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({})) as Record<string, unknown>;
+          throw new Error(String(data.error ?? "Falha ao enviar mensagem."));
+        }
+        const data = await response.json() as { conversationId: string; answer: string; sources?: Message["sources"] };
+        setConversationId(data.conversationId);
+        setLocalMessages((prev) =>
+          prev.map((m) => m.id === assistantMsgId ? { ...m, content: data.answer, sources: data.sources } : m)
+        );
+        queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      }
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : "Erro desconhecido.");
+      setLocalMessages((prev) => prev.filter((m) => m.id !== assistantMsgId));
+    } finally {
+      setIsSending(false);
+    }
   }
 
   function selectConversation(id: string, agentKind: AgentKind) {
@@ -347,7 +393,7 @@ export function ChatView() {
 
         <div className="flex-1 overflow-y-auto p-4">
           <div className="mx-auto max-w-3xl space-y-4">
-            {localMessages.length === 0 && !send.isPending && (
+            {localMessages.length === 0 && !isSending && (
               <Card className="p-6 text-center text-sm text-muted-foreground">
                 <Bot className="mx-auto mb-3 h-8 w-8 text-primary" />
                 <p className="font-medium text-foreground">Envie uma mensagem para começar</p>
@@ -389,16 +435,8 @@ export function ChatView() {
               </div>
             ))}
 
-            {send.isPending && (
-              <div className="mr-auto max-w-[86%] rounded-lg border bg-card p-4">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <span className="animate-pulse">Gerando resposta...</span>
-                </div>
-              </div>
-            )}
-
-            {send.isError && (
-              <p className="text-center text-sm text-destructive">{(send.error as Error).message}</p>
+            {sendError && (
+              <p className="text-center text-sm text-destructive">{sendError}</p>
             )}
 
             {uploadFile.isError && (
@@ -449,7 +487,7 @@ export function ChatView() {
               className="min-h-12 resize-none"
               rows={1}
             />
-            <Button type="submit" size="icon" disabled={send.isPending || !message.trim()}>
+            <Button type="submit" size="icon" disabled={isSending || uploadFile.isPending || !message.trim()}>
               <Send className="h-4 w-4" />
             </Button>
           </div>
