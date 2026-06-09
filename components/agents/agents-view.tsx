@@ -106,7 +106,10 @@ export function AgentsView() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: selected.title, prompt, agent: active, format })
       });
-      if (!response.ok) throw new Error(await response.text().catch(() => "Erro desconhecido"));
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({ error: "Erro ao exportar." }));
+        throw new Error(data.error ?? "Erro ao exportar.");
+      }
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");

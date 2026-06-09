@@ -28,3 +28,21 @@ export async function POST(request: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json(data);
 }
+
+export async function DELETE(request: NextRequest) {
+  const supabase = await createClient();
+  const user = await getCurrentUser(supabase);
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const id = request.nextUrl.searchParams.get("id");
+  if (!id) return NextResponse.json({ error: "id obrigatório." }, { status: 400 });
+
+  const { error } = await supabase
+    .from("templates")
+    .delete()
+    .eq("id", id)
+    .eq("owner_id", user.id);
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ ok: true });
+}

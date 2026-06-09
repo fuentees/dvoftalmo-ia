@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, FilePlus, Trash2, Wand2 } from "lucide-react";
+import { Copy, FilePlus, Loader2, Trash2, Wand2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,7 @@ export function TemplatesView() {
   const [content, setContent] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const templates = useQuery<Template[]>({
     queryKey: ["templates"],
@@ -80,6 +81,17 @@ export function TemplatesView() {
     setCategory(template.category);
     setContent(template.content);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function deleteTemplate(id: string) {
+    if (!confirm("Excluir este modelo?")) return;
+    setDeletingId(id);
+    try {
+      await fetch(`/api/templates?id=${id}`, { method: "DELETE" });
+      queryClient.invalidateQueries({ queryKey: ["templates"] });
+    } finally {
+      setDeletingId(null);
+    }
   }
 
   function useInChat(template: Template) {
@@ -194,6 +206,18 @@ export function TemplatesView() {
                   >
                     <Wand2 className="h-4 w-4" />
                     Usar no Chat
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => deleteTemplate(template.id)}
+                    disabled={deletingId === template.id}
+                  >
+                    {deletingId === template.id
+                      ? <Loader2 className="h-4 w-4 animate-spin" />
+                      : <Trash2 className="h-4 w-4" />}
+                    Excluir
                   </Button>
                 </div>
               </CardContent>

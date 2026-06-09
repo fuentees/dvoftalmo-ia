@@ -7,7 +7,58 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import type { AgentKind } from "@/lib/types";
+import { agentLabels, type AgentKind } from "@/lib/types";
+
+// Simple Markdown renderer — handles the most common AI output patterns
+function MarkdownText({ content }: { content: string }) {
+  const lines = content.split("\n");
+  const elements: React.ReactNode[] = [];
+  let i = 0;
+
+  function renderInline(text: string): React.ReactNode[] {
+    const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
+    return parts.map((part, idx) => {
+      if (part.startsWith("**") && part.endsWith("**"))
+        return <strong key={idx}>{part.slice(2, -2)}</strong>;
+      if (part.startsWith("*") && part.endsWith("*"))
+        return <em key={idx}>{part.slice(1, -1)}</em>;
+      if (part.startsWith("`") && part.endsWith("`"))
+        return <code key={idx} className="rounded bg-muted px-1 font-mono text-xs">{part.slice(1, -1)}</code>;
+      return part;
+    });
+  }
+
+  while (i < lines.length) {
+    const line = lines[i];
+    const h1 = line.match(/^# (.+)/);
+    const h2 = line.match(/^## (.+)/);
+    const h3 = line.match(/^### (.+)/);
+    const bullet = line.match(/^\s*[-*•] (.+)/);
+    const numbered = line.match(/^\s*(\d+)\. (.+)/);
+    const hr = line.match(/^---+$/);
+
+    if (h1) {
+      elements.push(<h3 key={i} className="mt-3 mb-1 text-base font-bold">{h1[1]}</h3>);
+    } else if (h2) {
+      elements.push(<h4 key={i} className="mt-2 mb-0.5 text-sm font-bold">{h2[1]}</h4>);
+    } else if (h3) {
+      elements.push(<h5 key={i} className="mt-2 mb-0.5 text-sm font-semibold">{h3[1]}</h5>);
+    } else if (hr) {
+      elements.push(<hr key={i} className="my-2 border-border" />);
+    } else if (bullet) {
+      elements.push(<div key={i} className="flex gap-1.5"><span className="mt-1 shrink-0">•</span><span>{renderInline(bullet[1])}</span></div>);
+    } else if (numbered) {
+      elements.push(<div key={i} className="flex gap-1.5"><span className="shrink-0 font-medium">{numbered[1]}.</span><span>{renderInline(numbered[2])}</span></div>);
+    } else if (line.trim() === "") {
+      elements.push(<div key={i} className="h-2" />);
+    } else {
+      elements.push(<p key={i} className="leading-6">{renderInline(line)}</p>);
+    }
+    i++;
+  }
+
+  return <div className="space-y-0.5 text-sm">{elements}</div>;
+}
 
 interface Message {
   id: string;
@@ -80,6 +131,15 @@ export function ChatView() {
       );
     }
   }, [messagesQuery.data]);
+
+  // Read draft from Templates "Usar no Chat"
+  useEffect(() => {
+    const draft = localStorage.getItem("dvoftalmo_draft_message");
+    if (draft) {
+      setMessage(draft);
+      localStorage.removeItem("dvoftalmo_draft_message");
+    }
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -237,10 +297,11 @@ export function ChatView() {
               ) : (
                 <>
                   <button
-                    className="min-w-0 flex-1 truncate text-left"
+                    className="min-w-0 flex-1 text-left"
                     onClick={() => selectConversation(conv.id, conv.agent)}
                   >
-                    {conv.title}
+                    <span className="block truncate">{conv.title}</span>
+                    <span className="text-[10px] text-muted-foreground">{agentLabels[conv.agent] ?? conv.agent}</span>
                   </button>
                   <button
                     className="hidden text-muted-foreground hover:text-foreground group-hover:block"
@@ -317,7 +378,9 @@ export function ChatView() {
                     : "mr-auto max-w-[86%] rounded-lg border bg-card p-4"
                 }
               >
-                <div className="whitespace-pre-wrap text-sm leading-6">{item.content}</div>
+                {item.role === "assistant"
+                  ? <MarkdownText content={item.content} />
+                  : <div className="whitespace-pre-wrap text-sm leading-6">{item.content}</div>}
                 {item.sources && item.sources.length > 0 && (
                   <div className="mt-3 border-t pt-3 text-xs text-muted-foreground">
                     Fontes: {item.sources.map((s) => s.title).join(", ")}

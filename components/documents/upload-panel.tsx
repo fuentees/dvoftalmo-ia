@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle, UploadCloud } from "lucide-react";
+import { CheckCircle, Loader2, UploadCloud } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { categoryLabels, type DocumentCategory } from "@/lib/types";
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
+const STEPS = ["Enviando arquivo...", "Extraindo texto...", "Fragmentando conteúdo...", "Gerando embeddings..."];
 
 export function UploadPanel() {
   const queryClient = useQueryClient();
@@ -18,6 +19,8 @@ export function UploadPanel() {
   const [category, setCategory] = useState<DocumentCategory>("outros");
   const [tags, setTags] = useState("");
   const [clientError, setClientError] = useState<string | null>(null);
+  const [uploadStep, setUploadStep] = useState(0);
+  const stepTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const upload = useMutation({
     mutationFn: async () => {
@@ -43,6 +46,21 @@ export function UploadPanel() {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
     }
   });
+
+  useEffect(() => {
+    if (upload.isPending) {
+      setUploadStep(0);
+      const delays = [1500, 4000, 7000];
+      stepTimers.current = delays.map((ms, i) =>
+        setTimeout(() => setUploadStep(i + 1), ms)
+      );
+    } else {
+      stepTimers.current.forEach(clearTimeout);
+      stepTimers.current = [];
+      setUploadStep(0);
+    }
+    return () => { stepTimers.current.forEach(clearTimeout); };
+  }, [upload.isPending]);
 
   function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const selected = event.target.files?.[0] ?? null;
@@ -115,10 +133,10 @@ export function UploadPanel() {
           <div className="flex items-center gap-4 md:col-span-2">
             <Button type="submit" disabled={upload.isPending}>
               {upload.isPending ? (
-                <span className="flex items-center gap-2">
-                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
-                  Indexando...
-                </span>
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {STEPS[uploadStep]}
+                </>
               ) : (
                 <>
                   <UploadCloud className="h-4 w-4" />

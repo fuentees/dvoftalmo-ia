@@ -25,6 +25,12 @@ export async function PATCH(request: NextRequest) {
   const user = await getCurrentUser(supabase);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const { data: profile } = await supabase
+    .from("profiles").select("role").eq("id", user.id).single();
+  if (!profile || !["admin", "coordenador"].includes(profile.role)) {
+    return NextResponse.json({ error: "Permissão insuficiente. Somente coordenadores e administradores podem revisar correções." }, { status: 403 });
+  }
+
   const body = await request.json() as { id: string; action: "approve" | "reject" };
   if (!body.id || !["approve", "reject"].includes(body.action)) {
     return NextResponse.json({ error: "id e action obrigatórios." }, { status: 400 });
