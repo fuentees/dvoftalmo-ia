@@ -23,7 +23,12 @@ export async function middleware(request: NextRequest) {
   );
 
   // Refresh session — required by Supabase SSR to keep tokens valid
-  await supabase.auth.getUser();
+  // Wrapped in try/catch: network failures should not crash the app
+  try {
+    await supabase.auth.getUser();
+  } catch {
+    // If Supabase auth is unreachable, continue — the session cookie is still valid
+  }
 
   return response;
 }
