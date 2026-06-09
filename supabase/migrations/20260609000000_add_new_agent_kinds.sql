@@ -24,6 +24,7 @@ create index if not exists idx_victor_style_embedding
 
 alter table public.victor_style_documents enable row level security;
 
+drop policy if exists "victor_style_owner_all" on public.victor_style_documents;
 create policy "victor_style_owner_all"
   on public.victor_style_documents
   for all to authenticated

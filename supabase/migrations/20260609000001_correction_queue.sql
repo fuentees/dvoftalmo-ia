@@ -21,16 +21,19 @@ create index if not exists idx_correction_queue_status
 alter table public.correction_queue enable row level security;
 
 -- Qualquer autenticado pode propor
+drop policy if exists "corrections_insert" on public.correction_queue;
 create policy "corrections_insert" on public.correction_queue
   for insert to authenticated
   with check (proposed_by = auth.uid());
 
 -- Todos autenticados podem ver a fila
+drop policy if exists "corrections_read" on public.correction_queue;
 create policy "corrections_read" on public.correction_queue
   for select to authenticated
   using (true);
 
 -- Só coordenador/admin pode aprovar/rejeitar/aplicar
+drop policy if exists "corrections_update" on public.correction_queue;
 create policy "corrections_update" on public.correction_queue
   for update to authenticated
   using (public.current_role() in ('admin', 'coordenador'))
