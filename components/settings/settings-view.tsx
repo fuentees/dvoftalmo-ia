@@ -138,6 +138,30 @@ export function SettingsView() {
       </div>
 
       <div className="space-y-6 p-6">
+        {settings.data && !(settings.data as Settings & { table_ready?: boolean }).table_ready && (
+          <div className="rounded-md border border-yellow-300 bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
+            <p className="font-semibold">Migration pendente</p>
+            <p className="mt-1">Execute o SQL abaixo no <strong>Supabase SQL Editor</strong> para ativar o salvamento de configurações. Enquanto isso, as configurações do <code>.env.local</code> estão ativas.</p>
+            <pre className="mt-2 overflow-x-auto rounded bg-yellow-100 p-2 text-xs font-mono">
+              {`-- Cole no Supabase SQL Editor:
+create table if not exists public.app_config (
+  key text primary key, value text,
+  updated_at timestamptz not null default now()
+);
+alter table public.app_config enable row level security;
+drop policy if exists "app_config_admin" on public.app_config;
+create policy "app_config_admin" on public.app_config
+  for all to authenticated
+  using (public.current_role() in ('admin','coordenador'))
+  with check (public.current_role() in ('admin','coordenador'));
+insert into public.app_config (key,value) values
+  ('ai_provider','gemini'),('openai_model','gpt-4.1-mini'),
+  ('anthropic_model','claude-haiku-4-5-20251001'),('gemini_model','gemini-3.5-flash')
+on conflict (key) do nothing;`}
+            </pre>
+          </div>
+        )}
+
         {save.isError && (
           <p className="rounded-md border border-red-300 bg-red-50 px-4 py-2 text-sm text-red-700">
             {(save.error as Error).message}
