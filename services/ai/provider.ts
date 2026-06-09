@@ -41,7 +41,8 @@ export async function getAIConfig(): Promise<AIConfig> {
     ]);
 
   const cfg = Object.fromEntries((data ?? []).map((r) => [r.key, r.value as string]));
-  const provider = (cfg.ai_provider as AIProvider) ?? "openai";
+  // Falls back to AI_PROVIDER env var if app_config table is not yet migrated
+  const provider = (cfg.ai_provider as AIProvider) ?? (process.env.AI_PROVIDER as AIProvider) ?? "openai";
 
   const apiKey =
     provider === "openai"    ? (cfg.openai_api_key    ?? process.env.OPENAI_API_KEY    ?? "") :
