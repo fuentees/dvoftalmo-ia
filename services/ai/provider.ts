@@ -19,7 +19,7 @@ export interface ChatMessage {
 const DEFAULT_MODELS: Record<AIProvider, string> = {
   openai:    "gpt-4.1-mini",
   anthropic: "claude-haiku-4-5-20251001",
-  gemini:    "gemini-2.0-flash"
+  gemini:    "gemini-3.5-flash"
 };
 
 // Simple 60s in-memory cache to avoid a Supabase round-trip on every request

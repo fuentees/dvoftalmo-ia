@@ -18,5 +18,5 @@ insert into public.app_config (key, value) values
   ('ai_provider',       'openai'),
   ('openai_model',      'gpt-4.1-mini'),
   ('anthropic_model',   'claude-haiku-4-5-20251001'),
-  ('gemini_model',      'gemini-2.0-flash')
+  ('gemini_model',      'gemini-3.5-flash')
 on conflict (key) do nothing;

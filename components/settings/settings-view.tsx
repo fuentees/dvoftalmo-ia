@@ -50,7 +50,7 @@ const PROVIDERS: Array<{
     id: "gemini",
     name: "Google Gemini",
     description: "Gemini 2.0 Flash — plano gratuito generoso (1.500 req/dia). Chave em aistudio.google.com.",
-    models: ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"],
+    models: ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-2.5-pro"],
     color: "border-blue-500 bg-blue-50",
     note: "Plano gratuito disponível"
   }
