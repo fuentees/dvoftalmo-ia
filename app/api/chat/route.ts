@@ -155,10 +155,11 @@ export async function POST(request: NextRequest) {
   await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
   return NextResponse.json({ conversationId, ...result });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Erro interno.";
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[/api/chat] Erro:", message);
     const isQuota = message.includes("429") || message.includes("quota") || message.includes("insufficient_quota");
     return NextResponse.json(
-      { error: isQuota ? "Cota da OpenAI esgotada. Adicione créditos em platform.openai.com/account/billing e tente novamente." : message },
+      { error: isQuota ? "Cota esgotada. Verifique os créditos do provedor ativo." : message },
       { status: 500 }
     );
   }

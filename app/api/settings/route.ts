@@ -17,18 +17,29 @@ function maskKey(value: string | null | undefined): string {
   return "••••••••" + value.slice(-4);
 }
 
-// Reads from app_config if table exists, else returns empty object
-async function readConfig(): Promise<Record<string, string>> {
+interface ConfigResult {
+  data: Record<string, string>;
+  tableExists: boolean;
+}
+
+async function readConfig(): Promise<ConfigResult> {
   try {
     const admin = createAdminClient();
     const { data, error } = await admin
       .from("app_config")
       .select("key, value")
       .in("key", ALLOWED_KEYS);
-    if (error) return {};
-    return Object.fromEntries((data ?? []).map((r) => [r.key, r.value as string]));
+    if (error) {
+      const missing = error.message?.includes("relation") || error.message?.includes("does not exist");
+      return { data: {}, tableExists: !missing };
+    }
+    return {
+      data: Object.fromEntries((data ?? []).map((r) => [r.key, r.value as string])),
+      tableExists: true
+    };
   } catch {
-    return {};
+    // Network error (fetch failed) — don't show migration warning, assume table exists
+    return { data: {}, tableExists: true };
   }
 }
 
@@ -37,7 +48,7 @@ export async function GET() {
   const user = await getCurrentUser(supabase);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const raw = await readConfig();
+  const { data: raw, tableExists } = await readConfig();
 
   return NextResponse.json({
     ai_provider:        raw.ai_provider       ?? (process.env.AI_PROVIDER ?? "openai"),
@@ -50,7 +61,7 @@ export async function GET() {
     openai_key_hint:    maskKey(raw.openai_api_key    ?? process.env.OPENAI_API_KEY),
     anthropic_key_hint: maskKey(raw.anthropic_api_key ?? process.env.ANTHROPIC_API_KEY),
     gemini_key_hint:    maskKey(raw.gemini_api_key    ?? process.env.GEMINI_API_KEY),
-    table_ready:        Object.keys(raw).length > 0
+    table_ready:        tableExists
   });
 }
 
@@ -64,23 +75,32 @@ export async function PATCH(request: NextRequest) {
 
   const upserts = Object.entries(body)
     .filter(([key]) => (ALLOWED_KEYS as readonly string[]).includes(key))
-    .filter(([, value]) => value !== undefined)
-    .map(([key, value]) => ({ key, value, updated_at: new Date().toISOString() }));
+    .filter(([, value]) => value !== undefined && value !== "")
+    .map(([key, value]) => ({ key, value }));
 
   if (upserts.length === 0) {
     return NextResponse.json({ error: "Nenhum campo válido." }, { status: 400 });
   }
 
-  const { error } = await admin.from("app_config").upsert(upserts, { onConflict: "key" });
-
-  if (error) {
-    const tableNotFound = error.message?.includes("relation") || error.message?.includes("does not exist");
-    if (tableNotFound) {
-      return NextResponse.json({
-        error: "Tabela app_config não encontrada. Execute a migration 20260609000002_app_config.sql no Supabase SQL Editor antes de salvar configurações."
-      }, { status: 503 });
+  let dbError: string | null = null;
+  try {
+    const { error } = await admin.from("app_config").upsert(upserts, { onConflict: "key" });
+    if (error) {
+      const tableNotFound = error.message?.includes("relation") || error.message?.includes("does not exist");
+      if (tableNotFound) {
+        return NextResponse.json({
+          error: "Tabela app_config não encontrada. Execute a migration no Supabase SQL Editor."
+        }, { status: 503 });
+      }
+      dbError = error.message;
     }
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (err) {
+    // Network failure (fetch failed) — settings saved to env only
+    dbError = `Supabase inacessível: ${err instanceof Error ? err.message : String(err)}`;
+  }
+
+  if (dbError) {
+    return NextResponse.json({ error: dbError }, { status: 503 });
   }
 
   invalidateConfigCache();

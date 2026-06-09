@@ -8,20 +8,19 @@ type SupabaseLike = {
 };
 
 export async function getCurrentUser(supabase: SupabaseLike) {
-  // Try getUser first (validates server-side); fall back to getSession (reads cookie, no network call)
+  // getSession reads from the cookie — no network call, no fetch errors
+  try {
+    const { data } = await supabase.auth.getSession();
+    if (data.session?.user) return data.session.user;
+  } catch { /* fall through */ }
+
+  // Only try getUser (network call) if session had no user
   try {
     const { data } = await supabase.auth.getUser();
     if (data.user) return data.user;
-  } catch {
-    // Network failure — fall through to session fallback
-  }
+  } catch { /* network unavailable */ }
 
-  try {
-    const { data } = await supabase.auth.getSession();
-    return data.session?.user ?? null;
-  } catch {
-    return null;
-  }
+  return null;
 }
 
 export async function requireCurrentUser(supabase: SupabaseLike) {

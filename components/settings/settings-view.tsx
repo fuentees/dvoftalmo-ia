@@ -80,14 +80,16 @@ export function SettingsView() {
 
   const save = useMutation({
     mutationFn: async () => {
-      const payload: Record<string, string> = {};
-      if (form.ai_provider)      payload.ai_provider       = form.ai_provider;
-      if (form.openai_model)     payload.openai_model      = form.openai_model;
-      if (form.anthropic_model)  payload.anthropic_model   = form.anthropic_model;
-      if (form.gemini_model)     payload.gemini_model      = form.gemini_model;
-      if (keys.openai)           payload.openai_api_key    = keys.openai;
-      if (keys.anthropic)        payload.anthropic_api_key = keys.anthropic;
-      if (keys.gemini)           payload.gemini_api_key    = keys.gemini;
+      // Always send all current values so the payload is never empty
+      const payload: Record<string, string> = {
+        ai_provider:     current.ai_provider     ?? "openai",
+        openai_model:    current.openai_model    ?? "gpt-4.1-mini",
+        anthropic_model: current.anthropic_model ?? "claude-haiku-4-5-20251001",
+        gemini_model:    current.gemini_model    ?? "gemini-3.5-flash"
+      };
+      if (keys.openai)     payload.openai_api_key    = keys.openai;
+      if (keys.anthropic)  payload.anthropic_api_key = keys.anthropic;
+      if (keys.gemini)     payload.gemini_api_key    = keys.gemini;
 
       const res = await fetch("/api/settings", {
         method: "PATCH",
