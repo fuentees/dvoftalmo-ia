@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
+import { emailCorrectionReviewed } from "@/services/email";
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -38,6 +39,12 @@ export async function PATCH(request: NextRequest) {
 
   const newStatus = body.action === "approve" ? "approved" : "rejected";
 
+  const { data: correctionRow } = await supabase
+    .from("correction_queue")
+    .select("field_name, new_value, record_id")
+    .eq("id", body.id)
+    .single();
+
   const { error } = await supabase
     .from("correction_queue")
     .update({
@@ -49,5 +56,17 @@ export async function PATCH(request: NextRequest) {
     .eq("status", "pending");
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // fire-and-forget email — non-critical
+  if (correctionRow) {
+    emailCorrectionReviewed({
+      action:       body.action,
+      fieldName:    correctionRow.field_name ?? "campo",
+      recordId:     String(correctionRow.record_id ?? body.id),
+      newValue:     String(correctionRow.new_value ?? ""),
+      reviewerName: profile.role
+    }).catch(() => { /* non-critical */ });
+  }
+
   return NextResponse.json({ ok: true, status: newStatus });
 }

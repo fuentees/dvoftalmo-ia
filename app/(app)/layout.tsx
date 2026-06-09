@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { BarChart3 } from "lucide-react";
 import { AppSidebar } from "@/components/app-sidebar";
+import { OnboardingTour } from "@/components/onboarding/onboarding-tour";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 
@@ -29,6 +30,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <main className="flex min-h-0 flex-1 flex-col overflow-auto">
           {children}
         </main>
+        <OnboardingTour />
       </div>
     </div>
   );

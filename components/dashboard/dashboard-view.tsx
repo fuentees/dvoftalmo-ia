@@ -30,6 +30,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { CevespKpis } from "@/services/cevesp-kpis";
+import { AlertsPanel } from "@/components/dashboard/alerts-panel";
 
 const PIE_COLORS = ["#2563eb", "#dc2626"];
 
@@ -109,6 +110,8 @@ export function DashboardView() {
           </CardHeader>
         </Card>
       )}
+
+      <AlertsPanel />
 
       {/* ── KPIs principais ──────────────────────────────────── */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

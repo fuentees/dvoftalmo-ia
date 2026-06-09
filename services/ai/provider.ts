@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { decryptValue } from "@/lib/crypto";
 
 export type AIProvider = "openai" | "anthropic" | "gemini";
 
@@ -54,10 +55,11 @@ export async function getAIConfig(): Promise<AIConfig> {
     const cfg = Object.fromEntries((data ?? []).map((r) => [r.key, r.value as string]));
     const provider = (cfg.ai_provider as AIProvider) ?? (process.env.AI_PROVIDER as AIProvider) ?? "openai";
 
-    const apiKey =
+    const rawKey =
       provider === "openai"    ? (cfg.openai_api_key    ?? process.env.OPENAI_API_KEY    ?? "") :
       provider === "anthropic" ? (cfg.anthropic_api_key ?? process.env.ANTHROPIC_API_KEY ?? "") :
                                  (cfg.gemini_api_key    ?? process.env.GEMINI_API_KEY    ?? "");
+    const apiKey = decryptValue(rawKey);
 
     const model =
       provider === "openai"    ? (cfg.openai_model    ?? DEFAULT_MODELS.openai) :

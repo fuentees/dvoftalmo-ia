@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Check, FileUp, Pencil, Search, Send, Trash2, X } from "lucide-react";
+import { Bot, Check, Download, FileUp, Pencil, Search, Send, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -73,6 +73,18 @@ interface Conversation {
   agent: AgentKind;
   updated_at: string;
 }
+
+const SUGGESTIONS: Record<AgentKind, string[]> = {
+  geral:          ["Quais são os protocolos de conjuntivite?", "Como notificar um surto?", "O que é tracoma?"],
+  documentos:     ["Resumir os documentos sobre vigilância", "Protocolos de triagem ocular", "Normas de notificação"],
+  email:          ["Redigir comunicado sobre surto", "E-mail para a GVE sobre coleta", "Circular sobre conjuntivite"],
+  treinamentos:   ["Conteúdo de treinamento em vigilância", "Como capacitar equipes de campo?"],
+  campo:          ["Checklist para investigação de surto", "Como coletar material para diagnóstico?"],
+  epidemiologico: ["Quantos casos na última SE?", "Quais GVEs com mais surtos?", "Comparar ano atual com anterior"],
+  tracoma:        ["Calcular doses de azitromicina", "TF e TT da última pesquisa", "Municípios prioritários para tracoma"],
+  dados:          ["Analisar planilha enviada", "Calcular prevalência por município"],
+  cos:            ["Situação epidemiológica atual do estado", "Resumo dos alertas desta semana"]
+};
 
 const agents: Array<{ value: AgentKind; label: string }> = [
   { value: "geral", label: "Geral" },
@@ -294,6 +306,15 @@ export function ChatView() {
     setLocalMessages([]);
   }
 
+  function exportConversation(format: "txt" | "pdf" | "docx") {
+    if (!conversationId) return;
+    const url = `/api/chat/export?conversationId=${conversationId}&format=${format}`;
+    const a   = document.createElement("a");
+    a.href    = url;
+    a.download = "";
+    a.click();
+  }
+
   return (
     <div className="grid h-screen grid-cols-1 md:grid-cols-[320px_1fr]">
       {/* ── Sidebar de conversas ──────────────────────── */}
@@ -373,42 +394,70 @@ export function ChatView() {
 
       {/* ── Área principal ───────────────────────────── */}
       <main className="flex min-h-0 flex-col">
-        <div className="flex h-16 items-center justify-between border-b px-4">
-          <div>
+        <div className="flex h-16 items-center justify-between border-b px-4 gap-2">
+          <div className="min-w-0">
             <h1 className="font-semibold">Chat IA</h1>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-muted-foreground truncate">
               {conversationId ? "Conversa ativa" : "Nova conversa"} · Ctrl+Enter para enviar
             </p>
           </div>
-          <select
-            className="h-9 rounded-md border bg-background px-3 text-sm"
-            value={agent}
-            onChange={(event) => setAgent(event.target.value as AgentKind)}
-          >
-            {agents.map((item) => (
-              <option key={item.value} value={item.value}>{item.label}</option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2 shrink-0">
+            {conversationId && (
+              <div className="relative group">
+                <button className="flex items-center gap-1 h-9 px-3 rounded-md border bg-background text-sm hover:bg-muted">
+                  <Download className="h-4 w-4" />
+                  <span className="hidden sm:inline">Exportar</span>
+                </button>
+                <div className="absolute right-0 top-full mt-1 hidden group-hover:flex flex-col bg-popover border rounded-md shadow-md z-10 min-w-[110px]">
+                  {(["txt", "pdf", "docx"] as const).map(fmt => (
+                    <button key={fmt} onClick={() => exportConversation(fmt)}
+                      className="px-4 py-2 text-sm text-left hover:bg-muted capitalize">
+                      {fmt.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <select
+              className="h-9 rounded-md border bg-background px-3 text-sm"
+              value={agent}
+              onChange={(event) => setAgent(event.target.value as AgentKind)}
+            >
+              {agents.map((item) => (
+                <option key={item.value} value={item.value}>{item.label}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
           <div className="mx-auto max-w-3xl space-y-4">
             {localMessages.length === 0 && !isSending && (
-              <Card className="p-6 text-center text-sm text-muted-foreground">
-                <Bot className="mx-auto mb-3 h-8 w-8 text-primary" />
-                <p className="font-medium text-foreground">Envie uma mensagem para começar</p>
-                <p className="mt-1">
-                  {agent === "epidemiologico"
-                    ? "Agente epidemiologico ativo — perguntas sobre o banco CEVESP retornam dados reais."
-                    : agent === "tracoma"
-                    ? "Agente Tracoma ativo — consulta REDCap, calcula TF/TT e estima doses de azitromicina."
-                    : agent === "dados"
-                    ? "Agente de Dados ativo — envie planilha acima (seção Agentes) ou pergunte sobre seus dados."
-                    : agent === "cos"
-                    ? "Agente COS ativo — usa ferramentas reais: CEVESP, tracoma, documentos e cálculos."
-                    : "Respostas baseadas na base de conhecimento com citacao de fontes."}
-                </p>
-              </Card>
+              <div className="space-y-4">
+                <Card className="p-6 text-center text-sm text-muted-foreground">
+                  <Bot className="mx-auto mb-3 h-8 w-8 text-primary" />
+                  <p className="font-medium text-foreground">Envie uma mensagem para começar</p>
+                  <p className="mt-1">
+                    {agent === "epidemiologico"
+                      ? "Agente epidemiologico ativo — perguntas sobre o banco CEVESP retornam dados reais."
+                      : agent === "tracoma"
+                      ? "Agente Tracoma ativo — consulta REDCap, calcula TF/TT e estima doses de azitromicina."
+                      : agent === "dados"
+                      ? "Agente de Dados ativo — envie planilha acima (seção Agentes) ou pergunte sobre seus dados."
+                      : agent === "cos"
+                      ? "Agente COS ativo — usa ferramentas reais: CEVESP, tracoma, documentos e cálculos."
+                      : "Respostas baseadas na base de conhecimento com citacao de fontes."}
+                  </p>
+                </Card>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {(SUGGESTIONS[agent] ?? []).map((chip) => (
+                    <button key={chip} onClick={() => setMessage(chip)}
+                      className="rounded-full border bg-card px-3 py-1.5 text-xs text-muted-foreground hover:border-primary hover:text-primary transition-colors">
+                      {chip}
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
 
             {messagesQuery.isFetching && localMessages.length === 0 && (

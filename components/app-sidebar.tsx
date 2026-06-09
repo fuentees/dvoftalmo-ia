@@ -5,8 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   BarChart3, Bell, Bot, Brain, CheckSquare, ChevronRight,
-  FileText, GraduationCap, LayoutDashboard, Library,
-  LogOut, Moon, Settings, Sun, User
+  ClipboardList, FileText, GraduationCap, LayoutDashboard, Library,
+  LogOut, Moon, Newspaper, Settings, Sun, User
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
@@ -28,8 +28,11 @@ const groups = [
   {
     label: "Vigilância",
     items: [
-      { href: "/notificacoes", label: "Notificações", icon: Bell },
-      { href: "/correcoes", label: "Correções CEVESP", icon: CheckSquare }
+      { href: "/notificacoes", label: "Notificações",     icon: Bell },
+      { href: "/alertas",      label: "Alertas",          icon: Bell },
+      { href: "/boletins",     label: "Boletins",         icon: Newspaper },
+      { href: "/correcoes",    label: "Correções CEVESP", icon: CheckSquare },
+      { href: "/auditoria",    label: "Auditoria",        icon: ClipboardList }
     ]
   },
   {
@@ -71,8 +74,9 @@ export function AppSidebar() {
   }, []);
 
   function toggleTheme() {
-    document.documentElement.classList.toggle("dark");
-    setDark((prev) => !prev);
+    const isDark = document.documentElement.classList.toggle("dark");
+    setDark(isDark);
+    try { localStorage.setItem("dvoftalmo_theme", isDark ? "dark" : "light"); } catch { /* ignore */ }
   }
 
   async function handleLogout() {

@@ -1,0 +1,19 @@
+{
+  "name": "DvOftalmo IA",
+  "short_name": "DvOftalmo",
+  "description": "Agente inteligente de vigilância epidemiológica das conjuntivites — COS/DVSE/CVS SP",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#ffffff",
+  "theme_color": "#1a6654",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Chat COS", "url": "/chat", "description": "Conversar com o Agente COS" },
+    { "name": "Dashboard", "url": "/dashboard", "description": "Painel epidemiológico" }
+  ]
+}

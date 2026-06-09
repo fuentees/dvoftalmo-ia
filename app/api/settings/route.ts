@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { invalidateConfigCache } from "@/services/ai/provider";
+import { encryptValue, decryptValue, isApiKey } from "@/lib/crypto";
 
 const ALLOWED_KEYS = [
   "ai_provider",
@@ -33,10 +34,10 @@ async function readConfig(): Promise<ConfigResult> {
       const missing = error.message?.includes("relation") || error.message?.includes("does not exist");
       return { data: {}, tableExists: !missing };
     }
-    return {
-      data: Object.fromEntries((data ?? []).map((r) => [r.key, r.value as string])),
-      tableExists: true
-    };
+    const decrypted = Object.fromEntries(
+      (data ?? []).map((r) => [r.key, isApiKey(r.key) ? decryptValue(r.value as string) : r.value as string])
+    );
+    return { data: decrypted, tableExists: true };
   } catch {
     // Network error (fetch failed) — don't show migration warning, assume table exists
     return { data: {}, tableExists: true };
@@ -76,7 +77,7 @@ export async function PATCH(request: NextRequest) {
   const upserts = Object.entries(body)
     .filter(([key]) => (ALLOWED_KEYS as readonly string[]).includes(key))
     .filter(([, value]) => value !== undefined && value !== "")
-    .map(([key, value]) => ({ key, value }));
+    .map(([key, value]) => ({ key, value: isApiKey(key) ? encryptValue(value) : value }));
 
   if (upserts.length === 0) {
     return NextResponse.json({ error: "Nenhum campo válido." }, { status: 400 });
