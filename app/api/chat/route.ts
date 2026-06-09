@@ -71,6 +71,7 @@ export async function POST(request: NextRequest) {
     content: body.message
   });
 
+  try {
   // ── Agente COS: loop real com ferramentas ─────────────────────────────────
   if (body.agent === "cos") {
     const cosResult = await runCosAgent({
@@ -153,6 +154,14 @@ export async function POST(request: NextRequest) {
 
   await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
   return NextResponse.json({ conversationId, ...result });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Erro interno.";
+    const isQuota = message.includes("429") || message.includes("quota") || message.includes("insufficient_quota");
+    return NextResponse.json(
+      { error: isQuota ? "Cota da OpenAI esgotada. Adicione créditos em platform.openai.com/account/billing e tente novamente." : message },
+      { status: 500 }
+    );
+  }
 }
 
 export async function PATCH(request: NextRequest) {

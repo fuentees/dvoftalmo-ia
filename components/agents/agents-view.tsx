@@ -104,7 +104,7 @@ export function AgentsView() {
       const response = await fetch("/api/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: selected.title, content: prompt, format })
+        body: JSON.stringify({ title: selected.title, prompt, agent: active, format })
       });
       if (!response.ok) throw new Error(await response.text().catch(() => "Erro desconhecido"));
       const blob = await response.blob();
