@@ -45,7 +45,11 @@ export async function answerWithRag(input: {
   tracomaContext?: string;
   dataContext?: string;
 }) {
-  const context = await retrieveContext(input.message, input.userId);
+  // Embeddings require OpenAI — fail gracefully so other providers still work
+  const context = await retrieveContext(input.message, input.userId).catch(() => ({
+    content: "",
+    sources: [] as AiSource[]
+  }));
 
   const systemMessages: Array<{ role: "system"; content: string }> = [
     { role: "system", content: buildSystemPrompt(input.agent) }

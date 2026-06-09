@@ -1,7 +1,9 @@
 import type OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 import type { AiSource } from "@/lib/types";
 import { getOpenAI, chatModel } from "@/services/ai/openai";
 import { buildSystemPrompt } from "@/services/ai/prompts";
+import { getAIConfig, generateCompletion } from "@/services/ai/provider";
 import { runCevespAnalysis } from "@/services/cevesp-analytics";
 import { fetchTracomaSurveys, estimateAzithromycin } from "@/services/tracoma-analytics";
 import { retrieveContext } from "@/services/ai/rag";
@@ -408,71 +410,136 @@ export interface CosAgentResult {
   toolsUsed: string[];
 }
 
-export async function runCosAgent(input: CosAgentInput): Promise<CosAgentResult> {
+// ── OpenAI tool-loop ──────────────────────────────────────────────────────────
+async function runWithOpenAI(input: CosAgentInput, apiKey: string, model: string): Promise<CosAgentResult> {
+  const client = new (await import("openai")).default({ apiKey });
   const messages: OpenAI.ChatCompletionMessageParam[] = [
     { role: "system", content: buildSystemPrompt("cos") },
     ...(input.conversationMessages ?? []),
     { role: "user", content: input.message }
   ];
-
   const allSources: AiSource[] = [];
   const toolsUsed: string[] = [];
-  const maxSteps = 8;
 
-  for (let step = 0; step < maxSteps; step++) {
-    const response = await getOpenAI().chat.completions.create({
-      model: chatModel,
-      temperature: 0.2,
-      tools: COS_TOOLS,
-      tool_choice: "auto",
-      messages
+  for (let step = 0; step < 8; step++) {
+    const response = await client.chat.completions.create({
+      model, temperature: 0.2, tools: COS_TOOLS, tool_choice: "auto", messages
     });
-
-    const choice = response.choices[0];
-    const assistantMsg = choice.message;
+    const assistantMsg = response.choices[0].message;
     messages.push(assistantMsg as OpenAI.ChatCompletionMessageParam);
 
-    // No more tool calls — done
     if (!assistantMsg.tool_calls?.length) {
-      return {
-        answer: assistantMsg.content ?? "Sem resposta.",
-        sources: allSources,
-        toolsUsed
-      };
+      return { answer: assistantMsg.content ?? "Sem resposta.", sources: allSources, toolsUsed };
     }
 
-    // Execute all function-type tool calls in parallel
     const fnCalls = assistantMsg.tool_calls.filter(
       (tc): tc is OpenAI.ChatCompletionMessageFunctionToolCall => tc.type === "function"
     );
-    const toolResults = await Promise.all(
-      fnCalls.map(async (tc) => {
-        const args = JSON.parse(tc.function.arguments) as Record<string, unknown>;
-        toolsUsed.push(tc.function.name);
-        const result = await executeTool(tc.function.name, args, input.userId);
-        if (result.sources) allSources.push(...result.sources);
-        return { id: tc.id, content: result.content };
-      })
-    );
-
+    const toolResults = await Promise.all(fnCalls.map(async (tc) => {
+      const args = JSON.parse(tc.function.arguments) as Record<string, unknown>;
+      toolsUsed.push(tc.function.name);
+      const result = await executeTool(tc.function.name, args, input.userId);
+      if (result.sources) allSources.push(...result.sources);
+      return { id: tc.id, content: result.content };
+    }));
     for (const tr of toolResults) {
       messages.push({ role: "tool", tool_call_id: tr.id, content: tr.content });
     }
   }
 
-  // maxSteps reached — ask model to summarize with what it has
-  const finalResponse = await getOpenAI().chat.completions.create({
-    model: chatModel,
-    temperature: 0.2,
-    messages: [
-      ...messages,
-      { role: "user", content: "Com base nos dados obtidos, elabore sua resposta final." }
-    ]
+  const final = await client.chat.completions.create({
+    model, temperature: 0.2,
+    messages: [...messages, { role: "user", content: "Elabore sua resposta final com os dados obtidos." }]
   });
+  return { answer: final.choices[0]?.message.content ?? "Sem resposta.", sources: allSources, toolsUsed };
+}
 
-  return {
-    answer: finalResponse.choices[0]?.message.content ?? "Sem resposta.",
-    sources: allSources,
-    toolsUsed
-  };
+// ── Anthropic tool-loop ───────────────────────────────────────────────────────
+const ANTHROPIC_TOOLS: Anthropic.Tool[] = COS_TOOLS
+  .filter((t): t is OpenAI.ChatCompletionFunctionTool & { type: "function" } => t.type === "function")
+  .map((t) => ({
+    name: t.function.name,
+    description: t.function.description ?? "",
+    input_schema: t.function.parameters as Anthropic.Tool["input_schema"]
+  }));
+
+async function runWithAnthropic(input: CosAgentInput, apiKey: string, model: string): Promise<CosAgentResult> {
+  const client = new Anthropic({ apiKey });
+  type AnthropicMsg = Anthropic.MessageParam;
+  const messages: AnthropicMsg[] = [
+    ...(input.conversationMessages ?? []).map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+    { role: "user", content: input.message }
+  ];
+  const system = buildSystemPrompt("cos");
+  const allSources: AiSource[] = [];
+  const toolsUsed: string[] = [];
+
+  for (let step = 0; step < 8; step++) {
+    const response = await client.messages.create({
+      model, max_tokens: 4096, temperature: 0.2,
+      system, tools: ANTHROPIC_TOOLS, tool_choice: { type: "auto" }, messages
+    });
+
+    const textBlock = response.content.find((b) => b.type === "text");
+    const toolUseBlocks = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+
+    if (response.stop_reason === "end_turn" || toolUseBlocks.length === 0) {
+      return {
+        answer: textBlock?.type === "text" ? textBlock.text : "Sem resposta.",
+        sources: allSources, toolsUsed
+      };
+    }
+
+    messages.push({ role: "assistant", content: response.content });
+
+    const toolResults = await Promise.all(toolUseBlocks.map(async (block) => {
+      toolsUsed.push(block.name);
+      const result = await executeTool(block.name, block.input as Record<string, unknown>, input.userId);
+      if (result.sources) allSources.push(...result.sources);
+      return { type: "tool_result" as const, tool_use_id: block.id, content: result.content };
+    }));
+    messages.push({ role: "user", content: toolResults });
+  }
+
+  return { answer: "Limite de passos atingido.", sources: allSources, toolsUsed };
+}
+
+// ── Gemini text-mode (sem tool loop — injeta contexto CEVESP diretamente) ─────
+async function runWithGemini(input: CosAgentInput): Promise<CosAgentResult> {
+  const toolsUsed: string[] = [];
+  const contextParts: string[] = [];
+
+  // Auto-execute CEVESP query and inject as context
+  try {
+    const cevesp = await executeTool("consultar_cevesp", { question: input.message }, input.userId);
+    contextParts.push(`Dados CEVESP:\n${cevesp.content}`);
+    toolsUsed.push("consultar_cevesp");
+  } catch { /* skip */ }
+
+  const systemContent = buildSystemPrompt("cos") +
+    (contextParts.length ? `\n\nContexto obtido automaticamente:\n${contextParts.join("\n\n")}` : "");
+
+  const messages = [
+    { role: "system" as const, content: systemContent },
+    ...(input.conversationMessages ?? []).map((m) => ({ role: m.role as "system" | "user" | "assistant", content: m.content })),
+    { role: "user" as const, content: input.message }
+  ];
+
+  const answer = await generateCompletion(messages, { temperature: 0.2 });
+  return { answer: answer || "Sem resposta.", sources: [], toolsUsed };
+}
+
+// ── Entry point ───────────────────────────────────────────────────────────────
+export async function runCosAgent(input: CosAgentInput): Promise<CosAgentResult> {
+  const config = await getAIConfig();
+
+  if (config.provider === "anthropic" && config.apiKey) {
+    return runWithAnthropic(input, config.apiKey, config.model);
+  }
+  if (config.provider === "gemini") {
+    return runWithGemini(input);
+  }
+  // OpenAI (default)
+  const openaiKey = config.apiKey || process.env.OPENAI_API_KEY || "";
+  return runWithOpenAI(input, openaiKey, config.model || chatModel);
 }
