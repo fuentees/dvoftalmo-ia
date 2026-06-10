@@ -102,7 +102,7 @@ export function NotificationsReportView() {
               <div className="flex flex-wrap gap-2">
                 <Badge>{ask.data.metricLabel}</Badge>
                 <Badge className="border-primary/50 text-primary">{ask.data.timeLabel}</Badge>
-                {ask.data.analysis.dimensions.map((item: string) => (
+                {(ask.data.analysis?.dimensions ?? []).map((item: string) => (
                   <Badge key={item} className="bg-muted text-foreground">{item}</Badge>
                 ))}
               </div>

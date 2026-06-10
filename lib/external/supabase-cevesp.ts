@@ -61,6 +61,7 @@ export async function runCevespAnalysisCached(
   analysis: CevespAnalysisInput
 ): Promise<{
   question: string;
+  analysis: CevespAnalysisInput;
   metricLabel: string;
   timeLabel: string;
   columns: string[];
@@ -111,6 +112,7 @@ export async function runCevespAnalysisCached(
       : `O cache CEVESP tem ${totalRows} registros (anos: ${anos}), mas nenhum corresponde aos filtros aplicados (p_ano_start=${dr.anoStart ?? "null"}, p_ano_end=${dr.anoEnd ?? "null"}).`;
     return {
       question,
+      analysis,
       metricLabel: analysis.metric,
       timeLabel: `${dr.anoStart ?? "todos os anos"}`,
       columns: ["Diagnóstico"],
@@ -141,6 +143,7 @@ export async function runCevespAnalysisCached(
 
   return {
     question,
+    analysis,
     metricLabel: metricLabels[analysis.metric] ?? analysis.metric,
     timeLabel:   `${dr.anoStart ?? "todos os anos"}${dr.seStart ? ` SE ${dr.seStart}–${dr.seEnd}` : ""}`,
     columns:     [dimLabel, "Valor"],
