@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { CevespSyncCard } from "@/components/settings/cevesp-sync-card";
 
 type Provider = "openai" | "anthropic" | "gemini";
 
@@ -291,6 +292,9 @@ on conflict (key) do nothing;`}
             );
           })}
         </div>
+
+        {/* Sincronização CEVESP */}
+        <CevespSyncCard />
 
         {/* Info adicional */}
         <Card className="bg-muted/40">

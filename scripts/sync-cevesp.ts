@@ -45,18 +45,34 @@ function rowKey(row: Record<string, unknown>): string {
 
 function toDate(v: unknown): string | null {
   if (!v) return null;
-  if (v instanceof Date) return v.toISOString().slice(0, 10);
-  const s = String(v).slice(0, 10);
-  return s.match(/^\d{4}-\d{2}-\d{2}$/) ? s : null;
+  let s: string;
+  if (v instanceof Date) {
+    if (isNaN(v.getTime())) return null;
+    s = v.toISOString().slice(0, 10);
+  } else {
+    s = String(v).slice(0, 10);
+  }
+  if (!s.match(/^\d{4}-\d{2}-\d{2}$/)) return null;
+  const [y, m, d] = s.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) return null;
+  return s;
 }
 
 function clean(row: Record<string, unknown>): Record<string, unknown> {
+  const rawDate   = row.DtNotificacao instanceof Date
+    ? (isNaN(row.DtNotificacao.getTime()) ? null : row.DtNotificacao.toISOString().slice(0, 10))
+    : (row.DtNotificacao != null ? String(row.DtNotificacao).slice(0, 10) : null);
+  const validDate = toDate(row.DtNotificacao);
+  const invalidDate = rawDate !== null && validDate === null ? rawDate : null;
+
   return {
     row_key:              rowKey(row),
     ANO:                  row.ANO         != null ? Number(row.ANO)         : null,
     Mes:                  row.Mes         != null ? Number(row.Mes)         : null,
     SemEpidemio:          row.SemEpidemio != null ? Number(row.SemEpidemio) : null,
-    DtNotificacao:        toDate(row.DtNotificacao),
+    DtNotificacao:        validDate,
+    dt_notificacao_raw:   invalidDate,
     MunicipioNotificacao: row.MunicipioNotificacao  != null ? String(row.MunicipioNotificacao)  : null,
     IbgeNotificacao:      row.IbgeNotificacao       != null ? String(row.IbgeNotificacao)       : null,
     GVE_NOME:             row.GVE_NOME              != null ? String(row.GVE_NOME)              : null,
@@ -153,6 +169,16 @@ async function doExport(args: string[]) {
   console.log(`  npm run sync-cevesp -- --import --file ${outFile}`);
 }
 
+async function dedup(rows: Record<string, unknown>[]): Promise<Record<string, unknown>[]> {
+  const seen = new Set<string>();
+  return rows.filter(r => {
+    const k = String(r.row_key ?? "");
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
 async function doImport(args: string[]) {
   const inFile = args.find(a => a.startsWith("--file="))?.split("=")[1]
               ?? (args.includes("--file") ? args[args.indexOf("--file") + 1] : null)
@@ -160,13 +186,14 @@ async function doImport(args: string[]) {
 
   if (!existsSync(inFile)) {
     console.error(`❌  Arquivo ${inFile} não encontrado.`);
-    console.error(`   Gere-o no escritório com: npm run sync-cevesp -- --export`);
+    console.error(`   Gere-o no escritório com: npm run sync-export`);
     process.exit(1);
   }
 
   console.log(`📂  Lendo ${inFile}...`);
-  const rows = JSON.parse(readFileSync(inFile, "utf8")) as Record<string, unknown>[];
-  console.log(`   ${rows.length} registros encontrados`);
+  const allRows = JSON.parse(readFileSync(inFile, "utf8")) as Record<string, unknown>[];
+  const rows = await dedup(allRows);
+  console.log(`   ${rows.length} registros (${allRows.length - rows.length} duplicatas removidas)`);
 
   const supabase = getSupabase();
   const startMs  = Date.now();

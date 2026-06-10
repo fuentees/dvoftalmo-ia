@@ -59,9 +59,26 @@ export async function findInvalidRecords(limit = 100): Promise<InvalidRecord[]> 
     );
 
     const [rows] = await conn.query(
-      `SELECT \`${pkCol}\`, DtNotificacao, SemEpidemio, MunicipioNotificacao
+      `SELECT \`${pkCol}\`, DtNotificacao, SemEpidemio, MunicipioNotificacao,
+              -- tag which rule matched
+              CASE
+                WHEN DtNotificacao IS NOT NULL
+                     AND CAST(DtNotificacao AS CHAR) REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+                     AND STR_TO_DATE(CAST(DtNotificacao AS CHAR), '%Y-%m-%d') IS NULL
+                  THEN 'dia_impossivel'
+                WHEN DtNotificacao > CURDATE()       THEN 'data_futura'
+                WHEN year(DtNotificacao) < 1990      THEN 'ano_impossivel'
+                WHEN SemEpidemio > 53                THEN 'se_alta'
+                WHEN SemEpidemio < 1                 THEN 'se_baixa'
+                ELSE 'se_futura'
+              END AS problema
        FROM \`${tableName}\`
-       WHERE DtNotificacao > CURDATE()
+       WHERE (
+              DtNotificacao IS NOT NULL
+              AND CAST(DtNotificacao AS CHAR) REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+              AND STR_TO_DATE(CAST(DtNotificacao AS CHAR), '%Y-%m-%d') IS NULL
+             )
+          OR DtNotificacao > CURDATE()
           OR year(DtNotificacao) < 1990
           OR SemEpidemio > 53
           OR SemEpidemio < 1
@@ -71,31 +88,39 @@ export async function findInvalidRecords(limit = 100): Promise<InvalidRecord[]> 
     );
 
     return (rows as Array<Record<string, unknown>>).map((r) => {
-      const ano = r.DtNotificacao ? new Date(String(r.DtNotificacao)).getFullYear() : null;
-      const se = r.SemEpidemio != null ? Number(r.SemEpidemio) : null;
+      const problema = String(r.problema ?? "");
+      const rawDt    = r.DtNotificacao ? String(r.DtNotificacao).split("T")[0] : null;
+      const ano      = rawDt ? parseInt(rawDt.slice(0, 4), 10) : null;
+      const se       = r.SemEpidemio != null ? Number(r.SemEpidemio) : null;
 
       let issue = "";
       let suggestedField = "";
       let suggestedValue = "";
 
-      if (r.DtNotificacao && new Date(String(r.DtNotificacao)) > now) {
-        issue = `Data futura: ${r.DtNotificacao}`;
+      if (problema === "dia_impossivel" && rawDt) {
+        // e.g. "2026-04-31" → suggest last valid day of that month
+        const [y, m] = rawDt.split("-").map(Number);
+        const lastDay = new Date(y, m, 0).getDate(); // day 0 of next month = last day of current month
+        issue = `Dia impossível: ${rawDt} (${["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"][m-1]} tem ${lastDay} dias)`;
         suggestedField = "DtNotificacao";
-        // Suggest same day/month but in current year
-        const d = new Date(String(r.DtNotificacao));
+        suggestedValue = `${y}-${String(m).padStart(2,"0")}-${String(lastDay).padStart(2,"0")}`;
+      } else if (problema === "data_futura" && rawDt) {
+        issue = `Data futura: ${rawDt}`;
+        suggestedField = "DtNotificacao";
+        const d = new Date(rawDt);
         d.setFullYear(currentYear);
         suggestedValue = d.toISOString().split("T")[0];
-      } else if (ano !== null && ano < 1990) {
+      } else if (problema === "ano_impossivel" && rawDt) {
         issue = `Ano impossível: ${ano}`;
         suggestedField = "DtNotificacao";
-        const d = new Date(String(r.DtNotificacao));
+        const d = new Date(rawDt);
         d.setFullYear(currentYear);
         suggestedValue = d.toISOString().split("T")[0];
-      } else if (se !== null && (se > 53 || se < 1)) {
+      } else if (se !== null && (problema === "se_alta" || problema === "se_baixa")) {
         issue = `SE inválida: ${se}`;
         suggestedField = "SemEpidemio";
         suggestedValue = String(Math.min(currentSe, 53));
-      } else if (se !== null && ano === currentYear && se > currentSe) {
+      } else if (se !== null && problema === "se_futura") {
         issue = `SE futura: ${se} (SE atual: ${currentSe})`;
         suggestedField = "SemEpidemio";
         suggestedValue = String(currentSe);
@@ -104,7 +129,7 @@ export async function findInvalidRecords(limit = 100): Promise<InvalidRecord[]> 
       return {
         recordId: String(r[pkCol]),
         pkColumn: pkCol,
-        dtNotificacao: r.DtNotificacao ? String(r.DtNotificacao).split("T")[0] : null,
+        dtNotificacao: rawDt,
         semEpidemio: se,
         municipio: r.MunicipioNotificacao ? String(r.MunicipioNotificacao) : null,
         issue,
