@@ -22,19 +22,3 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(data);
 }
 
-export async function GET_alerts(request: NextRequest) {
-  const supabase = await createClient();
-  const user     = await getCurrentUser(supabase);
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("epidemiological_alerts")
-    .select("*")
-    .eq("acknowledged", false)
-    .order("created_at", { ascending: false })
-    .limit(20);
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data);
-}
