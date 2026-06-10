@@ -543,7 +543,17 @@ export function ChatView() {
                 }
               >
                 {item.role === "assistant"
-                  ? <MarkdownText content={item.content} />
+                  ? item.content === "" && isSending
+                    ? <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <span>Pensando</span>
+                        <span className="flex gap-0.5">
+                          {[0, 150, 300].map((d) => (
+                            <span key={d} className="inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground animate-bounce"
+                              style={{ animationDelay: `${d}ms` }} />
+                          ))}
+                        </span>
+                      </div>
+                    : <MarkdownText content={item.content} />
                   : <div className="whitespace-pre-wrap text-sm leading-6">{item.content}</div>}
                 {item.role === "assistant" && item.chartData && (
                   <InlineChart chartData={item.chartData} />

@@ -99,6 +99,27 @@ export async function runCevespAnalysisCached(
   if (error) throw new Error(`Cache CEVESP: ${error.message}`);
 
   const rows = (data ?? []) as Array<{ label: string; valor: number }>;
+
+  // Diagnostic: if 0 rows, fetch total count so agent can explain why
+  if (rows.length === 0) {
+    const diagRes = await supabase.rpc("cevesp_diagnostico");
+    const diag = (diagRes.data as Array<Record<string, unknown>> | null)?.[0];
+    const totalRows = Number(diag?.total_registros ?? 0);
+    const anos = String(diag?.anos_disponiveis ?? "desconhecido");
+    const diagMsg = totalRows === 0
+      ? "A tabela cevesp_notificacoes está vazia. Execute a sincronização (Configurações → Sincronizar CEVESP)."
+      : `O cache CEVESP tem ${totalRows} registros (anos: ${anos}), mas nenhum corresponde aos filtros aplicados (p_ano_start=${dr.anoStart ?? "null"}, p_ano_end=${dr.anoEnd ?? "null"}).`;
+    return {
+      question,
+      metricLabel: analysis.metric,
+      timeLabel: `${dr.anoStart ?? "todos os anos"}`,
+      columns: ["Diagnóstico"],
+      rows: [],
+      fromCache: true as const,
+      interpretation: [diagMsg]
+    };
+  }
+
   const mappedRows = rows.map(r => ({
     [dimension === "gve" ? "GVE" : dimension === "municipio" ? "Município" : dimension.toUpperCase()]: r.label,
     Valor: r.valor
@@ -128,7 +149,7 @@ export async function runCevespAnalysisCached(
     interpretation: [
       `Dados do cache Supabase (última sincronização da rede SES-SP).`,
       `Total de ${metricLabels[analysis.metric] ?? "registros"}: ${total.toLocaleString("pt-BR")}.`,
-      rows.length > 0 ? `Destaque: ${top3}.` : "Nenhum resultado para os filtros aplicados."
+      `Destaque: ${top3}.`
     ]
   };
 }
