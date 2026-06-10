@@ -85,26 +85,6 @@ const COS_TOOLS: OpenAI.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
-      name: "buscar_documentos",
-      description:
-        "Busca na base de conhecimento do COS: normas, manuais, protocolos, relatorios e " +
-        "documentos indexados. Use quando a pergunta envolver legislação, diretrizes, " +
-        "procedimentos ou histórico documental.",
-      parameters: {
-        type: "object",
-        properties: {
-          consulta: {
-            type: "string",
-            description: "O que buscar. Ex.: protocolo de investigação de surto de conjuntivite"
-          }
-        },
-        required: ["consulta"]
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
       name: "identificar_invalidos_cevesp",
       description:
         "Busca registros no CEVESP com data de notificação ou SE inválida (futuro, impossível). " +
