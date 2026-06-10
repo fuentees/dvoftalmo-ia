@@ -482,19 +482,17 @@ const ANTHROPIC_TOOLS: Anthropic.Tool[] = COS_TOOLS
     input_schema: t.function.parameters as Anthropic.Tool["input_schema"]
   }));
 
-// Detect which tool to force on step 0 based on the message content.
-// Without this, "any" lets Claude pick buscar_documentos for data questions
-// and then respond with a generic "no access" message when it returns empty.
-function detectStep0Tool(message: string): Anthropic.ToolChoiceAuto | Anthropic.ToolChoiceTool {
+// Force the right first tool for the COS agent.
+// Without this, Claude picks buscar_documentos for any question and responds
+// with a generic "no access" message when embeddings are unavailable.
+// Strategy: tracoma questions → consultar_tracoma; everything else → consultar_cevesp.
+// Claude can still call other tools on step 1+ via tool_choice:"auto".
+function detectStep0Tool(message: string): { type: "tool"; name: string } {
   const n = message.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-  if (/tracoma|tf\b|tt\b|azitromicin|eliminac|prevaelenc|examinad/.test(n)) {
+  if (/tracoma|tf\b|tt\b|azitromicin|eliminac/.test(n)) {
     return { type: "tool", name: "consultar_tracoma" };
   }
-  // Default for all data/epidemiology questions: force CEVESP lookup
-  if (/casos?|notifica|cevesp|gve|drs|\bse\b|semana.?epi|surto|municipio|quantos|total|esse ano|este ano|ano passado|ultim|dados|situacao|relatorio|indicador|media|trend|cresciment/.test(n)) {
-    return { type: "tool", name: "consultar_cevesp" };
-  }
-  return { type: "auto" };
+  return { type: "tool", name: "consultar_cevesp" };
 }
 
 async function runWithAnthropic(input: CosAgentInput, apiKey: string, model: string): Promise<CosAgentResult> {
