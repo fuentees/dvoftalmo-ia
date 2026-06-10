@@ -8,6 +8,46 @@ import { runTracomaContextQuery } from "@/services/tracoma-analytics";
 import { runCosAgent } from "@/services/cos-agent";
 import type { AiSource } from "@/lib/types";
 
+export type ChartData = {
+  chartType: "bar" | "area" | "pie";
+  title: string;
+  data: Array<{ label: string; value: number }>;
+};
+
+const LABEL_RE  = /gve|municipio|munic|drs|uvis|nome|semana|se\b|ano|mes|subgrupo/i;
+const VALUE_RE  = /total|casos|caso|count|coleta|surto|trein|acao|afasta|enca|faixa|sex/i;
+const CODE_RE   = /ibge|codigo|cnes|numero|^id$/i;
+const TIME_RE   = /semana|se\b|ano|mes/i;
+
+function extractChartData(
+  rows: Record<string, unknown>[],
+  columns: string[],
+  metricLabel: string,
+  timeLabel: string
+): ChartData | null {
+  if (rows.length < 2) return null;
+
+  const safe = columns.filter(c => !CODE_RE.test(c));
+  let labelCol = safe.find(c => LABEL_RE.test(c));
+  let valueCol = safe.find(c => VALUE_RE.test(c) && c !== labelCol);
+
+  if (!labelCol) labelCol = safe.find(c => typeof rows[0]?.[c] === "string") ?? safe[0];
+  if (!valueCol) valueCol = safe.find(c => c !== labelCol && typeof rows[0]?.[c] === "number") ?? safe[1];
+  if (!labelCol || !valueCol) return null;
+
+  const data = rows
+    .slice(0, 12)
+    .map(r => ({ label: String(r[labelCol!] ?? ""), value: Number(r[valueCol!] ?? 0) }))
+    .filter(d => d.label && !isNaN(d.value) && d.value > 0);
+
+  if (data.length < 2) return null;
+
+  const isTime   = TIME_RE.test(labelCol);
+  const chartType = isTime ? "area" : data.length <= 5 ? "pie" : "bar";
+
+  return { chartType, title: `${metricLabel} — ${timeLabel}`, data };
+}
+
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
   const user = await getCurrentUser(supabase);
@@ -94,6 +134,7 @@ export async function POST(request: NextRequest) {
 
   // ── Contextos em tempo real para agentes especializados ───────────────────
   let cevespContext: string | undefined;
+  let cevespChart:   ChartData | null = null;
   let tracomaContext: string | undefined;
   let dataContext: string | undefined;
 
@@ -103,12 +144,14 @@ export async function POST(request: NextRequest) {
         const result = await runCevespAnalysis(body.message);
         if (result.rows && result.rows.length > 0) {
           const rows = result.rows.slice(0, 40);
-          const header = (result.columns ?? Object.keys(rows[0] ?? {})).join(" | ");
+          const cols = result.columns ?? Object.keys(rows[0] ?? {});
+          const header = cols.join(" | ");
           const bodyRows = rows.map((row: Record<string, unknown>) => Object.values(row).join(" | ")).join("\n");
           const interp = Array.isArray(result.interpretation) ? result.interpretation.join("\n") : "";
           cevespContext =
             `Metrica: ${result.metricLabel ?? ""}\nPeriodo: ${result.timeLabel ?? ""}\n\n${header}\n${bodyRows}` +
             (interp ? `\n\nInterpretacao automatica:\n${interp}` : "");
+          cevespChart = extractChartData(rows, cols, result.metricLabel ?? "Dados", result.timeLabel ?? "");
         }
       }
     })(),
@@ -169,7 +212,7 @@ export async function POST(request: NextRequest) {
           sources
         });
         await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
-        send({ t: "done", conversationId, sources });
+        send({ t: "done", conversationId, sources, chartData: cevespChart ?? undefined });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         const isQuota = msg.includes("429") || msg.includes("quota") || msg.includes("insufficient_quota");

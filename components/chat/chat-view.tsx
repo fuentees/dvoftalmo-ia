@@ -3,11 +3,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bot, Check, Download, FileUp, Pencil, Search, Send, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import {
+  Area, AreaChart, Bar, BarChart, CartesianGrid, Cell,
+  Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis
+} from "recharts";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { agentLabels, type AgentKind } from "@/lib/types";
+import type { ChartData } from "@/app/api/chat/route";
 
 // Simple Markdown renderer — handles the most common AI output patterns
 function MarkdownText({ content }: { content: string }) {
@@ -60,11 +65,55 @@ function MarkdownText({ content }: { content: string }) {
   return <div className="space-y-0.5 text-sm">{elements}</div>;
 }
 
+const CHART_COLORS = ["#0f766e", "#2563eb", "#d97706", "#dc2626", "#7c3aed", "#059669", "#db2777", "#ea580c"];
+
+function InlineChart({ chartData }: { chartData: ChartData }) {
+  const mapped = chartData.data.map(d => ({
+    name: d.label.length > 22 ? d.label.slice(0, 20) + "…" : d.label,
+    value: d.value
+  }));
+
+  return (
+    <div className="mt-3 rounded-lg border bg-background/70 p-3">
+      <p className="mb-2 text-xs font-medium text-muted-foreground">{chartData.title}</p>
+      <ResponsiveContainer width="100%" height={200}>
+        {chartData.chartType === "pie" ? (
+          <PieChart>
+            <Pie data={mapped} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={76} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false} fontSize={10}>
+              {mapped.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+            </Pie>
+            <Tooltip formatter={(v: number) => [v.toLocaleString("pt-BR"), ""]} />
+          </PieChart>
+        ) : chartData.chartType === "area" ? (
+          <AreaChart data={mapped}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="name" tick={{ fontSize: 9 }} />
+            <YAxis tick={{ fontSize: 9 }} />
+            <Tooltip formatter={(v: number) => [v.toLocaleString("pt-BR"), "Casos"]} />
+            <Area type="monotone" dataKey="value" stroke="#0f766e" fill="#0f766e" fillOpacity={0.15} strokeWidth={2} />
+          </AreaChart>
+        ) : (
+          <BarChart data={mapped} layout={mapped.length > 6 ? "vertical" : "horizontal"}>
+            <CartesianGrid strokeDasharray="3 3" />
+            {mapped.length > 6
+              ? <><XAxis type="number" tick={{ fontSize: 9 }} /><YAxis dataKey="name" type="category" width={130} tick={{ fontSize: 9 }} /></>
+              : <><XAxis dataKey="name" tick={{ fontSize: 9 }} /><YAxis tick={{ fontSize: 9 }} /></>
+            }
+            <Tooltip formatter={(v: number) => [v.toLocaleString("pt-BR"), "Casos"]} />
+            <Bar dataKey="value" fill="#0f766e" radius={mapped.length > 6 ? [0, 3, 3, 0] : [3, 3, 0, 0]} />
+          </BarChart>
+        )}
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
   sources?: Array<{ title: string; score: number }>;
+  chartData?: ChartData;
 }
 
 interface Conversation {
@@ -157,8 +206,18 @@ export function ChatView() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [localMessages]);
 
-  const [isSending, setIsSending] = useState(false);
-  const [sendError, setSendError] = useState<string | null>(null);
+  const [isSending, setIsSending]     = useState(false);
+  const [sendError, setSendError]     = useState<string | null>(null);
+  const [exportOpen, setExportOpen]   = useState(false);
+  const exportRef                     = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (exportRef.current && !exportRef.current.contains(e.target as Node)) setExportOpen(false);
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
 
   const deleteConversation = useMutation({
     mutationFn: async (id: string) => {
@@ -264,7 +323,11 @@ export function ChatView() {
               } else if (event.t === "done") {
                 setConversationId(event.conversationId as string);
                 setLocalMessages((prev) =>
-                  prev.map((m) => m.id === assistantMsgId ? { ...m, sources: event.sources as Message["sources"] } : m)
+                  prev.map((m) => m.id === assistantMsgId ? {
+                    ...m,
+                    sources: event.sources as Message["sources"],
+                    chartData: event.chartData as ChartData | undefined
+                  } : m)
                 );
                 queryClient.invalidateQueries({ queryKey: ["conversations"] });
               } else if (event.t === "err") {
@@ -403,19 +466,25 @@ export function ChatView() {
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {conversationId && (
-              <div className="relative group">
-                <button className="flex items-center gap-1 h-9 px-3 rounded-md border bg-background text-sm hover:bg-muted">
+              <div ref={exportRef} className="relative">
+                <button
+                  onClick={() => setExportOpen(o => !o)}
+                  className="flex items-center gap-1 h-9 px-3 rounded-md border bg-background text-sm hover:bg-muted"
+                >
                   <Download className="h-4 w-4" />
                   <span className="hidden sm:inline">Exportar</span>
                 </button>
-                <div className="absolute right-0 top-full mt-1 hidden group-hover:flex flex-col bg-popover border rounded-md shadow-md z-10 min-w-[110px]">
-                  {(["txt", "pdf", "docx"] as const).map(fmt => (
-                    <button key={fmt} onClick={() => exportConversation(fmt)}
-                      className="px-4 py-2 text-sm text-left hover:bg-muted capitalize">
-                      {fmt.toUpperCase()}
-                    </button>
-                  ))}
-                </div>
+                {exportOpen && (
+                  <div className="absolute right-0 top-full mt-1 flex flex-col bg-popover border rounded-md shadow-md z-10 min-w-[110px]">
+                    {(["txt", "pdf", "docx"] as const).map(fmt => (
+                      <button key={fmt}
+                        onClick={() => { exportConversation(fmt); setExportOpen(false); }}
+                        className="px-4 py-2 text-sm text-left hover:bg-muted">
+                        {fmt.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             <select
@@ -476,6 +545,9 @@ export function ChatView() {
                 {item.role === "assistant"
                   ? <MarkdownText content={item.content} />
                   : <div className="whitespace-pre-wrap text-sm leading-6">{item.content}</div>}
+                {item.role === "assistant" && item.chartData && (
+                  <InlineChart chartData={item.chartData} />
+                )}
                 {item.sources && item.sources.length > 0 && (
                   <div className="mt-3 border-t pt-3 text-xs text-muted-foreground">
                     Fontes: {item.sources.map((s) => s.title).join(", ")}
