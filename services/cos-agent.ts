@@ -477,6 +477,21 @@ const ANTHROPIC_TOOLS: Anthropic.Tool[] = COS_TOOLS
     input_schema: t.function.parameters as Anthropic.Tool["input_schema"]
   }));
 
+// Detect which tool to force on step 0 based on the message content.
+// Without this, "any" lets Claude pick buscar_documentos for data questions
+// and then respond with a generic "no access" message when it returns empty.
+function detectStep0Tool(message: string): Anthropic.ToolChoiceAuto | Anthropic.ToolChoiceTool {
+  const n = message.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  if (/tracoma|tf\b|tt\b|azitromicin|eliminac|prevaelenc|examinad/.test(n)) {
+    return { type: "tool", name: "consultar_tracoma" };
+  }
+  // Default for all data/epidemiology questions: force CEVESP lookup
+  if (/casos?|notifica|cevesp|gve|drs|\bse\b|semana.?epi|surto|municipio|quantos|total|esse ano|este ano|ano passado|ultim|dados|situacao|relatorio|indicador|media|trend|cresciment/.test(n)) {
+    return { type: "tool", name: "consultar_cevesp" };
+  }
+  return { type: "auto" };
+}
+
 async function runWithAnthropic(input: CosAgentInput, apiKey: string, model: string): Promise<CosAgentResult> {
   const client = new Anthropic({ apiKey });
   type AnthropicMsg = Anthropic.MessageParam;
@@ -487,12 +502,13 @@ async function runWithAnthropic(input: CosAgentInput, apiKey: string, model: str
   const system = buildSystemPrompt("cos");
   const allSources: AiSource[] = [];
   const toolsUsed: string[] = [];
+  const step0Tool = detectStep0Tool(input.message);
 
   for (let step = 0; step < 8; step++) {
     const response = await client.messages.create({
       model, max_tokens: 4096, temperature: 0.2,
       system, tools: ANTHROPIC_TOOLS,
-      tool_choice: step === 0 ? { type: "any" } : { type: "auto" },
+      tool_choice: step === 0 ? step0Tool : { type: "auto" },
       messages
     });
 
