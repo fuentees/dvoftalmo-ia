@@ -255,7 +255,12 @@ async function executeTool(
   if (name === "consultar_cevesp") {
     try {
       const result = await runCevespAnalysis(String(args.pergunta ?? ""));
-      if (!result.rows?.length) return { content: "Nenhum dado CEVESP encontrado para essa consulta." };
+      if (!result.rows?.length) {
+        const diagInfo = Array.isArray(result.interpretation) && result.interpretation.length > 0
+          ? result.interpretation.join(" ")
+          : "Nenhum dado encontrado para os filtros aplicados.";
+        return { content: `CEVESP — sem resultados: ${diagInfo}` };
+      }
 
       const { valid, excluded, suspicious, warnings } = validateDates(result.rows as Record<string, unknown>[]);
 

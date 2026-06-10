@@ -101,15 +101,34 @@ export async function runCevespAnalysisCached(
 
   const rows = (data ?? []) as Array<{ label: string; valor: number }>;
 
-  // Diagnostic: if 0 rows, fetch total count so agent can explain why
+  // Diagnostic: if 0 rows, use a direct count to explain why
   if (rows.length === 0) {
-    const diagRes = await supabase.rpc("cevesp_diagnostico");
-    const diag = (diagRes.data as Array<Record<string, unknown>> | null)?.[0];
-    const totalRows = Number(diag?.total_registros ?? 0);
-    const anos = String(diag?.anos_disponiveis ?? "desconhecido");
-    const diagMsg = totalRows === 0
-      ? "A tabela cevesp_notificacoes está vazia. Execute a sincronização (Configurações → Sincronizar CEVESP)."
-      : `O cache CEVESP tem ${totalRows} registros (anos: ${anos}), mas nenhum corresponde aos filtros aplicados (p_ano_start=${dr.anoStart ?? "null"}, p_ano_end=${dr.anoEnd ?? "null"}).`;
+    const [countAll, countFiltered] = await Promise.all([
+      supabase.from("cevesp_notificacoes").select("id", { count: "exact", head: true }),
+      dr.anoStart != null
+        ? supabase.from("cevesp_notificacoes")
+            .select("id", { count: "exact", head: true })
+            .eq("ANO", dr.anoStart)
+        : Promise.resolve({ count: null, error: null })
+    ]);
+    const totalRows = countAll.count ?? 0;
+    const filteredRows = countFiltered.count ?? 0;
+
+    let diagMsg: string;
+    if (totalRows === 0) {
+      diagMsg = "A tabela cevesp_notificacoes está vazia. Execute a sincronização (Configurações → Sincronizar CEVESP).";
+    } else if (dr.anoStart != null && filteredRows === 0) {
+      const { data: anosData } = await supabase
+        .from("cevesp_notificacoes")
+        .select('"ANO"')
+        .not('"ANO"', "is", null)
+        .order('"ANO"', { ascending: false })
+        .limit(5);
+      const anos = [...new Set((anosData ?? []).map((r: Record<string, unknown>) => r["ANO"]))].join(", ") || "desconhecido";
+      diagMsg = `O cache CEVESP tem ${totalRows} registros no total, mas nenhum com ANO=${dr.anoStart}. Anos disponíveis: ${anos}.`;
+    } else {
+      diagMsg = `O cache CEVESP tem ${totalRows} registros, mas nenhum passou pelos filtros desta consulta.`;
+    }
     return {
       question,
       analysis,
