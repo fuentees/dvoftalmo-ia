@@ -491,7 +491,9 @@ async function runWithAnthropic(input: CosAgentInput, apiKey: string, model: str
   for (let step = 0; step < 8; step++) {
     const response = await client.messages.create({
       model, max_tokens: 4096, temperature: 0.2,
-      system, tools: ANTHROPIC_TOOLS, tool_choice: { type: "auto" }, messages
+      system, tools: ANTHROPIC_TOOLS,
+      tool_choice: step === 0 ? { type: "any" } : { type: "auto" },
+      messages
     });
 
     const textBlock = response.content.find((b) => b.type === "text");
