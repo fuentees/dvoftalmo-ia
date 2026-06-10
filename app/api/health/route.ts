@@ -31,6 +31,7 @@ export async function GET() {
       status: allOk ? "ok" : "degraded",
       provider: providerName,
       timestamp: new Date().toISOString(),
+      commit: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "local",
       checks
     },
     { status: allOk ? 200 : 503 }
