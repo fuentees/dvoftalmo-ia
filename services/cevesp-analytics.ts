@@ -440,7 +440,20 @@ function buildWhere(analysis: CevespAnalysis) {
 
 export async function runCevespAnalysis(question: string) {
   const analysis = await parseCevespQuestion(question);
-  const table = quoteIdentifier(getNotificationTableName());
+
+  // Se não há configuração de MySQL, tenta diretamente o cache Supabase
+  if (!process.env.NOTIFY_DB_HOST) {
+    const { runCevespAnalysisCached } = await import("@/lib/external/supabase-cevesp");
+    return runCevespAnalysisCached(question, analysis);
+  }
+
+  let table: string;
+  try {
+    table = quoteIdentifier(getNotificationTableName());
+  } catch {
+    const { runCevespAnalysisCached } = await import("@/lib/external/supabase-cevesp");
+    return runCevespAnalysisCached(question, analysis);
+  }
   const metric = metrics[analysis.metric];
   const selectedDimensions = analysis.dimensions.map((dimension) => dimensions[dimension]);
   const grain = timeGrains[analysis.time_grain];
@@ -483,8 +496,9 @@ export async function runCevespAnalysis(question: string) {
   const limit = Math.min(analysis.limit ?? 100, 500);
 
   const sql = `select ${selectParts.join(", ")} from ${table} ${where.sql} ${groupSql} ${orderSql} limit ${limit}`;
-  const connection = await createNotificationConnection();
+  let connection: Awaited<ReturnType<typeof createNotificationConnection>> | null = null;
   try {
+    connection = await createNotificationConnection();
     const [rows] = await connection.query(sql, where.params);
     const rawRows = rows as Array<Record<string, unknown>>;
     const dimensionLabels = selectedDimensions.map((dimension) => dimension.label);
@@ -500,8 +514,16 @@ export async function runCevespAnalysis(question: string) {
       rows: transformed.rows,
       interpretation: interpretResult(question, metric.label, transformed.rows)
     };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // MySQL inacessível → fallback para cache Supabase
+    if (msg.includes("ECONNREFUSED") || msg.includes("ETIMEDOUT") || msg.includes("ENOTFOUND") || msg.includes("connect")) {
+      const { runCevespAnalysisCached } = await import("@/lib/external/supabase-cevesp");
+      return runCevespAnalysisCached(question, analysis);
+    }
+    throw err;
   } finally {
-    await connection.end();
+    await connection?.end();
   }
 }
 

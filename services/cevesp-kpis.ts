@@ -1,4 +1,6 @@
 import { createNotificationConnection, getNotificationTableName } from "@/lib/external/notification-db";
+import { getCacheSyncInfo } from "@/lib/external/supabase-cevesp";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 const identifierPattern = /^[a-zA-Z0-9_]+$/;
 
@@ -25,9 +27,71 @@ export interface CevespKpis {
   generatedAt: string;
 }
 
+async function fetchKpisFromCache(): Promise<CevespKpis> {
+  const supabase = createAdminClient();
+  const year = new Date().getFullYear();
+
+  const { data: kpisData } = await supabase.rpc("cevesp_kpis_cache", {
+    p_ano: year,
+    p_se:  null
+  });
+
+  const kpis = (kpisData as Array<Record<string, unknown>> | null)?.[0] ?? {};
+  const cw   = toNum(kpis.current_cases);
+  const pw   = toNum(kpis.prev_cases);
+  const cy   = toNum(kpis.year_cases);
+  const py   = toNum(kpis.prev_year_cases);
+  const se   = toNum(kpis.current_se);
+  const prevSe = toNum(kpis.prev_se);
+
+  const { data: topMunic } = await supabase.rpc("cevesp_aggregate", {
+    p_metric:    "total_casos",
+    p_dimension: "municipio",
+    p_ano_start: year,
+    p_ano_end:   year,
+    p_se_start:  se || null,
+    p_se_end:    se || null,
+    p_lim:       5
+  });
+
+  const { lastSync, totalRows } = await getCacheSyncInfo();
+  const note = lastSync
+    ? ` (cache — última sync ${new Date(lastSync).toLocaleDateString("pt-BR")}; ${totalRows.toLocaleString("pt-BR")} registros)`
+    : " (cache — sem dados sincronizados)";
+
+  return {
+    currentWeek:  { se, year, cases: cw },
+    previousWeek: { se: prevSe, year, cases: pw },
+    weekDelta:    pw > 0 ? Number(((cw - pw) / pw * 100).toFixed(1)) : null,
+    currentYear:  { year, cases: cy },
+    previousYear: { year: year - 1, cases: py },
+    yearDelta:    py > 0 ? Number(((cy - py) / py * 100).toFixed(1)) : null,
+    outbreaksCurrentYear:     0,
+    collectionsCurrentYear:   0,
+    topMunicipalitiesCurrentWeek: ((topMunic ?? []) as Array<{label: string; valor: number}>).map(r => ({
+      name:  r.label,
+      cases: r.valor
+    })),
+    generatedAt: new Date().toISOString() + note
+  };
+}
+
 export async function fetchCevespKpis(): Promise<CevespKpis> {
-  const table = quoteIdentifier(getNotificationTableName());
-  const connection = await createNotificationConnection();
+  if (!process.env.NOTIFY_DB_HOST) return fetchKpisFromCache();
+
+  let table: string;
+  try {
+    table = quoteIdentifier(getNotificationTableName());
+  } catch {
+    return fetchKpisFromCache();
+  }
+
+  let connection: Awaited<ReturnType<typeof createNotificationConnection>> | null = null;
+  try {
+    connection = await createNotificationConnection();
+  } catch {
+    return fetchKpisFromCache();
+  }
 
   try {
     const [cwRows] = await connection.query(`
@@ -105,7 +169,13 @@ export async function fetchCevespKpis(): Promise<CevespKpis> {
       })),
       generatedAt: new Date().toISOString()
     };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("ECONNREFUSED") || msg.includes("ETIMEDOUT") || msg.includes("ENOTFOUND") || msg.includes("connect")) {
+      return fetchKpisFromCache();
+    }
+    throw err;
   } finally {
-    await connection.end();
+    await connection?.end();
   }
 }
