@@ -439,10 +439,14 @@ async function runWithOpenAI(input: CosAgentInput, apiKey: string, model: string
   ];
   const allSources: AiSource[] = [];
   const toolsUsed: string[] = [];
+  const forcedTool = step0ToolName(input.message);
 
   for (let step = 0; step < 8; step++) {
+    const toolChoice = step === 0
+      ? { type: "function" as const, function: { name: forcedTool } }
+      : "auto" as const;
     const response = await client.chat.completions.create({
-      model, temperature: 0.2, tools: COS_TOOLS, tool_choice: "auto", messages
+      model, temperature: 0.2, tools: COS_TOOLS, tool_choice: toolChoice, messages
     });
     const assistantMsg = response.choices[0].message;
     messages.push(assistantMsg as OpenAI.ChatCompletionMessageParam);
@@ -487,12 +491,10 @@ const ANTHROPIC_TOOLS: Anthropic.Tool[] = COS_TOOLS
 // with a generic "no access" message when embeddings are unavailable.
 // Strategy: tracoma questions → consultar_tracoma; everything else → consultar_cevesp.
 // Claude can still call other tools on step 1+ via tool_choice:"auto".
-function detectStep0Tool(message: string): { type: "tool"; name: string } {
+function step0ToolName(message: string): string {
   const n = message.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-  if (/tracoma|tf\b|tt\b|azitromicin|eliminac/.test(n)) {
-    return { type: "tool", name: "consultar_tracoma" };
-  }
-  return { type: "tool", name: "consultar_cevesp" };
+  if (/tracoma|tf\b|tt\b|azitromicin|eliminac/.test(n)) return "consultar_tracoma";
+  return "consultar_cevesp";
 }
 
 async function runWithAnthropic(input: CosAgentInput, apiKey: string, model: string): Promise<CosAgentResult> {
@@ -505,13 +507,13 @@ async function runWithAnthropic(input: CosAgentInput, apiKey: string, model: str
   const system = buildSystemPrompt("cos");
   const allSources: AiSource[] = [];
   const toolsUsed: string[] = [];
-  const step0Tool = detectStep0Tool(input.message);
+  const forcedTool = step0ToolName(input.message);
 
   for (let step = 0; step < 8; step++) {
     const response = await client.messages.create({
       model, max_tokens: 4096, temperature: 0.2,
       system, tools: ANTHROPIC_TOOLS,
-      tool_choice: step === 0 ? step0Tool : { type: "auto" },
+      tool_choice: step === 0 ? { type: "tool", name: forcedTool } : { type: "auto" },
       messages
     });
 
