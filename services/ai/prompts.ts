@@ -81,5 +81,8 @@ const agentPrompts: Record<AgentKind, string> = {
 };
 
 export function buildSystemPrompt(agent: AgentKind) {
-  return `${basePrompt}\n\nEspecialidade ativa:\n${agentPrompts[agent]}`;
+  const now = new Date();
+  const dateStr = now.toLocaleDateString("pt-BR", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  const dateLine = `Data e hora atual do sistema: ${dateStr} (${now.toISOString()}). Ano atual: ${now.getFullYear()}.`;
+  return `${basePrompt}\n\n${dateLine}\n\nEspecialidade ativa:\n${agentPrompts[agent]}`;
 }
