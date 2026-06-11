@@ -9,6 +9,7 @@ import { fetchTracomaSurveys, estimateAzithromycin } from "@/services/tracoma-an
 import { retrieveContext } from "@/services/ai/rag";
 import { findInvalidRecords, saveCorrectionsToQueue } from "@/services/cevesp-corrections";
 import { getNotificationTableName } from "@/lib/external/notification-db";
+import { auditarSinanTracoma } from "@/services/sinan-tracoma";
 // 5-min in-memory cache for tracoma queries (REDCap is slow and data rarely changes)
 const tracomaCache = new Map<string, { data: TracomaSurveyResult[]; expiresAt: number }>();
 
@@ -97,6 +98,28 @@ const COS_TOOLS: OpenAI.ChatCompletionTool[] = [
             type: "number",
             description: "Máximo de registros a retornar (padrão: 50, máximo: 100)"
           }
+        },
+        required: []
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "auditar_sinan_tracoma",
+      description:
+        "Audita qualidade e consistência dos dados SINAN Tracoma. " +
+        "Detecta: divergências entre TRACONET (consolidado) e NOTTRACONET (casos individuais) por município/ano, " +
+        "casos sem graduação TF/TT, sem tratamento registrado, sem conclusão, TF sem tratamento, " +
+        "TT sem cirurgia/epilation, anos impossíveis e completude de campos-chave. " +
+        "Use para perguntas sobre completude, subregistro, inconsistências ou qualidade dos dados SINAN tracoma.",
+      parameters: {
+        type: "object",
+        properties: {
+          municipio: { type: "string", description: "Filtrar por município (opcional)" },
+          gve: { type: "string", description: "Filtrar por GVE/regional de saúde (opcional)" },
+          year_start: { type: "number", description: "Ano de início do filtro (opcional)" },
+          year_end: { type: "number", description: "Ano fim do filtro (opcional)" }
         },
         required: []
       }
@@ -363,6 +386,51 @@ async function executeTool(
     }
   }
 
+  if (name === "auditar_sinan_tracoma") {
+    try {
+      const result = await auditarSinanTracoma({
+        municipio: args.municipio ? String(args.municipio) : undefined,
+        gve: args.gve ? String(args.gve) : undefined,
+        yearStart: args.year_start ? Number(args.year_start) : undefined,
+        yearEnd: args.year_end ? Number(args.year_end) : undefined
+      });
+      const lines: string[] = [
+        `=== AUDITORIA SINAN TRACOMA ===`,
+        `Total TRACONET (consolidado): ${result.totalTraconet}`,
+        `Total NOTTRACONET (individuais): ${result.totalNottraconet}`
+      ];
+      if (result.crossBankDivergences.length > 0) {
+        lines.push(`\n--- Divergências TRACONET vs NOTTRACONET (${result.crossBankDivergences.length}) ---`);
+        for (const d of result.crossBankDivergences.slice(0, 20)) {
+          lines.push(`  ${d.municipio} ${d.ano}: consolidado=${d.traconet} individuais=${d.nottraconet} diff=${d.diff > 0 ? "+" : ""}${d.diff} [risco ${d.risco}]`);
+        }
+        if (result.crossBankDivergences.length > 20) {
+          lines.push(`  ... e mais ${result.crossBankDivergences.length - 20} divergências.`);
+        }
+      } else {
+        lines.push(`\nSem divergências entre TRACONET e NOTTRACONET.`);
+      }
+      lines.push(`\n--- Completude dos campos ---`);
+      for (const [field, stat] of Object.entries(result.fieldCompleteness)) {
+        lines.push(`  ${field}: ${stat.filled}/${stat.total} (${stat.pct.toFixed(1)}%)`);
+      }
+      lines.push(`\n--- Alertas de qualidade ---`);
+      lines.push(`  Sem graduação TF/TT: ${result.semGraduacao}`);
+      lines.push(`  Sem tratamento: ${result.semTratamento}`);
+      lines.push(`  Sem conclusão: ${result.semConclusao}`);
+      lines.push(`  TF confirmado sem tratamento: ${result.tfSemTratamento}`);
+      lines.push(`  TT confirmado sem cirurgia/epilation: ${result.ttSemCircurgia}`);
+      lines.push(`  Registros com ano impossível: ${result.anoImpossivel}`);
+      if (result.recommendations.length > 0) {
+        lines.push(`\n--- Recomendações ---`);
+        result.recommendations.forEach((r, i) => lines.push(`  ${i + 1}. ${r}`));
+      }
+      return { content: lines.join("\n") };
+    } catch (err) {
+      return { content: `Erro na auditoria SINAN: ${err instanceof Error ? err.message : String(err)}` };
+    }
+  }
+
   if (name === "propor_correcao_cevesp") {
     try {
       const tableName = getNotificationTableName();
@@ -473,6 +541,9 @@ const ANTHROPIC_TOOLS: Anthropic.Tool[] = COS_TOOLS
 // Claude can still call other tools on step 1+ via tool_choice:"auto".
 function step0ToolName(message: string): string {
   const n = message.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  if (/auditoria|completude|subregistro|inconsistencia|sem tratamento|sem graduacao|sem conclusao|divergencia|traconet|nottraconet|qualidade.*sinan|sinan.*qualidade/.test(n)) {
+    return "auditar_sinan_tracoma";
+  }
   if (/tracoma|tf\b|tt\b|azitromicin|eliminac/.test(n)) return "consultar_tracoma";
   return "consultar_cevesp";
 }

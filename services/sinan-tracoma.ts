@@ -316,6 +316,167 @@ function labelForDimension(dimension: string) {
   return dimension;
 }
 
+// ── Cross-bank divergence + deep quality audit ────────────────────────────────
+
+export interface SinanAuditResult {
+  totalTraconet: number;
+  totalNottraconet: number;
+  crossBankDivergences: Array<{
+    municipio: string;
+    ano: number;
+    traconet: number;
+    nottraconet: number;
+    diff: number;
+    risco: "alto" | "medio" | "baixo";
+  }>;
+  fieldCompleteness: Record<string, { total: number; filled: number; pct: number }>;
+  semGraduacao: number;          // classificacao em branco
+  semTratamento: number;         // tratamento em branco
+  semConclusao: number;          // conclusao em branco
+  tfSemTratamento: number;       // TF confirmado mas sem tratamento
+  ttSemCircurgia: number;        // TT confirmado mas conclusao/tratamento não indica cirurgia
+  anoImpossivel: number;         // ano < 1975 ou > ano atual
+  recommendations: string[];
+}
+
+function normalizeBankLabel(v: unknown): string {
+  const s = String(v ?? "").toLowerCase().trim();
+  if (s.includes("tf") || s.includes("folicular") || s === "1" || s === "tf") return "TF";
+  if (s.includes("tt") || s.includes("triqui") || s === "2" || s === "tt") return "TT";
+  if (s.includes("tf") && s.includes("tt")) return "TF+TT";
+  if (s.includes("4") || s.includes("nao tracoma") || s.includes("não tracoma")) return "Nao tracoma";
+  if (s.includes("5") || s.includes("inconclusivo")) return "Inconclusivo";
+  return s || "Nao preenchido";
+}
+
+export async function auditarSinanTracoma(opts?: {
+  municipio?: string;
+  gve?: string;
+  yearStart?: number;
+  yearEnd?: number;
+}): Promise<SinanAuditResult> {
+  const supabase = createAdminClient();
+
+  let query = supabase
+    .from("sinan_tracoma_rows")
+    .select("source_bank, agravo, ano, municipio, gve, drs, classificacao, criterio, evolucao, tratamento, conclusao");
+
+  if (opts?.municipio) query = query.ilike("municipio", `%${opts.municipio}%`);
+  if (opts?.gve)       query = query.ilike("gve", `%${opts.gve}%`);
+  if (opts?.yearStart) query = query.gte("ano", opts.yearStart);
+  if (opts?.yearEnd)   query = query.lte("ano", opts.yearEnd);
+
+  const { data, error } = await query.limit(200000);
+  if (error) throw new Error(`SINAN auditoria: ${error.message}`);
+  const rows = (data ?? []) as Array<Record<string, unknown>>;
+
+  const traconetRows    = rows.filter((r) => r.source_bank === "traconet");
+  const nottraconetRows = rows.filter((r) => r.source_bank === "nottraconet");
+
+  // ── Cross-bank comparison per municipio×ano ───────────────────────────────
+  function countByKey(rs: typeof rows) {
+    const m = new Map<string, number>();
+    for (const r of rs) {
+      const key = `${r.municipio ?? "?"}|${r.ano ?? "?"}`;
+      m.set(key, (m.get(key) ?? 0) + 1);
+    }
+    return m;
+  }
+
+  const traconetMap    = countByKey(traconetRows);
+  const nottraconetMap = countByKey(nottraconetRows);
+  const allKeys = new Set([...traconetMap.keys(), ...nottraconetMap.keys()]);
+
+  const crossBankDivergences: SinanAuditResult["crossBankDivergences"] = [];
+  for (const key of allKeys) {
+    const tc  = traconetMap.get(key)    ?? 0;
+    const ntc = nottraconetMap.get(key) ?? 0;
+    const diff = tc - ntc;
+    if (diff === 0) continue;
+    const [municipio, anoStr] = key.split("|");
+    const abs = Math.abs(diff);
+    crossBankDivergences.push({
+      municipio,
+      ano: Number(anoStr) || 0,
+      traconet: tc,
+      nottraconet: ntc,
+      diff,
+      risco: abs >= 10 ? "alto" : abs >= 3 ? "medio" : "baixo"
+    });
+  }
+  crossBankDivergences.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+
+  // ── Field completeness ────────────────────────────────────────────────────
+  const fields = ["agravo", "municipio", "gve", "classificacao", "criterio", "tratamento", "conclusao", "evolucao"];
+  const fieldCompleteness: SinanAuditResult["fieldCompleteness"] = {};
+  for (const f of fields) {
+    const filled = rows.filter((r) => !isBlank(r[f])).length;
+    fieldCompleteness[f] = { total: rows.length, filled, pct: rows.length ? Math.round((filled / rows.length) * 100) : 0 };
+  }
+
+  // ── Tracoma-specific quality ──────────────────────────────────────────────
+  const currentYear = new Date().getFullYear();
+  const semGraduacao  = rows.filter((r) => isBlank(r.classificacao)).length;
+  const semTratamento = rows.filter((r) => isBlank(r.tratamento)).length;
+  const semConclusao  = rows.filter((r) => isBlank(r.conclusao)).length;
+
+  const tfRows = rows.filter((r) => {
+    const cls = normalizeBankLabel(r.classificacao);
+    return cls === "TF" || cls === "TF+TT";
+  });
+  const ttRows = rows.filter((r) => {
+    const cls = normalizeBankLabel(r.classificacao);
+    return cls === "TT" || cls === "TF+TT";
+  });
+
+  const tfSemTratamento = tfRows.filter((r) => isBlank(r.tratamento)).length;
+  const ttSemCircurgia  = ttRows.filter((r) => {
+    const trat = String(r.tratamento ?? "").toLowerCase();
+    const conc = String(r.conclusao ?? "").toLowerCase();
+    return !trat.includes("cirurg") && !trat.includes("epila") && !conc.includes("cirurg");
+  }).length;
+
+  const anoImpossivel = rows.filter((r) => {
+    const ano = Number(r.ano);
+    return Number.isFinite(ano) && (ano < 1975 || ano > currentYear);
+  }).length;
+
+  // ── Recommendations ───────────────────────────────────────────────────────
+  const rec: string[] = [];
+  const altoDivergencia = crossBankDivergences.filter((d) => d.risco === "alto");
+  if (altoDivergencia.length > 0) {
+    const top3 = altoDivergencia.slice(0, 3).map((d) => `${d.municipio} (${d.ano}): TRACONET=${d.traconet}, NOTTRACONET=${d.nottraconet}`).join("; ");
+    rec.push(`SUBREGISTRO POTENCIAL em ${altoDivergencia.length} municipio(s)/periodo(s) com divergencia alta entre bancos. Exemplos: ${top3}.`);
+  }
+  if (semGraduacao > 0) {
+    const pct = rows.length ? Math.round((semGraduacao / rows.length) * 100) : 0;
+    rec.push(`${semGraduacao} caso(s) (${pct}%) sem graduacao TF/TT preenchida (campo classificacao vazio). Impede calculo de prevalencia e definicao de conduta.`);
+  }
+  if (tfSemTratamento > 0) rec.push(`${tfSemTratamento} caso(s) classificado(s) como TF confirmado sem campo de tratamento preenchido. Verificar se azitromicina foi prescrita/registrada.`);
+  if (ttSemCircurgia > 0)  rec.push(`${ttSemCircurgia} caso(s) com TT confirmado sem indicacao de cirurgia ou epilation no campo de tratamento/conclusao. Risco de progressao para cegueira.`);
+  if (semConclusao > 0)    rec.push(`${semConclusao} caso(s) sem conclusao/classificacao final preenchida.`);
+  if (anoImpossivel > 0)   rec.push(`${anoImpossivel} registro(s) com ano impossivel (< 1975 ou > ${currentYear}). Corrigir data de notificacao na fonte.`);
+  const baixoPct = Object.entries(fieldCompleteness)
+    .filter(([, v]) => v.pct < 50 && v.total > 0)
+    .map(([k, v]) => `${k}: ${v.pct}%`);
+  if (baixoPct.length > 0) rec.push(`Campos com completude < 50%: ${baixoPct.join(", ")}. Verificar mapeamento do arquivo importado.`);
+  if (rec.length === 0) rec.push("Nenhuma inconsistencia critica detectada. Dados com boa completude e sem divergencias expressivas entre bancos.");
+
+  return {
+    totalTraconet: traconetRows.length,
+    totalNottraconet: nottraconetRows.length,
+    crossBankDivergences: crossBankDivergences.slice(0, 50),
+    fieldCompleteness,
+    semGraduacao,
+    semTratamento,
+    semConclusao,
+    tfSemTratamento,
+    ttSemCircurgia,
+    anoImpossivel,
+    recommendations: rec
+  };
+}
+
 export async function runSinanTracomaContextQuery(message: string) {
   const result = await runSinanTracomaAnalysis(message);
   const header = result.columns.join(" | ");
