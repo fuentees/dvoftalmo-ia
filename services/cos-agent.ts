@@ -9,7 +9,7 @@ import { fetchTracomaSurveys, estimateAzithromycin } from "@/services/tracoma-an
 import { retrieveContext } from "@/services/ai/rag";
 import { findInvalidRecords, saveCorrectionsToQueue } from "@/services/cevesp-corrections";
 import { getNotificationTableName } from "@/lib/external/notification-db";
-import { auditarSinanTracoma } from "@/services/sinan-tracoma";
+import { auditarSinanTracoma, runSinanTracomaAnalysis } from "@/services/sinan-tracoma";
 // 5-min in-memory cache for tracoma queries (REDCap is slow and data rarely changes)
 const tracomaCache = new Map<string, { data: TracomaSurveyResult[]; expiresAt: number }>();
 
@@ -100,6 +100,27 @@ const COS_TOOLS: OpenAI.ChatCompletionTool[] = [
           }
         },
         required: []
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "consultar_sinan_tracoma",
+      description:
+        "Consulta o cache SINAN Tracoma (bancos TRACONET e NOTTRACONET). " +
+        "Retorna contagens agrupadas por município, GVE, DRS, ano, banco, classificação ou agravo. " +
+        "Use para perguntas sobre casos de tracoma notificados, distribuição por região/ano, " +
+        "comparação entre bancos, casos TF/TT no SINAN.",
+      parameters: {
+        type: "object",
+        properties: {
+          pergunta: {
+            type: "string",
+            description: "Pergunta em linguagem natural sobre os dados SINAN Tracoma. Ex.: total de casos TT por município em 2023"
+          }
+        },
+        required: ["pergunta"]
       }
     }
   },
@@ -386,6 +407,31 @@ async function executeTool(
     }
   }
 
+  if (name === "consultar_sinan_tracoma") {
+    try {
+      const result = await runSinanTracomaAnalysis(String(args.pergunta ?? ""));
+      if (!result.rows?.length) {
+        return { content: `SINAN Tracoma — sem resultados. ${result.interpretation?.join(" ") ?? ""}` };
+      }
+      const cols = result.columns ?? Object.keys(result.rows[0] ?? {});
+      const header = cols.join(" | ");
+      const rowLines = result.rows.slice(0, 60).map((r) =>
+        cols.map((c) => String(r[c] ?? "")).join(" | ")
+      ).join("\n");
+      const interp = result.interpretation?.length
+        ? "\n\nInterpretação: " + result.interpretation.join(" ")
+        : "";
+      return {
+        content:
+          `SINAN Tracoma | ${result.metricLabel ?? ""} | ${result.timeLabel ?? ""}\n` +
+          `Total de registros: ${result.rows.find((r) => String(r[cols[0]]) === "Total")?.Valor ?? result.rows.length}\n\n` +
+          `${header}\n${rowLines}${interp}`
+      };
+    } catch (err) {
+      return { content: `Erro SINAN Tracoma: ${err instanceof Error ? err.message : String(err)}` };
+    }
+  }
+
   if (name === "auditar_sinan_tracoma") {
     try {
       const result = await auditarSinanTracoma({
@@ -544,6 +590,7 @@ function step0ToolName(message: string): string {
   if (/auditoria|completude|subregistro|inconsistencia|sem tratamento|sem graduacao|sem conclusao|divergencia|traconet|nottraconet|qualidade.*sinan|sinan.*qualidade/.test(n)) {
     return "auditar_sinan_tracoma";
   }
+  if (/sinan/.test(n)) return "consultar_sinan_tracoma";
   if (/tracoma|tf\b|tt\b|azitromicin|eliminac/.test(n)) return "consultar_tracoma";
   return "consultar_cevesp";
 }
