@@ -33,10 +33,12 @@ const fieldCandidates = {
   gve: ["GVE", "GVE_NOME", "NM_GVE", "REGIONAL", "REG_SAUDE"],
   drs: ["DRS", "DRS_NOME", "NM_DRS"],
   unidade: ["ID_UNIDADE", "UNIDADE", "NM_UNIDADE", "CNES", "ID_CNES"],
+  // TRACONET individual: CLASSI_FIN pode não existir — derivado de FORMA_TF/TT/etc. em normalizeSinanTracomaRow
   classificacao: ["CLASSI_FIN", "CLASSIFICACAO", "CLASSIFIN", "CRITERIO_CONF"],
   criterio: ["CRITERIO", "CRITERIO_CONF", "TP_CRITERIO"],
   evolucao: ["EVOLUCAO", "EVOL_CASO", "TP_EVOLUCAO"],
-  tratamento: ["TRATAMENTO", "TRAT", "ID_TRATAM", "ANTIBIOTIC", "AZITROMIC", "MEDICAMENTO", "DOSE", "DT_TRAT"],
+  // ENCAMINHA = encaminhamento para cirurgia (1=Sim) — usado na detecção TT sem cirurgia
+  tratamento: ["TRATAMENTO", "TRAT", "ID_TRATAM", "ANTIBIOTIC", "AZITROMIC", "MEDICAMENTO", "DOSE", "DT_TRAT", "ENCAMINHA", "ST_ENCAMINHA"],
   conclusao: ["CONCLUSAO", "DT_CONCLUSAO", "SIT_CONCLU", "CLASSI_FIN", "CLASSIFICACAO"]
 };
 
@@ -88,9 +90,69 @@ function rowKey(row: RawRow, bank: SinanTracomaBank) {
   return createHash("sha256").update(seed).digest("hex");
 }
 
+// Para TRACONET, a forma clínica vem de campos booleanos separados (dicionário SINAN v5).
+// "1" = Sim, "2" = Não, "9" = Ignorado.
+function deriveTraconetClassificacao(row: RawRow): string | null {
+  const keys = Object.keys(row);
+  function flag(candidates: string[]) {
+    const key = keys.find((k) => candidates.some((c) => k.toLowerCase() === c.toLowerCase()));
+    return key ? String(row[key] ?? "").trim() : null;
+  }
+  const tf = flag(["FORMA_TF", "TP_FORMA_CLINICA_TF", "TF"]);
+  const tt = flag(["FORMA_TT", "TP_FORMA_CLINICA_TT", "TT"]);
+  const ti = flag(["FORMA_TI", "TP_FORMA_CLINICA_TI", "TI"]);
+  const ts = flag(["FORMA_TS", "TP_FORMA_CLINICA_TS", "TS"]);
+  const co = flag(["FORMA_CO", "TP_FORMA_CLINICA_CO", "CO"]);
+
+  const formas: string[] = [];
+  if (tf === "1") formas.push("TF");
+  if (tt === "1") formas.push("TT");
+  if (ti === "1") formas.push("TI");
+  if (ts === "1") formas.push("TS");
+  if (co === "1") formas.push("CO");
+  if (formas.length > 0) return formas.join("+");
+
+  // Se todos são "2" (Não), caso sem forma clínica positiva
+  const allNo = [tf, tt, ti, ts, co].filter((v) => v !== null);
+  if (allNo.length > 0 && allNo.every((v) => v === "2")) return "Sem forma positiva";
+
+  return null; // campos não encontrados — fallback para CLASSI_FIN no chamador
+}
+
+// Para TRACONET, encaminhamento cirúrgico é campo ENCAMINHA (1=Sim, 2=Não, 9=Ignorado)
+function deriveEncaminhamento(row: RawRow): string | null {
+  const keys = Object.keys(row);
+  const key = keys.find((k) =>
+    ["encaminha", "st_encaminha_cirugia", "st_encaminha", "encaminhamento"].includes(k.toLowerCase())
+  );
+  if (!key) return null;
+  const v = String(row[key] ?? "").trim();
+  if (v === "1") return "Sim";
+  if (v === "2") return "Não";
+  if (v === "9") return "Ignorado";
+  return v || null;
+}
+
 export function normalizeSinanTracomaRow(row: RawRow, bank: SinanTracomaBank): NormalizedSinanRow {
   const date = normalizeDate(getValue(row, fieldCandidates.date));
   const ano = toNumberOrNull(getValue(row, fieldCandidates.ano)) ?? (date ? Number(date.slice(0, 4)) : null);
+
+  // classificacao: para TRACONET, tenta primeiro CLASSI_FIN; se vazio, deriva dos FORMA_* campos
+  let classificacao = toStringOrNull(getValue(row, fieldCandidates.classificacao));
+  if (!classificacao && bank === "traconet") {
+    classificacao = deriveTraconetClassificacao(row);
+  }
+
+  // conclusao: para TRACONET, inclui o encaminhamento cirúrgico se disponível
+  let conclusao = toStringOrNull(getValue(row, fieldCandidates.conclusao));
+  if (bank === "traconet") {
+    const encaminha = deriveEncaminhamento(row);
+    if (encaminha) {
+      conclusao = conclusao
+        ? `${conclusao} | Encaminhamento cirurgia: ${encaminha}`
+        : `Encaminhamento cirurgia: ${encaminha}`;
+    }
+  }
 
   return {
     row_key: rowKey(row, bank),
@@ -103,11 +165,11 @@ export function normalizeSinanTracomaRow(row: RawRow, bank: SinanTracomaBank): N
     gve: toStringOrNull(getValue(row, fieldCandidates.gve)),
     drs: toStringOrNull(getValue(row, fieldCandidates.drs)),
     unidade: toStringOrNull(getValue(row, fieldCandidates.unidade)),
-    classificacao: toStringOrNull(getValue(row, fieldCandidates.classificacao)),
+    classificacao,
     criterio: toStringOrNull(getValue(row, fieldCandidates.criterio)),
     evolucao: toStringOrNull(getValue(row, fieldCandidates.evolucao)),
     tratamento: toStringOrNull(getValue(row, fieldCandidates.tratamento)),
-    conclusao: toStringOrNull(getValue(row, fieldCandidates.conclusao)),
+    conclusao,
     raw: row
   };
 }
@@ -342,11 +404,22 @@ export interface SinanAuditResult {
 
 function normalizeBankLabel(v: unknown): string {
   const s = String(v ?? "").toLowerCase().trim();
-  if (s.includes("tf") || s.includes("folicular") || s === "1" || s === "tf") return "TF";
-  if (s.includes("tt") || s.includes("triqui") || s === "2" || s === "tt") return "TT";
+  // Valores derivados dos campos FORMA_* (ex: "TF", "TT", "TF+TT", "TF+TI")
+  if (s === "tf") return "TF";
+  if (s === "tt") return "TT";
   if (s.includes("tf") && s.includes("tt")) return "TF+TT";
-  if (s.includes("4") || s.includes("nao tracoma") || s.includes("não tracoma")) return "Nao tracoma";
-  if (s.includes("5") || s.includes("inconclusivo")) return "Inconclusivo";
+  if (s.includes("tf")) return "TF";
+  if (s.includes("tt") || s.includes("triqui")) return "TT";
+  if (s.includes("ti") || s.includes("inflamatorio")) return "TI";
+  if (s.includes("ts") || s.includes("cicatricial")) return "TS";
+  if (s.includes("co") || s.includes("opacificacao") || s.includes("opacificação")) return "CO";
+  if (s.includes("folicular")) return "TF";
+  // Valores CLASSI_FIN numéricos (quando não mapeado por FORMA_*)
+  if (s === "1") return "TF";
+  if (s === "2") return "TT";
+  if (s === "3") return "TI";
+  if (s === "4" || s.includes("nao tracoma") || s.includes("não tracoma")) return "Nao tracoma";
+  if (s === "5" || s.includes("inconclusivo")) return "Inconclusivo";
   return s || "Nao preenchido";
 }
 
@@ -441,6 +514,9 @@ export async function auditarSinanTracoma(opts?: {
   const ttSemCircurgia  = ttRows.filter((r) => {
     const trat = String(r.tratamento ?? "").toLowerCase();
     const conc = String(r.conclusao ?? "").toLowerCase();
+    // conclusao já pode conter "Encaminhamento cirurgia: Sim" se ENCAMINHA=1
+    if (conc.includes("encaminhamento cirurgia: sim")) return false;
+    if (conc.includes("encaminhamento cirurgia: não") || conc.includes("encaminhamento cirurgia: nao")) return true;
     return !trat.includes("cirurg") && !trat.includes("epila") && !conc.includes("cirurg");
   }).length;
 

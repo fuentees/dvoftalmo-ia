@@ -126,7 +126,7 @@ export function SinanTracomaSyncCard() {
           SINAN Tracoma
         </CardTitle>
         <CardDescription className="text-xs">
-          Importe TRACONET (consolidado) e NOTTRACONET (casos) para o agente filtrar por agravo.
+          Importe TRACONET (casos individuais: sexo, idade, TF/TT) e NOTTRACONET (consolidado: nº examinados/positivos por localidade).
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -167,8 +167,8 @@ export function SinanTracomaSyncCard() {
             value={bank}
             onChange={(event) => setBank(event.target.value as Bank)}
           >
-            <option value="traconet">TRACONET consolidado</option>
-            <option value="nottraconet">NOTTRACONET casos</option>
+            <option value="traconet">TRACONET — Casos individuais (TF/TT/sexo/idade)</option>
+            <option value="nottraconet">NOTTRACONET — Consolidado (nº examinados/positivos)</option>
           </select>
           <input
             ref={fileRef}
