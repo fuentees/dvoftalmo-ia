@@ -8,5 +8,12 @@ export async function GET() {
   const user = await getCurrentUser(supabase);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  return NextResponse.json(await getSinanTracomaStatus());
+  try {
+    return NextResponse.json(await getSinanTracomaStatus());
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Erro ao consultar status SINAN Tracoma." },
+      { status: 500 }
+    );
+  }
 }

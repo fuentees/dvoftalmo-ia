@@ -9,6 +9,9 @@ import { createClient } from "@/lib/supabase/server";
 import { requireCevespSyncPermission } from "@/lib/admin-guard";
 import { importSinanTracomaRows, type SinanTracomaBank } from "@/services/sinan-tracoma";
 
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const user = await getCurrentUser(supabase);
@@ -23,8 +26,11 @@ export async function POST(request: NextRequest) {
   if (bank !== "traconet" && bank !== "nottraconet") {
     return NextResponse.json({ error: "Informe bank como traconet ou nottraconet." }, { status: 400 });
   }
-  if (!(file instanceof File)) {
+  if (!(file instanceof File) || typeof file.arrayBuffer !== "function") {
     return NextResponse.json({ error: "Arquivo DBF obrigatorio." }, { status: 400 });
+  }
+  if (!file.name.toLowerCase().endsWith(".dbf")) {
+    return NextResponse.json({ error: `Arquivo recebido (${file.name}) nao parece ser DBF.` }, { status: 400 });
   }
 
   const tmpPath = join(tmpdir(), `sinan-${randomUUID()}.dbf`);
@@ -32,6 +38,9 @@ export async function POST(request: NextRequest) {
     const bytes = Buffer.from(await file.arrayBuffer());
     await fs.writeFile(tmpPath, bytes);
     const dbf = await DBFFile.open(tmpPath, { encoding: "latin1" });
+    if (dbf.recordCount === 0) {
+      return NextResponse.json({ error: "O DBF foi lido, mas possui 0 registros." }, { status: 400 });
+    }
     const importId = `${bank}-${Date.now()}`;
     const batchSize = 500;
     let imported = 0;

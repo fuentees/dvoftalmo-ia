@@ -16,6 +16,11 @@ interface SinanStatus {
   minYear: number | null;
   maxYear: number | null;
   municipalities: number;
+  lastImports?: Array<{
+    source_bank: string;
+    imported_at: string;
+    rows_upserted: number;
+  }>;
 }
 
 function parseCsv(text: string) {
@@ -33,19 +38,30 @@ export function SinanTracomaSyncCard() {
   const [status, setStatus] = useState<SinanStatus | null>(null);
   const [bank, setBank] = useState<Bank>("traconet");
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<{ type: "info" | "success" | "error"; text: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { void loadStatus(); }, []);
 
   async function loadStatus() {
-    const response = await fetch("/api/admin/sinan-tracoma-status");
-    if (response.ok) setStatus(await response.json());
+    try {
+      const response = await fetch("/api/admin/sinan-tracoma-status");
+      const data = await readResponse(response);
+      if (!response.ok) throw new Error(data.error ?? "Erro ao consultar status SINAN Tracoma.");
+      setStatus(data);
+    } catch (error) {
+      setMessage({
+        type: "error",
+        text: error instanceof Error
+          ? error.message
+          : "Erro ao consultar status SINAN Tracoma. Verifique se a migration foi aplicada."
+      });
+    }
   }
 
   async function importFile(file: File) {
     setBusy(true);
-    setMessage(null);
+    setMessage({ type: "info", text: `Enviando ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)...` });
     try {
       if (file.name.toLowerCase().endsWith(".dbf")) {
         const form = new FormData();
@@ -55,9 +71,12 @@ export function SinanTracomaSyncCard() {
           method: "POST",
           body: form
         });
-        const data = await response.json();
+        const data = await readResponse(response);
         if (!response.ok) throw new Error(data.error ?? "Erro ao importar DBF.");
-        setMessage(`${Number(data.imported ?? 0).toLocaleString("pt-BR")} registros DBF importados em ${bank.toUpperCase()}.`);
+        setMessage({
+          type: "success",
+          text: `${Number(data.imported ?? 0).toLocaleString("pt-BR")} registros DBF importados em ${bank.toUpperCase()}.`
+        });
         await loadStatus();
         return;
       }
@@ -84,14 +103,15 @@ export function SinanTracomaSyncCard() {
             isLastBatch: i + batchSize >= rows.length
           })
         });
-        const data = await response.json();
+        const data = await readResponse(response);
         if (!response.ok) throw new Error(data.error ?? "Erro ao importar SINAN Tracoma.");
         done += Number(data.upserted ?? 0);
+        setMessage({ type: "info", text: `Importando ${done.toLocaleString("pt-BR")} de ${rows.length.toLocaleString("pt-BR")} registros...` });
       }
-      setMessage(`${done.toLocaleString("pt-BR")} registros importados em ${bank.toUpperCase()}.`);
+      setMessage({ type: "success", text: `${done.toLocaleString("pt-BR")} registros importados em ${bank.toUpperCase()}.` });
       await loadStatus();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Erro ao importar.");
+      setMessage({ type: "error", text: error instanceof Error ? error.message : "Erro ao importar." });
     } finally {
       setBusy(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -120,6 +140,27 @@ export function SinanTracomaSyncCard() {
           ) : null}
         </div>
 
+        {status && !status.hasData ? (
+          <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            Nenhum registro SINAN Tracoma encontrado no cache. Depois de importar, este total deve sair de 0 e o historico abaixo deve mostrar a ultima importacao.
+          </div>
+        ) : null}
+
+        {status?.lastImports?.length ? (
+          <div className="rounded-md border p-3 text-xs">
+            <div className="mb-2 font-medium">Ultimas importacoes</div>
+            <div className="space-y-1 text-muted-foreground">
+              {status.lastImports.map((item, index) => (
+                <div key={`${item.imported_at}-${index}`} className="flex flex-wrap items-center justify-between gap-2">
+                  <span>{item.source_bank.toUpperCase()}</span>
+                  <span>{Number(item.rows_upserted ?? 0).toLocaleString("pt-BR")} registros</span>
+                  <span>{formatDateTime(item.imported_at)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         <div className="flex flex-wrap items-center gap-2">
           <select
             className="h-8 rounded-md border bg-background px-2 text-xs"
@@ -144,10 +185,36 @@ export function SinanTracomaSyncCard() {
             {busy ? "Importando..." : "Importar DBF/JSON/CSV"}
           </Button>
         </div>
-        {message && <p className="text-xs text-muted-foreground">{message}</p>}
+        {message && (
+          <div className={`rounded-md border px-3 py-2 text-xs ${
+            message.type === "success"
+              ? "border-green-300 bg-green-50 text-green-800"
+              : message.type === "error"
+                ? "border-red-300 bg-red-50 text-red-800"
+                : "border-blue-300 bg-blue-50 text-blue-800"
+          }`}>
+            {message.text}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
+}
+
+async function readResponse(response: Response) {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { error: text.slice(0, 500) };
+  }
+}
+
+function formatDateTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
 }
 
 function Info({ label, value }: { label: string; value: string }) {

@@ -179,16 +179,22 @@ export async function importSinanTracomaRows(opts: {
 
 export async function getSinanTracomaStatus() {
   const supabase = createAdminClient();
-  const { count } = await supabase.from("sinan_tracoma_rows").select("id", { count: "exact", head: true });
-  const { data: logs } = await supabase
+  const { count, error: countError } = await supabase.from("sinan_tracoma_rows").select("id", { count: "exact", head: true });
+  if (countError) throw new Error(`Erro ao consultar cache SINAN Tracoma: ${countError.message}`);
+
+  const { data: logs, error: logsError } = await supabase
     .from("sinan_tracoma_import_log")
     .select("source_bank, imported_at, rows_upserted")
     .order("imported_at", { ascending: false })
     .limit(5);
-  const { data } = await supabase
+  if (logsError) throw new Error(`Erro ao consultar historico de importacao SINAN: ${logsError.message}`);
+
+  const { data, error: sampleError } = await supabase
     .from("sinan_tracoma_rows")
     .select("source_bank, agravo, ano, municipio")
     .limit(20000);
+  if (sampleError) throw new Error(`Erro ao ler amostra SINAN Tracoma: ${sampleError.message}`);
+
   const rows = (data ?? []) as Array<Record<string, unknown>>;
   const years = Array.from(new Set(rows.map((row) => Number(row.ano)).filter(Number.isFinite))).sort((a, b) => a - b);
   const banks = Array.from(new Set(rows.map((row) => String(row.source_bank ?? "")).filter(Boolean))).sort();
