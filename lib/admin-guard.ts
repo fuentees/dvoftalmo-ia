@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { canUseAdminReports } from "@/lib/permissions";
+import { canManageKnowledgeBase } from "@/lib/permissions";
 
 export async function requireCevespSyncPermission(supabase: any, userId: string) {
   const { data, error } = await supabase
@@ -8,9 +8,9 @@ export async function requireCevespSyncPermission(supabase: any, userId: string)
     .eq("id", userId)
     .single();
 
-  if (error || !canUseAdminReports(data?.role)) {
+  if (error || !canManageKnowledgeBase(data?.role)) {
     return NextResponse.json(
-      { error: "Apenas administradores e coordenadores podem sincronizar o cache CEVESP." },
+      { error: "Supervisores, coordenadores e administradores podem sincronizar os bancos de dados." },
       { status: 403 }
     );
   }

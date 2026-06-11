@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   BarChart3, Bell, Bot, Brain, CheckSquare, ChevronRight,
-  ClipboardList, FileText, GraduationCap, LayoutDashboard, Library,
+  ClipboardList, Database, FileText, GraduationCap, LayoutDashboard, Library,
   LogOut, Moon, Newspaper, Settings, Sun, User
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -46,6 +46,7 @@ const groups = [
   {
     label: "Sistema",
     items: [
+      { href: "/sincronizacao", label: "Sincronização",      icon: Database },
       { href: "/configuracoes", label: "Configurações de IA", icon: Settings }
     ]
   }
