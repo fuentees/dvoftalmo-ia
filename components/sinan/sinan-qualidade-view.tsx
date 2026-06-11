@@ -227,6 +227,79 @@ export function SinanQualidadeView() {
 
       {data && totalRecords > 0 && (
         <>
+          {/* Aviso de inversão de bancos */}
+          {data.diagnostico?.aviso && (
+            <div className="rounded-lg border-2 border-red-400 bg-red-50 p-4">
+              <div className="flex gap-3">
+                <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+                <div className="space-y-2">
+                  <p className="font-bold text-red-900">Bancos importados invertidos!</p>
+                  <p className="text-sm text-red-800">{data.diagnostico.aviso}</p>
+                  <details className="mt-2">
+                    <summary className="cursor-pointer text-xs font-medium text-red-700">Ver SQL para corrigir no Supabase ▼</summary>
+                    <pre className="mt-2 overflow-x-auto rounded bg-red-100 p-3 text-xs font-mono text-red-900">{`-- Cole no Supabase SQL Editor para trocar os labels:
+UPDATE public.sinan_tracoma_rows
+SET source_bank = CASE
+  WHEN source_bank = 'traconet'    THEN 'nottraconet'
+  WHEN source_bank = 'nottraconet' THEN 'traconet'
+END;
+
+UPDATE public.sinan_tracoma_import_log
+SET source_bank = CASE
+  WHEN source_bank = 'traconet'    THEN 'nottraconet'
+  WHEN source_bank = 'nottraconet' THEN 'traconet'
+END;`}</pre>
+                  </details>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Painel de diagnóstico — o que tem em cada banco */}
+          {data.diagnostico && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {(["traconet", "nottraconet"] as const).map((banco) => {
+                const d = data.diagnostico[banco];
+                const label = banco === "traconet" ? "TRACONET — Casos Individuais" : "NOTTRACONET — Consolidado";
+                const count = banco === "traconet" ? data.totalTraconet : data.totalNottraconet;
+                return (
+                  <div key={banco} className="rounded-lg border bg-card p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold">{label}</p>
+                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                        {count.toLocaleString("pt-BR")} registros
+                      </span>
+                    </div>
+                    {d.municipiosAmostra.length > 0 ? (
+                      <>
+                        <p className="text-xs text-muted-foreground">
+                          <span className="font-medium">Municípios:</span> {d.municipiosAmostra.join(", ")}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          <span className="font-medium">Anos:</span> {d.anosAmostra.join(", ")}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          <span className="font-medium">Campos normalizados preenchidos:</span>{" "}
+                          {d.camposPreenchidos.length > 0 ? d.camposPreenchidos.join(", ") : "nenhum"}
+                        </p>
+                        <details className="mt-1">
+                          <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+                            Colunas do arquivo original ▼
+                          </summary>
+                          <p className="mt-1 text-xs font-mono text-muted-foreground break-all">
+                            {d.colunas.join(", ")}
+                          </p>
+                        </details>
+                      </>
+                    ) : (
+                      <p className="text-xs text-muted-foreground italic">Sem dados importados neste banco.</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           {/* Cards de resumo */}
           <div className="grid gap-4 sm:grid-cols-3">
             <Card>

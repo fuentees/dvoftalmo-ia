@@ -323,7 +323,7 @@ export async function runSinanTracomaAnalysis(question: string) {
       parsed.agravo
         ? `A consulta aplicou filtro de agravo contendo "${parsed.agravo}".`
         : "Nenhum filtro de agravo foi identificado na pergunta; para bancos SINAN com multiplos agravos, recomenda-se informar o agravo.",
-      "TRACONET deve ser interpretado como base consolidada; NOTTRACONET como base de informacoes individuais/notificacoes de caso.",
+      "TRACONET = casos individuais (sexo, idade, TF/TT); NOTTRACONET = consolidado (nº examinados/positivos por localidade).",
       ...quality.recommendations
     ]
   };
@@ -384,6 +384,11 @@ function labelForDimension(dimension: string) {
 export interface SinanAuditResult {
   totalTraconet: number;
   totalNottraconet: number;
+  diagnostico: {
+    traconet: { colunas: string[]; municipiosAmostra: string[]; anosAmostra: number[]; camposPreenchidos: string[] };
+    nottraconet: { colunas: string[]; municipiosAmostra: string[]; anosAmostra: number[]; camposPreenchidos: string[] };
+    aviso?: string;
+  };
   crossBankDivergences: Array<{
     municipio: string;
     ano: number;
@@ -453,10 +458,15 @@ export async function auditarSinanTracoma(opts?: {
   // Compara contagem de casos individuais (TRACONET) vs registros consolidados (NOTTRACONET)
   // diff > 0 → consolidado tem mais registros que individuais (subregistro de individuais)
   // diff < 0 → individuais têm mais que consolidado (possível duplicidade ou casos não consolidados)
+  function normMunicipio(v: unknown) {
+    return String(v ?? "?").trim().toUpperCase()
+      .normalize("NFD").replace(/[̀-ͯ]/g, "")
+      .replace(/\s+/g, " ");
+  }
   function countByKey(rs: typeof rows) {
     const m = new Map<string, number>();
     for (const r of rs) {
-      const key = `${r.municipio ?? "?"}|${r.ano ?? "?"}`;
+      const key = `${normMunicipio(r.municipio)}|${r.ano ?? "?"}`;
       m.set(key, (m.get(key) ?? 0) + 1);
     }
     return m;
@@ -551,9 +561,38 @@ export async function auditarSinanTracoma(opts?: {
   if (baixoPct.length > 0) rec.push(`Campos TRACONET com completude < 50%: ${baixoPct.join(", ")}. Verificar mapeamento do arquivo importado.`);
   if (rec.length === 0) rec.push("Nenhuma inconsistencia critica detectada. Dados com boa completude e sem divergencias expressivas entre bancos.");
 
+  function bankDiag(bankRows: typeof rows) {
+    if (!bankRows.length) return { colunas: [], municipiosAmostra: [], anosAmostra: [], camposPreenchidos: [] };
+    const rawCols = Object.keys(bankRows[0].raw as Record<string, unknown>).slice(0, 30);
+    const munic = [...new Set(bankRows.map((r) => String(r.municipio ?? "")).filter(Boolean))].slice(0, 5);
+    const anos  = [...new Set(bankRows.map((r) => Number(r.ano)).filter((a) => a > 0))].sort().slice(0, 5);
+    const normalizedCols = ["agravo","municipio","gve","classificacao","tratamento","conclusao"];
+    const preenchidos = normalizedCols.filter((f) => bankRows.some((r) => !isBlank(r[f])));
+    return { colunas: rawCols, municipiosAmostra: munic, anosAmostra: anos, camposPreenchidos: preenchidos };
+  }
+
+  // Aviso se os bancos parecem estar invertidos (TRACONET tem campos de consolidado e vice-versa)
+  const traconetTemForma = traconetRows.some((r) => {
+    const raw = r.raw as Record<string, unknown>;
+    return Object.keys(raw).some((k) => /forma_t[ftisco]/i.test(k) || /nu_caso/i.test(k));
+  });
+  const nottraconetTemForma = nottraconetRows.some((r) => {
+    const raw = r.raw as Record<string, unknown>;
+    return Object.keys(raw).some((k) => /forma_t[ftisco]/i.test(k) || /nu_caso/i.test(k));
+  });
+  let aviso: string | undefined;
+  if (!traconetTemForma && nottraconetTemForma && traconetRows.length > 0 && nottraconetRows.length > 0) {
+    aviso = "ATENÇÃO: Os bancos parecem estar INVERTIDOS na importação. TRACONET não tem campos FORMA_TF/TT mas NOTTRACONET tem. Execute o SQL de correção no Supabase para trocar os labels.";
+  }
+
   return {
     totalTraconet: traconetRows.length,
     totalNottraconet: nottraconetRows.length,
+    diagnostico: {
+      traconet: bankDiag(traconetRows),
+      nottraconet: bankDiag(nottraconetRows),
+      aviso
+    },
     crossBankDivergences: crossBankDivergences.slice(0, 50),
     fieldCompleteness,
     semGraduacao,
