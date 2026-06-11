@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Check, Download, FileUp, Pencil, Search, Send, Trash2, X } from "lucide-react";
+import { Bot, Check, Download, FileUp, List, Pencil, Search, Send, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell,
@@ -206,10 +206,11 @@ export function ChatView() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [localMessages]);
 
-  const [isSending, setIsSending]     = useState(false);
-  const [sendError, setSendError]     = useState<string | null>(null);
-  const [exportOpen, setExportOpen]   = useState(false);
-  const exportRef                     = useRef<HTMLDivElement>(null);
+  const [isSending,      setIsSending]      = useState(false);
+  const [sendError,      setSendError]      = useState<string | null>(null);
+  const [exportOpen,     setExportOpen]     = useState(false);
+  const [showMobileSide, setShowMobileSide] = useState(false);
+  const exportRef                           = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
@@ -362,11 +363,13 @@ export function ChatView() {
     setConversationId(id);
     setAgent(agentKind);
     setLocalMessages([]);
+    setShowMobileSide(false);
   }
 
   function newConversation() {
     setConversationId(undefined);
     setLocalMessages([]);
+    setShowMobileSide(false);
   }
 
   function exportConversation(format: "txt" | "pdf" | "docx") {
@@ -379,10 +382,22 @@ export function ChatView() {
   }
 
   return (
-    <div className="grid h-screen grid-cols-1 md:grid-cols-[320px_1fr]">
+    <div className="relative grid h-screen grid-cols-1 md:grid-cols-[320px_1fr]">
+      {/* ── Mobile sidebar backdrop ── */}
+      {showMobileSide && (
+        <div
+          className="fixed inset-0 z-30 bg-black/40 md:hidden"
+          onClick={() => setShowMobileSide(false)}
+        />
+      )}
+
       {/* ── Sidebar de conversas ──────────────────────── */}
-      <aside className="hidden flex-col border-r bg-card md:flex">
-        <div className="flex items-center gap-2 border-b p-4">
+      <aside className={`
+        fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r bg-card shadow-xl transition-transform duration-300 md:static md:z-auto md:w-auto md:shadow-none md:translate-x-0
+        ${showMobileSide ? "translate-x-0" : "-translate-x-full"}
+        md:flex
+      `}>
+        <div className="flex items-center gap-2 border-b p-3">
           <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
           <Input
             placeholder="Pesquisar conversas"
@@ -390,6 +405,13 @@ export function ChatView() {
             onChange={(event) => setSearch(event.target.value)}
             className="h-8 border-none bg-transparent p-0 focus-visible:ring-0"
           />
+          <button
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md hover:bg-muted md:hidden"
+            onClick={() => setShowMobileSide(false)}
+            aria-label="Fechar"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
         <div className="p-3">
           <Button className="w-full" onClick={newConversation}>
@@ -458,11 +480,20 @@ export function ChatView() {
       {/* ── Área principal ───────────────────────────── */}
       <main className="flex min-h-0 flex-col">
         <div className="flex h-16 items-center justify-between border-b px-4 gap-2">
-          <div className="min-w-0">
-            <h1 className="font-semibold">Chat IA</h1>
-            <p className="text-xs text-muted-foreground truncate">
-              {conversationId ? "Conversa ativa" : "Nova conversa"} · Ctrl+Enter para enviar
-            </p>
+          <div className="flex items-center gap-2 min-w-0">
+            <button
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border hover:bg-muted md:hidden"
+              onClick={() => setShowMobileSide(true)}
+              aria-label="Conversas"
+            >
+              <List className="h-4 w-4" />
+            </button>
+            <div className="min-w-0">
+              <h1 className="font-semibold">Chat IA</h1>
+              <p className="text-xs text-muted-foreground truncate">
+                {conversationId ? "Conversa ativa" : "Nova conversa"} · Ctrl+Enter para enviar
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {conversationId && (
