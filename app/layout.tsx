@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { QueryProvider } from "@/lib/query-client";
 import "./globals.css";
@@ -9,9 +9,13 @@ export const metadata: Metadata = {
   title: "DvOftalmo IA",
   description: "Agente inteligente de vigilância epidemiológica das conjuntivites — COS/DVSE/CVS SP",
   manifest: "/manifest.json",
-  themeColor: "#1a6654",
-  appleWebApp: { capable: true, statusBarStyle: "default", title: "DvOftalmo IA" },
-  viewport: { width: "device-width", initialScale: 1 }
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "DvOftalmo IA" }
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#1a6654"
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

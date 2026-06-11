@@ -9,6 +9,13 @@ interface SyncStatus {
   hasData: boolean;
   lastSync: string | null;
   totalRows: number;
+  years: number[];
+  minYear: number | null;
+  maxYear: number | null;
+  latestNotificationDate: string | null;
+  totalCases: number;
+  municipalities: number;
+  gves: number;
 }
 
 type Msg = { type: "success" | "error"; text: string };
@@ -66,14 +73,16 @@ export function CevespSyncCard() {
 
       const BATCH = 500;
       let done = 0;
+      const importId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       setProgress({ done: 0, total: rows.length });
 
       for (let i = 0; i < rows.length; i += BATCH) {
         const batch = rows.slice(i, i + BATCH);
+        const isLastBatch = i + BATCH >= rows.length;
         const res = await fetch("/api/admin/cevesp-import", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ rows: batch }),
+          body: JSON.stringify({ rows: batch, importId, totalRows: rows.length, isLastBatch }),
         });
         if (!res.ok) {
           const err = await res.json().catch(() => ({})) as { error?: string };
@@ -96,6 +105,9 @@ export function CevespSyncCard() {
   }
 
   const pct = progress ? Math.round((progress.done / progress.total) * 100) : 0;
+  const cachePeriod = status?.minYear && status?.maxYear
+    ? `${status.minYear} a ${status.maxYear}`
+    : "sem periodo identificado";
 
   return (
     <Card>
@@ -123,6 +135,22 @@ export function CevespSyncCard() {
             <span className="text-amber-700">Cache vazio — sincronize para ativar dados reais.</span>
           )}
         </div>
+
+        {status?.hasData && (
+          <div className="grid gap-2 rounded-md border bg-background p-3 text-xs sm:grid-cols-2">
+            <StatusItem label="Periodo do cache" value={cachePeriod} />
+            <StatusItem label="Total de casos" value={status.totalCases.toLocaleString("pt-BR")} />
+            <StatusItem label="Municipios" value={status.municipalities.toLocaleString("pt-BR")} />
+            <StatusItem label="GVEs" value={status.gves.toLocaleString("pt-BR")} />
+            <StatusItem label="Ultima notificacao" value={status.latestNotificationDate ? new Date(status.latestNotificationDate).toLocaleDateString("pt-BR") : "nao informada"} />
+            <StatusItem label="Ultima importacao" value={status.lastSync ? new Date(status.lastSync).toLocaleString("pt-BR") : "nao registrada"} />
+            {status.years.length > 0 && (
+              <div className="text-muted-foreground sm:col-span-2">
+                Anos disponiveis: {status.years.join(", ")}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Passo 1 — Exportar */}
         <div className="space-y-2">
@@ -208,5 +236,14 @@ export function CevespSyncCard() {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function StatusItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded border bg-muted/30 px-2 py-1">
+      <div className="text-[10px] uppercase text-muted-foreground">{label}</div>
+      <div className="font-medium">{value}</div>
+    </div>
   );
 }

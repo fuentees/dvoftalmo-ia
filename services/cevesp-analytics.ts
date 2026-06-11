@@ -154,6 +154,19 @@ const analysisSchema = z.object({
 
 export type CevespAnalysis = z.infer<typeof analysisSchema>;
 
+export type CevespUnderstanding = {
+  metric: string;
+  period: string;
+  temporalGrouping: string;
+  dimensions: string[];
+  filters: string[];
+  source: string;
+  indicatorField: string;
+  dateField: string;
+  confidence: "alta" | "media" | "baixa";
+  warnings: string[];
+};
+
 function normalizeAnalysis(analysis: CevespAnalysis): CevespAnalysis {
   return {
     ...analysis,
@@ -166,15 +179,47 @@ function normalizeAnalysis(analysis: CevespAnalysis): CevespAnalysis {
 function cleanEntity(value: string) {
   return value
     .replace(/[?.!,;:]+$/g, "")
-    .replace(/\b(nos|nas|no|na|por|separado|separada|ultimos|ultimas|esse|este|ano|anos|mes|meses|semana|semanas)\b.*$/i, "")
+    .replace(/\b(nos|nas|no|na|em|entre|de|por|separado|separada|comparad[oa]|comparar|ranking|maiores|menores|ultimos|ultimas|esse|este|atual|ano|anos|mes|meses|semana|semanas|periodo)\b.*$/i, "")
     .trim();
 }
 
+function monthNumberFromText(lower: string) {
+  const months: Record<string, number> = {
+    janeiro: 1,
+    fevereiro: 2,
+    marco: 3,
+    março: 3,
+    abril: 4,
+    maio: 5,
+    junho: 6,
+    julho: 7,
+    agosto: 8,
+    setembro: 9,
+    outubro: 10,
+    novembro: 11,
+    dezembro: 12
+  };
+  for (const [name, value] of Object.entries(months)) {
+    if (new RegExp(`\\b${name}\\b`).test(lower)) return value;
+  }
+  return null;
+}
+
+function lastDayOfMonth(year: string, month: number) {
+  return String(new Date(Number(year), month, 0).getDate()).padStart(2, "0");
+}
+
 function extractNamedFilter(lower: string, field: (typeof dimensionKeys)[number], patterns: RegExp[]) {
+  const invalidValues = new Set([
+    "de", "do", "da", "dos", "das", "por", "todos", "todas",
+    "janeiro", "fevereiro", "marco", "abril", "maio", "junho",
+    "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"
+  ]);
   for (const pattern of patterns) {
     const match = lower.match(pattern);
     const value = match?.[1] ? cleanEntity(match[1]) : "";
-    if (value.length >= 2) {
+    const startsWithInvalid = Array.from(invalidValues).some((invalid) => value === invalid || value.startsWith(`${invalid} `));
+    if (value.length >= 2 && !startsWithInvalid && !/^\d/.test(value)) {
       return { field, operator: "contains" as const, value };
     }
   }
@@ -189,26 +234,48 @@ function applyQuestionHints(question: string, analysis: CevespAnalysis): CevespA
     dimensions: [...analysis.dimensions],
     filters: [...analysis.filters]
   };
+  let explicitLimit = false;
 
-  if (/\bcasos?\b|total de casos?/.test(lower)) next.metric = "total_casos";
-  if (/\bnotificacoes?\b/.test(lower)) next.metric = "notificacoes";
-  if (/\bsurtos?\b/.test(lower)) next.metric = "surtos";
-  if (/\bcoletas?\b|coleta biologica/.test(lower)) next.metric = "coletas";
-  if (/\bacoes? educativas?\b|educacao|atividade/.test(lower)) next.metric = "acoes_educativas";
-  if (/\btreinamentos?\b/.test(lower)) next.metric = "treinamentos";
+  if (/\bcasos?\b|total de casos?|quantos casos?|volume de casos?/.test(lower)) next.metric = "total_casos";
+  if (/\bnotificacoes?\b|registros?\b|fichas?\b|quantas notificacoes?/.test(lower)) next.metric = "notificacoes";
+  if (/\bsurtos?\b|evento[s]? de surto|teve surto|houve surto/.test(lower)) next.metric = "surtos";
+  if (/\bnumero de surtos?\b|\bquantidade de surtos?\b|total de surtos?/.test(lower)) next.metric = "numero_surtos";
+  if (/\bcoletas?\b|coleta biologica|material biologico|laboratorial|investigacao laboratorial/.test(lower)) next.metric = "coletas";
+  if (/\bacoes? educativas?\b|educacao|atividade educativa|atividades educativas|orientacao|orientacoes/.test(lower)) next.metric = "acoes_educativas";
+  if (/\btreinamentos?\b|capacitac|capacitar|treino\b/.test(lower)) next.metric = "treinamentos";
+  if (/\bafastamentos?\b|profissionais? sintomaticos?|sintomaticos afastados/.test(lower)) next.metric = "afastamentos";
   if (/\bencaminh/.test(lower)) next.metric = "encaminhamentos";
+  if (/\bmenor(?:es)? de 1|menor(?:es)? um|<\s*1/.test(lower)) next.metric = "menor_1_ano";
+  if (/\b1\s*a\s*4\b|um a quatro|um quatro|1-4/.test(lower)) next.metric = "faixa_1_4";
+  if (/\b5\s*a\s*9\b|cinco a nove|cinco nove|5-9/.test(lower)) next.metric = "faixa_5_9";
+  if (/\b10\s*a\s*14\b|dez a quatorze|dez quatorze|10-14/.test(lower)) next.metric = "faixa_10_14";
+  if (/\b15\s*(?:anos)?\s*(?:e|\+|ou)\s*mais|quinze ou mais|15\+/.test(lower)) next.metric = "faixa_15_mais";
+  if (/\bmasculino\b|\bhomens?\b|\bsexo masc/.test(lower)) next.metric = "sexo_masculino";
+  if (/\bfeminino\b|\bmulheres?\b|\bsexo fem/.test(lower)) next.metric = "sexo_feminino";
+  if (/\bexcluidos?\b|registros excluidos/.test(lower)) next.metric = "registros_excluidos";
 
-  if (/\bseparad[oa]s?\s+por\s+ano\b|\bpor\s+ano\b|\bano a ano\b|\banual\b/.test(lower)) next.time_grain = "year";
-  if (/\bseparad[oa]s?\s+por\s+mes\b|\bpor\s+mes\b|\bmensal\b|\bmes a mes\b/.test(lower)) next.time_grain = "month";
-  if (/\bpor\s+(se|s\.e\.|semana\s+epi|semana epidemiologica|semanas?)\b|\bsemanal\b|\bpor semana epidemiologica\b/.test(lower)) next.time_grain = "week";
+  if (/\bseparad[oa]s?\s+por\s+ano\b|\bpor\s+ano\b|\bano a ano\b|\banual\b|\banualmente\b|\bevolucao anual\b|\bcomparar anos?\b/.test(lower)) next.time_grain = "year";
+  if (/\bseparad[oa]s?\s+por\s+mes\b|\bpor\s+mes\b|\bmensal\b|\bmensalmente\b|\bmes a mes\b|\bevolucao mensal\b|\bsazonal/.test(lower)) next.time_grain = "month";
+  if (/\bpor\s+(se|s\.e\.|semana\s+epi|semana epidemiologica|semanas?)\b|\bsemanal\b|\bsemanalmente\b|\bpor semana epidemiologica\b|\bevolucao semanal\b/.test(lower)) next.time_grain = "week";
+  if (/\bpor\s+dia\b|\bdiari[ao]\b|\bdia a dia\b/.test(lower)) next.time_grain = "day";
 
   const years = lower.match(/ultimos?\s+(\d+)\s+anos?/);
   const months = lower.match(/ultimos?\s+(\d+)\s+meses?/);
   const weeks = lower.match(/ultimas?\s+(\d+)\s+semanas?/);
+  const yearBetween = lower.match(/\b(?:de|entre)\s+(\d{4})\s+(?:a|ate|e)\s+(\d{4})\b/);
+  const singleYear = lower.match(/\b(?:em|no|ano de|ano)\s+(20\d{2}|19\d{2})\b/) ?? lower.match(/\b(20\d{2}|19\d{2})\b/);
+  const monthNumber = monthNumberFromText(lower);
   if (/\b(esse|este|atual)\s+ano\b/.test(lower)) next.date_range = { type: "current_year" };
   else if (/\bano\s+passado\b/.test(lower)) next.date_range = { type: "last_year" };
   else if (/\b(esse|este|atual)\s+mes\b/.test(lower)) next.date_range = { type: "current_month" };
   else if (/\bmes\s+passado\b/.test(lower)) next.date_range = { type: "last_month" };
+  else if (yearBetween) next.date_range = { type: "between", start: `${yearBetween[1]}-01-01`, end: `${yearBetween[2]}-12-31` };
+  else if (singleYear && monthNumber) next.date_range = {
+    type: "between",
+    start: `${singleYear[1]}-${String(monthNumber).padStart(2, "0")}-01`,
+    end: `${singleYear[1]}-${String(monthNumber).padStart(2, "0")}-${lastDayOfMonth(singleYear[1], monthNumber)}`
+  };
+  else if (singleYear) next.date_range = { type: "between", start: `${singleYear[1]}-01-01`, end: `${singleYear[1]}-12-31` };
   else if (years) next.date_range = { type: "relative_years", amount: Number(years[1]) };
   else if (months) next.date_range = { type: "relative_months", amount: Number(months[1]) };
   else if (weeks) next.date_range = { type: "relative_weeks", amount: Number(weeks[1]) };
@@ -216,16 +283,23 @@ function applyQuestionHints(question: string, analysis: CevespAnalysis): CevespA
   const explicitFilters = [
     extractNamedFilter(lower, "municipio", [
       /(?:municipio|munic)\s+(?:de\s+)?([a-z0-9\s]+?)(?=\s+(?:nos?|nas?|por|separad|ultimos?|ultimas?|esse|este|ano|anos|mes|meses|semana|semanas)\b|$)/,
-      /(?:em|no|na)\s+(?:o\s+)?(?:municipio|munic)\s+(?:de\s+)?([a-z0-9\s]+?)(?=\s+(?:nos?|nas?|por|separad|ultimos?|ultimas?|esse|este|ano|anos|mes|meses|semana|semanas)\b|$)/
+      /(?:em|no|na)\s+(?:o\s+)?(?:municipio|munic)\s+(?:de\s+)?([a-z0-9\s]+?)(?=\s+(?:nos?|nas?|em|por|separad|ultimos?|ultimas?|esse|este|ano|anos|mes|meses|semana|semanas)\b|$)/,
+      /\b(?:em|no|na)\s+([a-z0-9\s]+?)(?=\s+(?:nos?|nas?|em|por|separad|ultimos?|ultimas?|esse|este|ano|anos|mes|meses|semana|semanas)\b|$)/
     ]),
     extractNamedFilter(lower, "gve", [
-      /\bgve\s+(?:de\s+)?([a-z0-9\s]+?)(?=\s+(?:nos?|nas?|por|separad|ultimos?|ultimas?|esse|este|ano|anos|mes|meses|semana|semanas)\b|$)/
+      /\bgve\s+(?:de\s+)?([a-z0-9\s]+?)(?=\s+(?:nos?|nas?|em|por|separad|ultimos?|ultimas?|esse|este|ano|anos|mes|meses|semana|semanas)\b|$)/
     ]),
     extractNamedFilter(lower, "drs", [
-      /\bdrs\s+(?:de\s+)?([a-z0-9\s]+?)(?=\s+(?:nos?|nas?|por|separad|ultimos?|ultimas?|esse|este|ano|anos|mes|meses|semana|semanas)\b|$)/
+      /\bdrs\s+(?:de\s+)?([a-z0-9\s]+?)(?=\s+(?:nos?|nas?|em|por|separad|ultimos?|ultimas?|esse|este|ano|anos|mes|meses|semana|semanas)\b|$)/
     ]),
     extractNamedFilter(lower, "unidade", [
-      /\bunidade\s+(?:de\s+)?([a-z0-9\s]+?)(?=\s+(?:nos?|nas?|por|separad|ultimos?|ultimas?|esse|este|ano|anos|mes|meses|semana|semanas)\b|$)/
+      /\bunidade\s+(?:notificadora\s+)?(?:de\s+)?([a-z0-9\s]+?)(?=\s+(?:nos?|nas?|em|por|separad|ultimos?|ultimas?|esse|este|ano|anos|mes|meses|semana|semanas)\b|$)/
+    ]),
+    extractNamedFilter(lower, "uvis", [
+      /\buvis\s+(?:de\s+)?([a-z0-9\s]+?)(?=\s+(?:nos?|nas?|em|por|separad|ultimos?|ultimas?|esse|este|ano|anos|mes|meses|semana|semanas)\b|$)/
+    ]),
+    extractNamedFilter(lower, "cnes", [
+      /\bcnes\s+([a-z0-9\s]+?)(?=\s+(?:nos?|nas?|em|por|separad|ultimos?|ultimas?|esse|este|ano|anos|mes|meses|semana|semanas)\b|$)/
     ])
   ].filter(Boolean) as CevespAnalysis["filters"];
 
@@ -235,6 +309,29 @@ function applyQuestionHints(question: string, analysis: CevespAnalysis): CevespA
     next.dimensions = next.dimensions.filter((dimension) => dimension !== filter.field);
   }
 
+  if (/\bpor\s+gve\b|\bpor\s+gves\b|\bgves?\b|regional|regiao de saude/.test(lower) && !next.filters.some((filter) => filter.field === "gve")) {
+    next.dimensions.push("gve");
+  }
+  if (/\bpor\s+drs\b|\bdrs\b/.test(lower) && !next.filters.some((filter) => filter.field === "drs")) {
+    next.dimensions.push("drs");
+  }
+  if (/\bpor\s+municipios?\b|\bpor\s+munic\b|\bmunicipios?\s+com\b|\branking de municipios?\b|\bmaiores municipios?\b/.test(lower) && !next.filters.some((filter) => filter.field === "municipio")) {
+    next.dimensions.push("municipio");
+  }
+  if (/\bpor\s+uvis\b|\buvis\b/.test(lower) && !next.filters.some((filter) => filter.field === "uvis")) next.dimensions.push("uvis");
+  if (/\bpor\s+unidade\b|\bunidades notificadoras?\b|\bpor\s+cnes\b/.test(lower) && !next.filters.some((filter) => filter.field === "unidade")) next.dimensions.push("unidade");
+  if (/\bpor\s+sexo\b|\bdistribuicao por sexo\b|\bsexo\b/.test(lower) && !/masculino|feminino|homens?|mulheres?/.test(lower)) {
+    next.metric = "total_casos";
+  }
+  if (/\bpor\s+faixa etaria\b|\bdistribuicao etaria\b|\bidade\b|\bcriancas?\b|\badultos?\b/.test(lower) && !/menor|1\s*a\s*4|5\s*a\s*9|10\s*a\s*14|15/.test(lower)) {
+    next.metric = "total_casos";
+  }
+  if (/\btop\s*(\d+)|\b(\d+)\s+(?:maiores|principais)\b/.test(lower)) {
+    const n = Number((lower.match(/\btop\s*(\d+)/)?.[1] ?? lower.match(/\b(\d+)\s+(?:maiores|principais)\b/)?.[1]) ?? 100);
+    next.limit = Math.min(Math.max(n, 1), 500);
+    explicitLimit = true;
+  }
+
   // Auto-expand limit for long time-series queries so rows are never truncated
   const spanYears =
     next.date_range.type === "relative_years" ? (next.date_range.amount ?? 5) :
@@ -242,7 +339,7 @@ function applyQuestionHints(question: string, analysis: CevespAnalysis): CevespA
     next.date_range.type === "relative_weeks" ? 1 :
     (next.date_range.type === "current_year" || next.date_range.type === "last_year") ? 1 : 10;
   const minLimit = autoLimit(next.time_grain, spanYears);
-  if ((next.limit ?? 100) < minLimit) next.limit = minLimit;
+  if (!explicitLimit && (next.limit ?? 100) < minLimit) next.limit = minLimit;
 
   return normalizeAnalysis(next);
 }
@@ -275,7 +372,7 @@ function autoLimit(grain: string, spanYears: number): number {
   return 100;
 }
 
-function fallbackParse(question: string): CevespAnalysis {
+function parseCevespQuestionRaw(question: string): CevespAnalysis {
   const lower = normalizeQuestion(question);
   const metric =
     lower.includes("numero de surto") || lower.includes("quantidade de surto") ? "numero_surtos" :
@@ -358,7 +455,12 @@ function fallbackParse(question: string): CevespAnalysis {
   };
 }
 
+export function parseCevespQuestionDeterministic(question: string): CevespAnalysis {
+  return applyQuestionHints(question, analysisSchema.parse(parseCevespQuestionRaw(question)));
+}
+
 export async function parseCevespQuestion(question: string): Promise<CevespAnalysis> {
+  const deterministic = parseCevespQuestionDeterministic(question);
   try {
     const content = await generateCompletion(
       [
@@ -385,9 +487,18 @@ limit maximo 500. Nao gere SQL.`
       { temperature: 0, jsonMode: true }
     );
     const json = content.match(/\{[\s\S]*\}/)?.[0] ?? content;
-    return applyQuestionHints(question, analysisSchema.parse(JSON.parse(json)));
+    const aiAnalysis = analysisSchema.parse(JSON.parse(json));
+    return applyQuestionHints(question, {
+      ...aiAnalysis,
+      metric: deterministic.metric,
+      date_range: deterministic.date_range.type === "all" ? aiAnalysis.date_range : deterministic.date_range,
+      time_grain: deterministic.time_grain === "none" ? aiAnalysis.time_grain : deterministic.time_grain,
+      dimensions: deterministic.dimensions.length > 0 ? deterministic.dimensions : aiAnalysis.dimensions,
+      filters: deterministic.filters.length > 0 ? deterministic.filters : aiAnalysis.filters,
+      limit: Math.max(deterministic.limit ?? 100, aiAnalysis.limit ?? 100)
+    });
   } catch {
-    return applyQuestionHints(question, analysisSchema.parse(fallbackParse(question)));
+    return applyQuestionHints(question, deterministic);
   }
 }
 
@@ -408,7 +519,7 @@ function buildWhere(analysis: CevespAnalysis) {
     where.push("year(DtNotificacao) = year(date_sub(curdate(), interval 1 month)) and month(DtNotificacao) = month(date_sub(curdate(), interval 1 month))");
   }
   if (analysis.date_range.type === "relative_years") {
-    where.push("DtNotificacao >= date_sub(curdate(), interval ? year)");
+    where.push("year(DtNotificacao) between year(curdate()) - ? + 1 and year(curdate())");
     params.push(analysis.date_range.amount ?? 5);
   }
   if (analysis.date_range.type === "relative_months") {
@@ -457,6 +568,15 @@ export async function runCevespAnalysis(question: string) {
   const metric = metrics[analysis.metric];
   const selectedDimensions = analysis.dimensions.map((dimension) => dimensions[dimension]);
   const grain = timeGrains[analysis.time_grain];
+  const lowerQuestion = normalizeQuestion(question);
+
+  if (/\bpor\s+sexo\b|\bdistribuicao por sexo\b|\bsexo\b/.test(lowerQuestion) && !/masculino|feminino|homens?|mulheres?/.test(lowerQuestion)) {
+    return runSexDistributionReport(question, analysis, table);
+  }
+
+  if (/\bpor\s+faixa etaria\b|\bdistribuicao etaria\b|\bidade\b|\bcriancas?\b|\badultos?\b/.test(lowerQuestion) && !/menor|1\s*a\s*4|5\s*a\s*9|10\s*a\s*14|15/.test(lowerQuestion)) {
+    return runAgeDistributionReport(question, analysis, table);
+  }
 
   if (analysis.metric === "total_casos" && analysis.time_grain === "month" && analysis.dimensions.includes("gve")) {
     return runMonthlyCasesByGveReport(question, analysis, table);
@@ -504,10 +624,11 @@ export async function runCevespAnalysis(question: string) {
     const dimensionLabels = selectedDimensions.map((dimension) => dimension.label);
     const transformed = analysis.time_grain === "month"
       ? pivotYearColumns(rawRows, "Mes", "Ano", dimensionLabels)
-      : { columns: Object.keys(rawRows[0] ?? {}), rows: rawRows };
+      : withTotalRow(Object.keys(rawRows[0] ?? {}), rawRows);
     return {
       question,
       analysis,
+      understanding: buildUnderstanding(analysis, "MariaDB CEVESP em tempo real"),
       metricLabel: metric.label,
       timeLabel: grain.label,
       columns: transformed.columns,
@@ -551,6 +672,7 @@ async function runOutbreakPresenceReport(question: string, analysis: CevespAnaly
     return {
       question,
       analysis,
+      understanding: buildUnderstanding(analysis, "MariaDB CEVESP em tempo real"),
       reportType: "outbreak_presence",
       metricLabel: "Surtos",
       timeLabel: periodLabel,
@@ -572,6 +694,111 @@ async function runOutbreakPresenceReport(question: string, analysis: CevespAnaly
         hasOutbreak
           ? "Recomenda-se verificar municipios e unidades envolvidas, oportunidade da notificacao, medidas educativas, afastamento de sintomaticos e indicacao de coleta biologica."
           : "Mesmo sem surto registrado, recomenda-se manter monitoramento de tendencia semanal e revisar unidades com aumento de casos."
+      ]
+    };
+  } finally {
+    await connection.end();
+  }
+}
+
+async function runSexDistributionReport(question: string, analysis: CevespAnalysis, table: string) {
+  const where = buildWhere(analysis);
+  const sql = `
+    select
+      sum(coalesce(SexMasc, 0)) as masculino,
+      sum(coalesce(SexFem, 0)) as feminino,
+      sum(coalesce(TotalCaso, 0)) as total_casos
+    from ${table}
+    ${where.sql}
+  `;
+  const connection = await createNotificationConnection();
+  try {
+    const [rows] = await connection.query(sql, where.params);
+    const row = (rows as Array<Record<string, unknown>>)[0] ?? {};
+    const masculino = Number(row.masculino ?? 0);
+    const feminino = Number(row.feminino ?? 0);
+    const total = Number(row.total_casos ?? 0);
+    const informado = masculino + feminino;
+    const naoClassificado = Math.max(total - informado, 0);
+    const resultRows = [
+      { Sexo: "Masculino", Valor: masculino },
+      { Sexo: "Feminino", Valor: feminino },
+      { Sexo: "Sem classificacao por sexo", Valor: naoClassificado },
+      { Sexo: "Total", Valor: total }
+    ];
+
+    return {
+      question,
+      analysis,
+      understanding: buildUnderstanding(analysis, "MariaDB CEVESP em tempo real"),
+      reportType: "sex_distribution",
+      metricLabel: "Distribuicao por sexo",
+      timeLabel: describeDateRange(analysis),
+      columns: ["Sexo", "Valor"],
+      rows: resultRows,
+      interpretation: [
+        `No periodo ${describeDateRange(analysis)}, foram registrados ${total} casos segundo a soma de TotalCaso.`,
+        `A distribuicao informada por sexo totaliza ${informado} casos: ${masculino} masculinos e ${feminino} femininos.`,
+        naoClassificado > 0
+          ? `Ha ${naoClassificado} casos sem correspondencia direta na soma SexMasc + SexFem, sugerindo verificar completude ou consistencia do preenchimento.`
+          : "A soma por sexo corresponde ao total de casos informado.",
+        "Diferencas importantes entre sexos devem ser interpretadas junto ao perfil das unidades notificadoras, faixa etaria e possiveis surtos em ambientes coletivos."
+      ]
+    };
+  } finally {
+    await connection.end();
+  }
+}
+
+async function runAgeDistributionReport(question: string, analysis: CevespAnalysis, table: string) {
+  const where = buildWhere(analysis);
+  const sql = `
+    select
+      sum(coalesce(FxMenorUmAno, 0)) as menor_1,
+      sum(coalesce(FxUmQuatro, 0)) as faixa_1_4,
+      sum(coalesce(FxCincoNove, 0)) as faixa_5_9,
+      sum(coalesce(FxDezQuatorze, 0)) as faixa_10_14,
+      sum(coalesce(FxQuizeOuMais, 0)) as faixa_15_mais,
+      sum(coalesce(TotalCaso, 0)) as total_casos
+    from ${table}
+    ${where.sql}
+  `;
+  const connection = await createNotificationConnection();
+  try {
+    const [rows] = await connection.query(sql, where.params);
+    const row = (rows as Array<Record<string, unknown>>)[0] ?? {};
+    const ageRows = [
+      { "Faixa etaria": "Menor de 1 ano", Valor: Number(row.menor_1 ?? 0) },
+      { "Faixa etaria": "1 a 4 anos", Valor: Number(row.faixa_1_4 ?? 0) },
+      { "Faixa etaria": "5 a 9 anos", Valor: Number(row.faixa_5_9 ?? 0) },
+      { "Faixa etaria": "10 a 14 anos", Valor: Number(row.faixa_10_14 ?? 0) },
+      { "Faixa etaria": "15 anos ou mais", Valor: Number(row.faixa_15_mais ?? 0) }
+    ];
+    const total = Number(row.total_casos ?? 0);
+    const informed = ageRows.reduce((sum, item) => sum + item.Valor, 0);
+    const peak = [...ageRows].sort((a, b) => b.Valor - a.Valor)[0];
+    const resultRows = [
+      ...ageRows,
+      { "Faixa etaria": "Sem classificacao etaria", Valor: Math.max(total - informed, 0) },
+      { "Faixa etaria": "Total", Valor: total }
+    ];
+
+    return {
+      question,
+      analysis,
+      understanding: buildUnderstanding(analysis, "MariaDB CEVESP em tempo real"),
+      reportType: "age_distribution",
+      metricLabel: "Distribuicao por faixa etaria",
+      timeLabel: describeDateRange(analysis),
+      columns: ["Faixa etaria", "Valor"],
+      rows: resultRows,
+      interpretation: [
+        `No periodo ${describeDateRange(analysis)}, foram registrados ${total} casos segundo a soma de TotalCaso.`,
+        peak ? `A faixa etaria com maior volume foi ${peak["Faixa etaria"]}, com ${peak.Valor} casos.` : "Nao foi possivel identificar faixa etaria predominante.",
+        total > informed
+          ? `Ha ${total - informed} casos sem correspondencia direta na soma das faixas etarias, indicando necessidade de revisar completude.`
+          : "A soma das faixas etarias corresponde ao total de casos informado.",
+        "Predominio em criancas pode sugerir transmissao em ambientes coletivos escolares ou de cuidado infantil; predominio em adultos deve ser analisado junto a exposicao ocupacional e surtos institucionais."
       ]
     };
   } finally {
@@ -608,6 +835,7 @@ async function runWeeklyCasesByYearReport(question: string, analysis: CevespAnal
     return {
       question,
       analysis,
+      understanding: buildUnderstanding(analysis, "MariaDB CEVESP em tempo real"),
       reportType: "weekly_cases_by_year",
       metricLabel: "Total de casos",
       timeLabel: "Serie semanal consolidada por ano",
@@ -729,6 +957,7 @@ async function runMonthlyCasesByGveReport(question: string, analysis: CevespAnal
     return {
       question,
       analysis,
+      understanding: buildUnderstanding(analysis, "MariaDB CEVESP em tempo real"),
       reportType: "monthly_cases_by_gve",
       metricLabel: "Total de casos",
       timeLabel: "Relatorio mensal ano a ano",
@@ -812,15 +1041,81 @@ function interpretMonthlyGveReport(
 }
 
 function describeDateRange(analysis: CevespAnalysis) {
-  if (analysis.date_range.type === "current_year") return "ano corrente";
-  if (analysis.date_range.type === "last_year") return "ano passado";
+  const year = new Date().getFullYear();
+  if (analysis.date_range.type === "current_year") return `ano corrente (${year})`;
+  if (analysis.date_range.type === "last_year") return `ano passado (${year - 1})`;
   if (analysis.date_range.type === "current_month") return "mes corrente";
   if (analysis.date_range.type === "last_month") return "mes passado";
-  if (analysis.date_range.type === "relative_years") return `ultimos ${analysis.date_range.amount ?? 5} anos`;
+  if (analysis.date_range.type === "relative_years") {
+    const amount = analysis.date_range.amount ?? 5;
+    return `ultimos ${amount} anos-calendario (${year - amount + 1} a ${year})`;
+  }
   if (analysis.date_range.type === "relative_months") return `ultimos ${analysis.date_range.amount ?? 12} meses`;
   if (analysis.date_range.type === "relative_weeks") return `ultimas ${analysis.date_range.amount ?? 8} semanas`;
   if (analysis.date_range.type === "between") return `${analysis.date_range.start} a ${analysis.date_range.end}`;
   return "todo o banco";
+}
+
+function buildUnderstanding(analysis: CevespAnalysis, source: string): CevespUnderstanding {
+  const metric = metrics[analysis.metric];
+  const grain = timeGrains[analysis.time_grain];
+  const warnings: string[] = [];
+
+  if (analysis.date_range.type === "all") {
+    warnings.push("Nenhum periodo foi informado; a consulta considera todo o banco.");
+  }
+  if (analysis.filters.length === 0 && analysis.dimensions.length === 0 && analysis.time_grain === "none") {
+    warnings.push("Consulta sem filtro ou agrupamento: o resultado e um consolidado geral.");
+  }
+  if (analysis.time_grain === "month") {
+    warnings.push("Meses sao apresentados nas linhas e anos nas colunas quando ha serie temporal mensal.");
+  }
+
+  const confidence: CevespUnderstanding["confidence"] =
+    warnings.length === 0 ? "alta" :
+    analysis.date_range.type === "all" ? "media" :
+    "alta";
+
+  return {
+    metric: metric.label,
+    period: describeDateRange(analysis),
+    temporalGrouping: grain.label,
+    dimensions: analysis.dimensions.map((dimension) => dimensions[dimension].label),
+    filters: analysis.filters.map((filter) => {
+      const field = dimensions[filter.field].label;
+      const operator = filter.operator === "contains" ? "contem" : "igual a";
+      return `${field} ${operator} "${filter.value}"`;
+    }),
+    source,
+    indicatorField: metric.sql,
+    dateField: "DtNotificacao",
+    confidence,
+    warnings
+  };
+}
+
+function withTotalRow(columns: string[], rows: Array<Record<string, unknown>>) {
+  if (rows.length === 0) return { columns, rows };
+  const numericColumns = columns.filter((column) => (
+    column === "valor" ||
+    column === "Valor" ||
+    column === "Total" ||
+    /^\d{4}$/.test(column)
+  ) && rows.some((row) => typeof row[column] === "number"));
+  if (numericColumns.length === 0) return { columns, rows };
+
+  const labelColumn =
+    columns.find((column) => !numericColumns.includes(column)) ??
+    columns[0];
+  const totalRow: Record<string, unknown> = { [labelColumn]: "Total" };
+  for (const column of columns) {
+    if (column === labelColumn) continue;
+    totalRow[column] = numericColumns.includes(column)
+      ? rows.reduce((sum, row) => sum + Number(row[column] ?? 0), 0)
+      : "";
+  }
+
+  return { columns, rows: [...rows, totalRow] };
 }
 
 function monthName(value: unknown) {

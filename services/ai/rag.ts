@@ -66,6 +66,10 @@ function buildRagMessages(context: RagContext, ragFailed: boolean, input: RagInp
   if (input.cevespContext) {
     systemMessages.push({
       role: "system",
+      content: "REGRA CEVESP: quando houver contexto CEVESP injetado, responda como tendo acesso aos dados por cache/importacao ou consulta. Nao diga que nao consegue ler o banco. Se o contexto disser que o cache esta vazio ou sem dados para o filtro, explique esse diagnostico e oriente sincronizar/importar."
+    });
+    systemMessages.push({
+      role: "system",
       content: `Dados CEVESP em tempo real — use estes numeros ao responder:\n${input.cevespContext}`
     });
   }

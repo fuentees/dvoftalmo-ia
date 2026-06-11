@@ -5,6 +5,7 @@ import { chatSchema } from "@/lib/validation/domain";
 import { streamRagAnswer } from "@/services/ai/rag";
 import { runCevespAnalysis } from "@/services/cevesp-analytics";
 import { runTracomaContextQuery } from "@/services/tracoma-analytics";
+import { runSinanTracomaContextQuery } from "@/services/sinan-tracoma";
 import { runCosAgent } from "@/services/cos-agent";
 import type { AiSource } from "@/lib/types";
 
@@ -18,6 +19,13 @@ const LABEL_RE  = /gve|municipio|munic|drs|uvis|nome|semana|se\b|ano|mes|subgrup
 const VALUE_RE  = /total|casos|caso|count|coleta|surto|trein|acao|afasta|enca|faixa|sex/i;
 const CODE_RE   = /ibge|codigo|cnes|numero|^id$/i;
 const TIME_RE   = /semana|se\b|ano|mes/i;
+const CEVESP_RE = /\b(cevesp|conjuntivite|conjuntivites|notificac|surto|surtos|gve|drs|uvis|semana epidemiologica|se\s*\d+|total de casos|casos por|municipio|munic[ií]pio|faixa etaria|idade|sexo|masculino|feminino|coleta|material biologico|acao educativa|atividade educativa|treinamento|afastamento|encaminhamento|unidade notificadora|cnes)\b/i;
+const SINAN_TRACOMA_RE = /\b(sinan|traconet|nottraconet|nottraconect|banco de tracoma|agravo|tracoma)\b/i;
+
+function shouldQueryCevesp(agent: string, message: string) {
+  if (agent === "epidemiologico" || agent === "cos") return true;
+  return CEVESP_RE.test(message);
+}
 
 function extractChartData(
   rows: Record<string, unknown>[],
@@ -46,6 +54,49 @@ function extractChartData(
   const chartType = isTime ? "area" : data.length <= 5 ? "pie" : "bar";
 
   return { chartType, title: `${metricLabel} — ${timeLabel}`, data };
+}
+
+function formatCevespContext(result: {
+  rows?: Array<Record<string, unknown>>;
+  columns?: string[];
+  metricLabel?: string;
+  timeLabel?: string;
+  interpretation?: string[];
+  understanding?: {
+    metric?: string;
+    period?: string;
+    temporalGrouping?: string;
+    dimensions?: string[];
+    filters?: string[];
+    source?: string;
+    warnings?: string[];
+  };
+  fromCache?: boolean;
+}) {
+  const rows = result.rows ?? [];
+  const cols = result.columns ?? Object.keys(rows[0] ?? {});
+  const header = cols.length > 0 ? cols.join(" | ") : "";
+  const bodyRows = rows.slice(0, 60).map((row) => cols.map((col) => row[col]).join(" | ")).join("\n");
+  const interpretation = Array.isArray(result.interpretation) ? result.interpretation.join("\n") : "";
+  const understanding = result.understanding
+    ? [
+        `Fonte: ${result.understanding.source ?? (result.fromCache ? "Cache Supabase CEVESP" : "CEVESP")}`,
+        `Indicador entendido: ${result.understanding.metric ?? result.metricLabel ?? ""}`,
+        `Periodo entendido: ${result.understanding.period ?? result.timeLabel ?? ""}`,
+        `Agrupamento: ${result.understanding.temporalGrouping ?? ""}`,
+        `Dimensoes: ${(result.understanding.dimensions ?? []).join(", ") || "nenhuma"}`,
+        `Filtros: ${(result.understanding.filters ?? []).join(", ") || "nenhum"}`,
+        ...(result.understanding.warnings ?? []).map((warning) => `Aviso: ${warning}`)
+      ].join("\n")
+    : `Metrica: ${result.metricLabel ?? ""}\nPeriodo: ${result.timeLabel ?? ""}`;
+
+  return [
+    "O sistema TEM acesso aos dados CEVESP por consulta em tempo real ou cache importado.",
+    "Use obrigatoriamente os dados abaixo. Se nao houver linhas, explique o diagnostico retornado pelo cache/banco e oriente importar/sincronizar.",
+    understanding,
+    header && bodyRows ? `${header}\n${bodyRows}` : "",
+    interpretation ? `Interpretacao automatica:\n${interpretation}` : ""
+  ].filter(Boolean).join("\n\n");
 }
 
 export async function GET(request: NextRequest) {
@@ -140,25 +191,23 @@ export async function POST(request: NextRequest) {
 
   await Promise.allSettled([
     (async () => {
-      if (body.agent === "epidemiologico") {
+      if (shouldQueryCevesp(body.agent, body.message)) {
         const result = await runCevespAnalysis(body.message);
-        if (result.rows && result.rows.length > 0) {
-          const rows = result.rows.slice(0, 40);
-          const cols = result.columns ?? Object.keys(rows[0] ?? {});
-          const header = cols.join(" | ");
-          const bodyRows = rows.map((row: Record<string, unknown>) => Object.values(row).join(" | ")).join("\n");
-          const interp = Array.isArray(result.interpretation) ? result.interpretation.join("\n") : "";
-          cevespContext =
-            `Metrica: ${result.metricLabel ?? ""}\nPeriodo: ${result.timeLabel ?? ""}\n\n${header}\n${bodyRows}` +
-            (interp ? `\n\nInterpretacao automatica:\n${interp}` : "");
-          cevespChart = extractChartData(rows, cols, result.metricLabel ?? "Dados", result.timeLabel ?? "");
-        }
+        const rows = result.rows?.slice(0, 60) ?? [];
+        const cols = result.columns ?? Object.keys(rows[0] ?? {});
+        cevespContext = formatCevespContext(result);
+        cevespChart = extractChartData(rows, cols, result.metricLabel ?? "Dados", result.timeLabel ?? "");
       }
     })(),
     (async () => {
       if (body.agent === "tracoma") {
-        const result = await runTracomaContextQuery(body.message);
-        tracomaContext = result.summary;
+        if (SINAN_TRACOMA_RE.test(body.message)) {
+          const result = await runSinanTracomaContextQuery(body.message);
+          tracomaContext = result.summary;
+        } else {
+          const result = await runTracomaContextQuery(body.message);
+          tracomaContext = result.summary;
+        }
       }
     })(),
     (async () => {

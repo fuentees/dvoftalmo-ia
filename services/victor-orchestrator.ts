@@ -2,6 +2,7 @@ import type { AgentKind, AiSource } from "@/lib/types";
 import { retrieveVictorStyleExamples } from "@/lib/external/victor-style-db";
 import { retrieveContext } from "@/services/ai/rag";
 import { runTracomaContextQuery } from "@/services/tracoma-analytics";
+import { runSinanTracomaContextQuery } from "@/services/sinan-tracoma";
 import { runCevespAnalysis } from "@/services/cevesp-analytics";
 import { getOpenAI, chatModel } from "@/services/ai/openai";
 import { buildSystemPrompt } from "@/services/ai/prompts";
@@ -22,7 +23,7 @@ export function detectRequiredAgents(message: string): AgentKind[] {
   const lower = message.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
   const agents: AgentKind[] = [];
 
-  if (/tracoma|tf\b|tt\b|trichiasis|foliculo|azitromicina|redcap|prevalencia|eliminacao|oms|opas|levantamento/.test(lower)) {
+  if (/tracoma|sinan|traconet|nottraconet|nottraconect|agravo|tf\b|tt\b|trichiasis|foliculo|azitromicina|redcap|prevalencia|eliminacao|oms|opas|levantamento/.test(lower)) {
     agents.push("tracoma");
   }
   if (/cevesp|conjuntivite|notificac|surto|gve|drs|uvis|se\s*\d|semana epidemio|boletim|canal endemico/.test(lower)) {
@@ -120,6 +121,10 @@ export async function runVictorOrchestrator(input: VictorOrchestratorInput): Pro
 async function gatherAgentContext(agent: AgentKind, message: string): Promise<string> {
   try {
     if (agent === "tracoma") {
+      if (/sinan|traconet|nottraconet|nottraconect|agravo/i.test(message)) {
+        const result = await runSinanTracomaContextQuery(message);
+        return result.summary;
+      }
       const result = await runTracomaContextQuery(message);
       return result.summary;
     }

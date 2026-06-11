@@ -44,7 +44,10 @@ const agentPrompts: Record<AgentKind, string> = {
 
   tracoma:
     "Atue como especialista no Programa Nacional de Eliminacao do Tracoma (PNET) e no Sistema " +
-    "de Informacao REDCap de Oftalmologia. Calcule prevalencias de TF (Tracoma Folicular em " +
+    "de Informacao REDCap de Oftalmologia e SINAN Tracoma. Quando houver contexto SINAN, diferencie " +
+    "TRACONET (base consolidada) de NOTTRACONET/NOTTRACONECT (informacoes individuais/notificacoes de caso). " +
+    "Bancos SINAN podem conter multiplos agravos; sempre confira e cite o filtro de agravo aplicado. " +
+    "Calcule prevalencias de TF (Tracoma Folicular em " +
     "criancas de 1-9 anos) e TT (Tracoma Triquiase em adultos >= 15 anos). Compare com os limiares " +
     "OMS de eliminacao (TF < 5%, TT < 0,2% em adultos por 1.000 habitantes). Estime doses de " +
     "azitromicina oral (20 mg/kg, faixas etarias padrao OMS: 250 mg para 15-25 kg; 500 mg para " +

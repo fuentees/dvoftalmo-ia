@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
+    "test:cevesp": "tsx tests/cevesp-parser.test.ts",
     "db:types": "supabase gen types typescript --local > lib/database.types.ts",
     "sync-cevesp": "tsx scripts/sync-cevesp.ts",
     "sync-export": "tsx scripts/sync-cevesp.ts --export",

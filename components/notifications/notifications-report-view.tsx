@@ -52,6 +52,26 @@ export function NotificationsReportView() {
     window.open("/api/cevesp/boletim", "_blank");
   }
 
+  function downloadAskCsv() {
+    if (!ask.data) return;
+    const columns = ask.data.columns ?? Object.keys(ask.data.rows?.[0] ?? {});
+    const rows = ask.data.monthlyReport?.statewideRows ?? ask.data.weeklyReport?.pivotRows ?? ask.data.rows ?? [];
+    const escape = (value: unknown) => {
+      const text = String(value ?? "");
+      return /[",;\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+    const csv = [
+      columns.map(escape).join(";"),
+      ...rows.map((row: Record<string, unknown>) => columns.map((column: string) => escape(row[column])).join(";"))
+    ].join("\n");
+    const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "cevesp-consulta.csv";
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
   return (
     <div className="flex flex-col">
       <div className="flex flex-col gap-3 border-b bg-card px-6 py-4 md:flex-row md:items-center md:justify-between">
@@ -91,9 +111,17 @@ export function NotificationsReportView() {
             placeholder="Ex.: Total de casos por GVE dos ultimos 5 anos por mes"
             className="min-h-[90px]"
           />
-          <Button onClick={() => ask.mutate()} disabled={ask.isPending}>
-            Consultar banco
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => ask.mutate()} disabled={ask.isPending}>
+              Consultar banco
+            </Button>
+            {ask.data && (
+              <Button variant="outline" onClick={downloadAskCsv}>
+                <Download className="h-4 w-4" />
+                Exportar CSV
+              </Button>
+            )}
+          </div>
           {ask.isError && (
             <p className="text-sm text-destructive">{(ask.error as Error).message}</p>
           )}
@@ -106,6 +134,32 @@ export function NotificationsReportView() {
                   <Badge key={item} className="bg-muted text-foreground">{item}</Badge>
                 ))}
               </div>
+              {ask.data.understanding && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>O que o agente entendeu</CardTitle>
+                    <CardDescription>Confira os criterios antes de usar o resultado no relatorio.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-3">
+                    <InfoItem label="Indicador" value={ask.data.understanding.metric} />
+                    <InfoItem label="Periodo" value={ask.data.understanding.period} />
+                    <InfoItem label="Agrupamento temporal" value={ask.data.understanding.temporalGrouping} />
+                    <InfoItem label="Dimensoes" value={(ask.data.understanding.dimensions ?? []).join(", ") || "Nenhuma"} />
+                    <InfoItem label="Filtros" value={(ask.data.understanding.filters ?? []).join(", ") || "Nenhum"} />
+                    <InfoItem label="Fonte" value={ask.data.understanding.source} />
+                    <InfoItem label="Campo de data" value={ask.data.understanding.dateField} />
+                    <InfoItem label="Campo do indicador" value={ask.data.understanding.indicatorField} />
+                    <InfoItem label="Confianca" value={ask.data.understanding.confidence} />
+                    {(ask.data.understanding.warnings ?? []).length > 0 && (
+                      <div className="rounded-md border border-yellow-300 bg-yellow-50 p-3 text-yellow-800 md:col-span-2 xl:col-span-3">
+                        {(ask.data.understanding.warnings as string[]).map((item) => (
+                          <p key={item}>{item}</p>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
               <div className="rounded-md border p-4">
                 <h3 className="mb-2 text-sm font-semibold">Interpretação epidemiológica</h3>
                 <ul className="space-y-2 text-sm text-muted-foreground">
@@ -422,6 +476,15 @@ export function NotificationsReportView() {
   );
 }
 
+function InfoItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border bg-background p-3">
+      <div className="text-xs font-medium uppercase text-muted-foreground">{label}</div>
+      <div className="mt-1 break-words font-medium">{value}</div>
+    </div>
+  );
+}
+
 function ResultTable({
   title,
   columns,
@@ -444,16 +507,19 @@ function ResultTable({
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, index) => (
-              <tr
-                key={index}
-                className={`border-b ${row.Mes === "Total" ? "bg-muted/50 font-semibold" : ""}`}
-              >
-                {columns.map((key) => (
-                  <td key={key} className="px-3 py-2">{String(row[key] ?? "")}</td>
-                ))}
-              </tr>
-            ))}
+            {rows.map((row, index) => {
+              const isTotal = Object.values(row).some((value) => String(value) === "Total");
+              return (
+                <tr
+                  key={index}
+                  className={`border-b ${isTotal ? "bg-muted/50 font-semibold" : ""}`}
+                >
+                  {columns.map((key) => (
+                    <td key={key} className="px-3 py-2">{String(row[key] ?? "")}</td>
+                  ))}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

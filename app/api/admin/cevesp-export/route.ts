@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
+import { requireCevespSyncPermission } from "@/lib/admin-guard";
 import {
   createNotificationConnection,
   getNotificationTableName,
@@ -84,6 +85,8 @@ export async function GET(request: NextRequest) {
   const supabase = await createClient();
   const user = await getCurrentUser(supabase);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const denied = await requireCevespSyncPermission(supabase, user.id);
+  if (denied) return denied;
 
   if (!process.env.NOTIFY_DB_HOST) {
     return NextResponse.json(

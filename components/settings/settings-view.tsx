@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CevespSyncCard } from "@/components/settings/cevesp-sync-card";
+import { SinanTracomaSyncCard } from "@/components/settings/sinan-tracoma-sync-card";
 
 type Provider = "openai" | "anthropic" | "gemini";
 
@@ -295,6 +296,7 @@ on conflict (key) do nothing;`}
 
         {/* Sincronização CEVESP */}
         <CevespSyncCard />
+        <SinanTracomaSyncCard />
 
         {/* Info adicional */}
         <Card className="bg-muted/40">
