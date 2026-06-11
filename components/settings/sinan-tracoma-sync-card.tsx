@@ -47,6 +47,21 @@ export function SinanTracomaSyncCard() {
     setBusy(true);
     setMessage(null);
     try {
+      if (file.name.toLowerCase().endsWith(".dbf")) {
+        const form = new FormData();
+        form.append("bank", bank);
+        form.append("file", file);
+        const response = await fetch("/api/admin/sinan-tracoma-import-file", {
+          method: "POST",
+          body: form
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error ?? "Erro ao importar DBF.");
+        setMessage(`${Number(data.imported ?? 0).toLocaleString("pt-BR")} registros DBF importados em ${bank.toUpperCase()}.`);
+        await loadStatus();
+        return;
+      }
+
       const text = await file.text();
       const rows = file.name.toLowerCase().endsWith(".csv")
         ? parseCsv(text)
@@ -117,7 +132,7 @@ export function SinanTracomaSyncCard() {
           <input
             ref={fileRef}
             type="file"
-            accept=".json,.csv"
+            accept=".dbf,.json,.csv"
             className="hidden"
             onChange={(event) => {
               const file = event.target.files?.[0];
@@ -126,7 +141,7 @@ export function SinanTracomaSyncCard() {
           />
           <Button size="sm" variant="outline" className="h-8 text-xs" disabled={busy} onClick={() => fileRef.current?.click()}>
             <Upload className="mr-1.5 h-3.5 w-3.5" />
-            {busy ? "Importando..." : "Importar JSON/CSV"}
+            {busy ? "Importando..." : "Importar DBF/JSON/CSV"}
           </Button>
         </div>
         {message && <p className="text-xs text-muted-foreground">{message}</p>}

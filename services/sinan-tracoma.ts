@@ -19,6 +19,8 @@ type NormalizedSinanRow = {
   classificacao: string | null;
   criterio: string | null;
   evolucao: string | null;
+  tratamento: string | null;
+  conclusao: string | null;
   raw: RawRow;
 };
 
@@ -33,7 +35,9 @@ const fieldCandidates = {
   unidade: ["ID_UNIDADE", "UNIDADE", "NM_UNIDADE", "CNES", "ID_CNES"],
   classificacao: ["CLASSI_FIN", "CLASSIFICACAO", "CLASSIFIN", "CRITERIO_CONF"],
   criterio: ["CRITERIO", "CRITERIO_CONF", "TP_CRITERIO"],
-  evolucao: ["EVOLUCAO", "EVOL_CASO", "TP_EVOLUCAO"]
+  evolucao: ["EVOLUCAO", "EVOL_CASO", "TP_EVOLUCAO"],
+  tratamento: ["TRATAMENTO", "TRAT", "ID_TRATAM", "ANTIBIOTIC", "AZITROMIC", "MEDICAMENTO", "DOSE", "DT_TRAT"],
+  conclusao: ["CONCLUSAO", "DT_CONCLUSAO", "SIT_CONCLU", "CLASSI_FIN", "CLASSIFICACAO"]
 };
 
 function getValue(row: RawRow, candidates: string[]) {
@@ -102,6 +106,8 @@ export function normalizeSinanTracomaRow(row: RawRow, bank: SinanTracomaBank): N
     classificacao: toStringOrNull(getValue(row, fieldCandidates.classificacao)),
     criterio: toStringOrNull(getValue(row, fieldCandidates.criterio)),
     evolucao: toStringOrNull(getValue(row, fieldCandidates.evolucao)),
+    tratamento: toStringOrNull(getValue(row, fieldCandidates.tratamento)),
+    conclusao: toStringOrNull(getValue(row, fieldCandidates.conclusao)),
     raw: row
   };
 }
@@ -206,7 +212,7 @@ export async function runSinanTracomaAnalysis(question: string) {
   const supabase = createAdminClient();
   let query = supabase
     .from("sinan_tracoma_rows")
-    .select("source_bank, agravo, ano, municipio, gve, drs, unidade, classificacao, criterio, evolucao");
+    .select("source_bank, agravo, ano, dt_notificacao, municipio, gve, drs, unidade, classificacao, criterio, evolucao, tratamento, conclusao");
 
   if (parsed.bank) query = query.eq("source_bank", parsed.bank);
   if (parsed.agravo) query = query.ilike("agravo", `%${parsed.agravo}%`);
@@ -232,6 +238,7 @@ export async function runSinanTracomaAnalysis(question: string) {
   const totalRow = { [labelForDimension(groupField)]: "Total", Valor: rows.length };
   const banks = Array.from(new Set(rows.map((row) => String(row.source_bank ?? "")))).join(", ") || "nao identificado";
   const agravos = Array.from(new Set(rows.map((row) => String(row.agravo ?? "")).filter(Boolean))).slice(0, 5).join(", ") || "nao informado";
+  const quality = buildQualityFindings(rows);
 
   return {
     question,
@@ -240,14 +247,57 @@ export async function runSinanTracomaAnalysis(question: string) {
     timeLabel: parsed.yearStart ? `${parsed.yearStart} a ${parsed.yearEnd}` : "todo o cache",
     columns: [labelForDimension(groupField), "Valor"],
     rows: [...resultRows, totalRow],
+    quality,
     interpretation: [
       `Foram encontrados ${rows.length} registros no cache SINAN Tracoma.`,
       `Banco(s) considerados: ${banks}. Agravo(s) observado(s): ${agravos}.`,
       parsed.agravo
         ? `A consulta aplicou filtro de agravo contendo "${parsed.agravo}".`
         : "Nenhum filtro de agravo foi identificado na pergunta; para bancos SINAN com multiplos agravos, recomenda-se informar o agravo.",
-      "TRACONET deve ser interpretado como base consolidada; NOTTRACONET como base de informacoes individuais/notificacoes de caso."
+      "TRACONET deve ser interpretado como base consolidada; NOTTRACONET como base de informacoes individuais/notificacoes de caso.",
+      ...quality.recommendations
     ]
+  };
+}
+
+function isBlank(value: unknown) {
+  return value == null || String(value).trim() === "";
+}
+
+function buildQualityFindings(rows: Array<Record<string, unknown>>) {
+  const total = rows.length;
+  const missing = {
+    agravo: rows.filter((row) => isBlank(row.agravo)).length,
+    ano: rows.filter((row) => isBlank(row.ano)).length,
+    municipio: rows.filter((row) => isBlank(row.municipio)).length,
+    classificacao: rows.filter((row) => isBlank(row.classificacao)).length,
+    criterio: rows.filter((row) => isBlank(row.criterio)).length,
+    evolucao: rows.filter((row) => isBlank(row.evolucao)).length,
+    tratamento: rows.filter((row) => isBlank(row.tratamento)).length,
+    conclusao: rows.filter((row) => isBlank(row.conclusao)).length
+  };
+  const futureYears = rows.filter((row) => Number(row.ano) > new Date().getFullYear()).length;
+  const oldYears = rows.filter((row) => Number(row.ano) > 0 && Number(row.ano) < 1975).length;
+  const withoutTreatment = missing.tratamento;
+  const withoutConclusion = missing.conclusao;
+  const recommendations: string[] = [];
+
+  if (missing.agravo > 0) recommendations.push(`${missing.agravo} registros nao possuem agravo identificado; em base com multiplos agravos, isso prejudica o filtro de tracoma.`);
+  if (missing.municipio > 0) recommendations.push(`${missing.municipio} registros nao possuem municipio identificado, limitando analise territorial.`);
+  if (withoutTreatment > 0) recommendations.push(`${withoutTreatment} registros nao apresentam campo de tratamento preenchido ou mapeado; verificar antibioticoterapia/azitromicina e completude.`);
+  if (withoutConclusion > 0) recommendations.push(`${withoutConclusion} registros nao apresentam conclusao/classificacao final preenchida ou mapeada.`);
+  if (futureYears > 0 || oldYears > 0) recommendations.push(`Foram encontrados ${futureYears + oldYears} registros com ano improvavel; revisar datas de notificacao/investigacao.`);
+  if (total === 0) recommendations.push("Nenhum registro encontrado para os filtros solicitados.");
+  if (recommendations.length === 0) recommendations.push("Nao foram detectadas inconsistencias basicas de completude nos campos mapeados.");
+
+  return {
+    total,
+    missing,
+    futureYears,
+    oldYears,
+    withoutTreatment,
+    withoutConclusion,
+    recommendations
   };
 }
 

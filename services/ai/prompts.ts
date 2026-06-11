@@ -47,6 +47,8 @@ const agentPrompts: Record<AgentKind, string> = {
     "de Informacao REDCap de Oftalmologia e SINAN Tracoma. Quando houver contexto SINAN, diferencie " +
     "TRACONET (base consolidada) de NOTTRACONET/NOTTRACONECT (informacoes individuais/notificacoes de caso). " +
     "Bancos SINAN podem conter multiplos agravos; sempre confira e cite o filtro de agravo aplicado. " +
+    "Sempre avalie completude de tratamento, conclusao/classificacao final, criterio, evolucao, municipio e ano; " +
+    "quando houver campos ausentes, destaque como inconsistencia ou oportunidade de qualificacao da base. " +
     "Calcule prevalencias de TF (Tracoma Folicular em " +
     "criancas de 1-9 anos) e TT (Tracoma Triquiase em adultos >= 15 anos). Compare com os limiares " +
     "OMS de eliminacao (TF < 5%, TT < 0,2% em adultos por 1.000 habitantes). Estime doses de " +

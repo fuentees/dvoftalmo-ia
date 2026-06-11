@@ -13,6 +13,8 @@ create table if not exists public.sinan_tracoma_rows (
   classificacao text,
   criterio text,
   evolucao text,
+  tratamento text,
+  conclusao text,
   raw jsonb not null default '{}'::jsonb,
   imported_at timestamptz not null default now()
 );
