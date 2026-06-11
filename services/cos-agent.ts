@@ -108,10 +108,11 @@ const COS_TOOLS: OpenAI.ChatCompletionTool[] = [
     function: {
       name: "consultar_sinan_tracoma",
       description:
-        "Consulta o cache SINAN Tracoma (bancos TRACONET e NOTTRACONET). " +
-        "Retorna contagens agrupadas por município, GVE, DRS, ano, banco, classificação ou agravo. " +
-        "Use para perguntas sobre casos de tracoma notificados, distribuição por região/ano, " +
-        "comparação entre bancos, casos TF/TT no SINAN.",
+        "Consulta o cache SINAN Tracoma. " +
+        "TRACONET = casos individuais reais (sexo, idade, forma clínica TF/TI/TS/TT/CO, tratamento). " +
+        "NOTTRACONET = consolidado/agregados (número de examinados e positivos por localidade). " +
+        "Retorna contagens por município, GVE, DRS, ano, banco, classificação ou agravo. " +
+        "Use para perguntas sobre casos notificados, distribuição territorial/temporal, comparação entre bancos.",
       parameters: {
         type: "object",
         properties: {
@@ -130,9 +131,10 @@ const COS_TOOLS: OpenAI.ChatCompletionTool[] = [
       name: "auditar_sinan_tracoma",
       description:
         "Audita qualidade e consistência dos dados SINAN Tracoma. " +
-        "Detecta: divergências entre TRACONET (consolidado) e NOTTRACONET (casos individuais) por município/ano, " +
-        "casos sem graduação TF/TT, sem tratamento registrado, sem conclusão, TF sem tratamento, " +
-        "TT sem cirurgia/epilation, anos impossíveis e completude de campos-chave. " +
+        "TRACONET = casos individuais (TF/TT/sexo/idade); NOTTRACONET = consolidado/agregados. " +
+        "Detecta: divergências entre os dois bancos por município/ano (ex: consolidado tem 40 casos mas só 20 individuais registrados), " +
+        "casos sem graduação TF/TI/TS/TT/CO, TF sem tratamento (azitromicina), TT sem cirurgia/epilation, " +
+        "anos impossíveis e completude dos campos clínicos. " +
         "Use para perguntas sobre completude, subregistro, inconsistências ou qualidade dos dados SINAN tracoma.",
       parameters: {
         type: "object",

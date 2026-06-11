@@ -234,7 +234,7 @@ export function SinanQualidadeView() {
                 <div className="text-xs text-muted-foreground mb-1">Total de registros</div>
                 <div className="text-3xl font-bold tabular-nums">{totalRecords.toLocaleString("pt-BR")}</div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  TRACONET: {data.totalTraconet.toLocaleString("pt-BR")} · NOTTRACONET: {data.totalNottraconet.toLocaleString("pt-BR")}
+                  Individuais (TRACONET): {data.totalTraconet.toLocaleString("pt-BR")} · Consolidado (NOTTRACONET): {data.totalNottraconet.toLocaleString("pt-BR")}
                 </div>
               </CardContent>
             </Card>
@@ -262,35 +262,38 @@ export function SinanQualidadeView() {
             </Card>
           </div>
 
-          {/* Alertas de qualidade */}
+          {/* Alertas de qualidade — baseados nos casos individuais TRACONET */}
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Alertas de Qualidade</CardTitle>
+              <CardTitle className="text-base">Alertas de Qualidade — Casos Individuais (TRACONET)</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Verificações clínicas aplicadas aos registros individuais. O NOTTRACONET (consolidado) não possui esses campos.
+              </p>
             </CardHeader>
             <CardContent className="grid gap-3 sm:grid-cols-2">
               <AlertCard
                 count={data.semGraduacao}
-                label="sem graduação TF/TT"
+                label="sem forma clínica (TF/TI/TS/TT/CO)"
                 severity={data.semGraduacao > 0 ? "critical" : "ok"}
-                detail="Casos confirmados sem classificação TF (folicular) ou TT (tracomatoso trichiasis)"
+                detail="Casos individuais sem graduação clínica preenchida — campo essencial para definir conduta"
               />
               <AlertCard
                 count={data.tfSemTratamento}
                 label="TF confirmado sem tratamento"
                 severity={data.tfSemTratamento > 0 ? "critical" : "ok"}
-                detail="TF ativo exige azitromicina — ausência de tratamento é inconsistência grave"
+                detail="TF ativo exige azitromicina — ausência de tratamento registrado é inconsistência grave"
               />
               <AlertCard
                 count={data.ttSemCircurgia}
-                label="TT sem cirurgia/epilation registrada"
+                label="TT sem encaminhamento p/ cirurgia"
                 severity={data.ttSemCircurgia > 0 ? "critical" : "ok"}
-                detail="TT requer cirurgia ou epilation — ausência indica subregistro de conduta"
+                detail="TT (triquíase tracomatosa) requer referência oftalmológica — risco de progressão para cegueira"
               />
               <AlertCard
                 count={data.semTratamento}
-                label="sem qualquer tratamento"
+                label="sem tratamento registrado"
                 severity={data.semTratamento > 0 ? "warning" : "ok"}
-                detail="Campo tratamento vazio — pode ser dado faltante ou caso encerrado sem conduta"
+                detail="Campo tratamento vazio — verificar se azitromicina ou outra conduta foi omitida"
               />
               <AlertCard
                 count={data.semConclusao}
@@ -312,14 +315,15 @@ export function SinanQualidadeView() {
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
-                  Divergências TRACONET × NOTTRACONET
+                  Divergências: Individuais (TRACONET) × Consolidado (NOTTRACONET)
                   <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
                     {data.crossBankDivergences.length}
                   </span>
                 </CardTitle>
                 <p className="text-xs text-muted-foreground">
-                  Município/ano onde o consolidado (TRACONET) difere dos casos individuais (NOTTRACONET).
-                  Diferença positiva = subnotificação de casos individuais.
+                  Município/ano com contagem diferente entre os dois bancos.
+                  Diferença <span className="font-medium text-red-600">positiva</span> = consolidado tem mais casos que individuais (subregistro de TRACONET).
+                  Diferença <span className="font-medium text-amber-600">negativa</span> = individuais têm mais que consolidado (possível duplicidade).
                 </p>
               </CardHeader>
               <CardContent className="overflow-x-auto p-0">
@@ -328,8 +332,8 @@ export function SinanQualidadeView() {
                     <tr className="border-b bg-muted/40">
                       <th className="px-4 py-2 text-left font-medium text-muted-foreground">Município</th>
                       <th className="px-4 py-2 text-right font-medium text-muted-foreground">Ano</th>
-                      <th className="px-4 py-2 text-right font-medium text-muted-foreground">TRACONET</th>
-                      <th className="px-4 py-2 text-right font-medium text-muted-foreground">NOTTRACONET</th>
+                      <th className="px-4 py-2 text-right font-medium text-muted-foreground">Individuais (TRACONET)</th>
+                      <th className="px-4 py-2 text-right font-medium text-muted-foreground">Consolidado (NOTTRACONET)</th>
                       <th className="px-4 py-2 text-right font-medium text-muted-foreground">Diferença</th>
                       <th className="px-4 py-2 text-center font-medium text-muted-foreground">Risco</th>
                     </tr>
@@ -341,7 +345,8 @@ export function SinanQualidadeView() {
                         <td className="px-4 py-2 text-right tabular-nums">{d.ano}</td>
                         <td className="px-4 py-2 text-right tabular-nums">{d.traconet.toLocaleString("pt-BR")}</td>
                         <td className="px-4 py-2 text-right tabular-nums">{d.nottraconet.toLocaleString("pt-BR")}</td>
-                        <td className={`px-4 py-2 text-right tabular-nums font-semibold ${d.diff > 0 ? "text-red-600" : "text-amber-600"}`}>
+                        <td className={`px-4 py-2 text-right tabular-nums font-semibold ${d.diff > 0 ? "text-red-600" : "text-amber-600"}`}
+                            title={d.diff > 0 ? "Consolidado > individuais: possível subregistro de casos individuais" : "Individuais > consolidado: verificar duplicidade"}>
                           {d.diff > 0 ? "+" : ""}{d.diff.toLocaleString("pt-BR")}
                         </td>
                         <td className="px-4 py-2 text-center">
@@ -360,9 +365,10 @@ export function SinanQualidadeView() {
           {/* Completude de campos */}
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Completude dos Campos</CardTitle>
+              <CardTitle className="text-base">Completude dos Campos — Casos Individuais (TRACONET)</CardTitle>
               <p className="text-xs text-muted-foreground">
-                Percentual de registros com o campo preenchido. Abaixo de 70% = crítico.
+                Percentual de registros individuais com o campo preenchido. Abaixo de 70% = crítico.
+                O NOTTRACONET (consolidado) possui estrutura diferente (nº examinados/positivos) e não é avaliado aqui.
               </p>
             </CardHeader>
             <CardContent className="grid gap-3 sm:grid-cols-2">

@@ -118,9 +118,10 @@ function normalizeText(value: string) {
 
 function parseQuestion(question: string) {
   const lower = normalizeText(question);
+  // TRACONET = casos individuais (sexo, idade, TF/TT); NOTTRACONET = consolidado/agregados
   const bank: SinanTracomaBank | undefined =
-    /nottraconet|nottraconect|casos?|individual|notificacao/.test(lower) ? "nottraconet" :
-    /traconet|consolidado|consolidada/.test(lower) ? "traconet" :
+    /traconet|casos?|individual|notificacao|sexo|idade|forma clinica/.test(lower) ? "traconet" :
+    /nottraconet|consolidado|consolidada|agregado/.test(lower) ? "nottraconet" :
     undefined;
   const metric =
     /municipios?/.test(lower) && /quantos|total|numero/.test(lower) ? "municipios" :
@@ -370,10 +371,15 @@ export async function auditarSinanTracoma(opts?: {
   if (error) throw new Error(`SINAN auditoria: ${error.message}`);
   const rows = (data ?? []) as Array<Record<string, unknown>>;
 
+  // TRACONET = casos individuais (tem TF/TT/sexo/idade/tratamento)
+  // NOTTRACONET = consolidado/agregados (nº examinados e positivos por localidade)
   const traconetRows    = rows.filter((r) => r.source_bank === "traconet");
   const nottraconetRows = rows.filter((r) => r.source_bank === "nottraconet");
 
   // ── Cross-bank comparison per municipio×ano ───────────────────────────────
+  // Compara contagem de casos individuais (TRACONET) vs registros consolidados (NOTTRACONET)
+  // diff > 0 → consolidado tem mais registros que individuais (subregistro de individuais)
+  // diff < 0 → individuais têm mais que consolidado (possível duplicidade ou casos não consolidados)
   function countByKey(rs: typeof rows) {
     const m = new Map<string, number>();
     for (const r of rs) {
@@ -391,7 +397,8 @@ export async function auditarSinanTracoma(opts?: {
   for (const key of allKeys) {
     const tc  = traconetMap.get(key)    ?? 0;
     const ntc = nottraconetMap.get(key) ?? 0;
-    const diff = tc - ntc;
+    // diff = consolidado - individuais: positivo = subregistro de individuais
+    const diff = ntc - tc;
     if (diff === 0) continue;
     const [municipio, anoStr] = key.split("|");
     const abs = Math.abs(diff);
@@ -406,25 +413,26 @@ export async function auditarSinanTracoma(opts?: {
   }
   crossBankDivergences.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
 
-  // ── Field completeness ────────────────────────────────────────────────────
-  const fields = ["agravo", "municipio", "gve", "classificacao", "criterio", "tratamento", "conclusao", "evolucao"];
+  // ── Field completeness — somente TRACONET (individuais) tem campos clínicos ──
+  const fieldsTraconet = ["agravo", "municipio", "gve", "classificacao", "criterio", "tratamento", "conclusao", "evolucao"];
   const fieldCompleteness: SinanAuditResult["fieldCompleteness"] = {};
-  for (const f of fields) {
-    const filled = rows.filter((r) => !isBlank(r[f])).length;
-    fieldCompleteness[f] = { total: rows.length, filled, pct: rows.length ? Math.round((filled / rows.length) * 100) : 0 };
+  const baseRows = traconetRows.length > 0 ? traconetRows : rows; // fallback se só houver um banco
+  for (const f of fieldsTraconet) {
+    const filled = baseRows.filter((r) => !isBlank(r[f])).length;
+    fieldCompleteness[f] = { total: baseRows.length, filled, pct: baseRows.length ? Math.round((filled / baseRows.length) * 100) : 0 };
   }
 
-  // ── Tracoma-specific quality ──────────────────────────────────────────────
+  // ── Checks clínicos: aplicar SOMENTE nos casos individuais (TRACONET) ─────
   const currentYear = new Date().getFullYear();
-  const semGraduacao  = rows.filter((r) => isBlank(r.classificacao)).length;
-  const semTratamento = rows.filter((r) => isBlank(r.tratamento)).length;
-  const semConclusao  = rows.filter((r) => isBlank(r.conclusao)).length;
+  const semGraduacao  = traconetRows.filter((r) => isBlank(r.classificacao)).length;
+  const semTratamento = traconetRows.filter((r) => isBlank(r.tratamento)).length;
+  const semConclusao  = traconetRows.filter((r) => isBlank(r.conclusao)).length;
 
-  const tfRows = rows.filter((r) => {
+  const tfRows = traconetRows.filter((r) => {
     const cls = normalizeBankLabel(r.classificacao);
     return cls === "TF" || cls === "TF+TT";
   });
-  const ttRows = rows.filter((r) => {
+  const ttRows = traconetRows.filter((r) => {
     const cls = normalizeBankLabel(r.classificacao);
     return cls === "TT" || cls === "TF+TT";
   });
@@ -445,21 +453,26 @@ export async function auditarSinanTracoma(opts?: {
   const rec: string[] = [];
   const altoDivergencia = crossBankDivergences.filter((d) => d.risco === "alto");
   if (altoDivergencia.length > 0) {
-    const top3 = altoDivergencia.slice(0, 3).map((d) => `${d.municipio} (${d.ano}): TRACONET=${d.traconet}, NOTTRACONET=${d.nottraconet}`).join("; ");
-    rec.push(`SUBREGISTRO POTENCIAL em ${altoDivergencia.length} municipio(s)/periodo(s) com divergencia alta entre bancos. Exemplos: ${top3}.`);
+    const top3 = altoDivergencia.slice(0, 3).map((d) => {
+      const tipo = d.diff > 0
+        ? `consolidado(${d.nottraconet}) > individuais(${d.traconet}): subregistro de casos individuais`
+        : `individuais(${d.traconet}) > consolidado(${d.nottraconet}): possivel duplicidade`;
+      return `${d.municipio} ${d.ano}: ${tipo}`;
+    }).join("; ");
+    rec.push(`DIVERGENCIA ALTA em ${altoDivergencia.length} municipio(s)/periodo(s) entre TRACONET (individuais) e NOTTRACONET (consolidado). Exemplos: ${top3}.`);
   }
   if (semGraduacao > 0) {
-    const pct = rows.length ? Math.round((semGraduacao / rows.length) * 100) : 0;
-    rec.push(`${semGraduacao} caso(s) (${pct}%) sem graduacao TF/TT preenchida (campo classificacao vazio). Impede calculo de prevalencia e definicao de conduta.`);
+    const pct = traconetRows.length ? Math.round((semGraduacao / traconetRows.length) * 100) : 0;
+    rec.push(`${semGraduacao} caso(s) individual(is) (${pct}%) sem graduacao TF/TI/TS/TT/CO preenchida. Impede calculo de prevalencia e definicao de conduta.`);
   }
-  if (tfSemTratamento > 0) rec.push(`${tfSemTratamento} caso(s) classificado(s) como TF confirmado sem campo de tratamento preenchido. Verificar se azitromicina foi prescrita/registrada.`);
-  if (ttSemCircurgia > 0)  rec.push(`${ttSemCircurgia} caso(s) com TT confirmado sem indicacao de cirurgia ou epilation no campo de tratamento/conclusao. Risco de progressao para cegueira.`);
-  if (semConclusao > 0)    rec.push(`${semConclusao} caso(s) sem conclusao/classificacao final preenchida.`);
+  if (tfSemTratamento > 0) rec.push(`${tfSemTratamento} caso(s) TRACONET classificado(s) como TF sem tratamento registrado. TF ativo exige azitromicina — verificar se foi prescrita e registrada.`);
+  if (ttSemCircurgia > 0)  rec.push(`${ttSemCircurgia} caso(s) TRACONET com TT confirmado sem encaminhamento para cirurgia/epilation. TT requer referencia oftalmologica — risco de progressao para cegueira.`);
+  if (semConclusao > 0)    rec.push(`${semConclusao} caso(s) individual(is) sem conclusao/encerramento preenchido.`);
   if (anoImpossivel > 0)   rec.push(`${anoImpossivel} registro(s) com ano impossivel (< 1975 ou > ${currentYear}). Corrigir data de notificacao na fonte.`);
   const baixoPct = Object.entries(fieldCompleteness)
     .filter(([, v]) => v.pct < 50 && v.total > 0)
     .map(([k, v]) => `${k}: ${v.pct}%`);
-  if (baixoPct.length > 0) rec.push(`Campos com completude < 50%: ${baixoPct.join(", ")}. Verificar mapeamento do arquivo importado.`);
+  if (baixoPct.length > 0) rec.push(`Campos TRACONET com completude < 50%: ${baixoPct.join(", ")}. Verificar mapeamento do arquivo importado.`);
   if (rec.length === 0) rec.push("Nenhuma inconsistencia critica detectada. Dados com boa completude e sem divergencias expressivas entre bancos.");
 
   return {
