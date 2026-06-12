@@ -114,6 +114,49 @@ function NotificationIdPanel({ data }: { data: SinanAuditResult }) {
   );
 }
 
+const CONSOLIDATED_METRIC_LABELS: Record<string, string> = {
+  examinados: "Examinados",
+  positivos: "Positivos",
+  casosInformados: "Casos informados",
+  negativos: "Negativos",
+  tratados: "Tratados",
+  comunicantes: "Comunicantes",
+  tf: "TF",
+  ti: "TI",
+  ts: "TS",
+  tt: "TT",
+  co: "CO"
+};
+
+function ConsolidatedMetricsPanel({ data }: { data: SinanAuditResult }) {
+  const entries = Object.entries(data.consolidatedMetrics ?? {})
+    .filter(([, item]) => item.value > 0 || item.field);
+
+  if (!entries.length) return null;
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Indicadores do Consolidado (NOTTRACONET/NTRACOMA)</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Estes campos existem no consolidado e não devem ser confundidos com número de linhas do arquivo.
+        </p>
+      </CardHeader>
+      <CardContent className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {entries.map(([key, item]) => (
+          <div key={key} className="rounded-md border p-3">
+            <div className="text-xs text-muted-foreground">{CONSOLIDATED_METRIC_LABELS[key] ?? key}</div>
+            <div className="text-lg font-semibold tabular-nums">{Number(item.value ?? 0).toLocaleString("pt-BR")}</div>
+            <div className="mt-1 text-[10px] text-muted-foreground">
+              Campo: {item.field ?? "não identificado"}
+            </div>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
 type DivTab = "ano" | "gve" | "municipio";
 type SFTab  = "gve" | "municipio";
 
@@ -273,14 +316,13 @@ function DivergenciasPanel({ data }: { data: SinanAuditResult }) {
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-base flex items-center gap-2">
-          Divergências: Individuais (TRACONET) × Consolidado (NOTTRACONET)
+          Divergências: Positivos Individuais (TRACONET) × Positivos Consolidados (NOTTRACONET)
           <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
             {total} municípios/ano
           </span>
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          Diferença <span className="font-medium text-red-600">positiva</span> = casos positivos consolidados maiores que os individuais (possível subregistro no TRACONET).{" "}
-          Diferença <span className="font-medium text-amber-600">negativa</span> = individuais maiores que positivos consolidados (possível duplicidade ou ausência no consolidado).
+          A comparação usa positivos individuais TF/TI/TS/TT/CO contra a variável de positivos do consolidado. Anos inválidos ficam fora desta tabela e aparecem como alerta de qualidade.
         </p>
         {/* Tabs */}
         <div className="mt-3 flex gap-1 border-b">
@@ -307,7 +349,7 @@ function DivergenciasPanel({ data }: { data: SinanAuditResult }) {
             <thead>
               <tr className="border-b bg-muted/40">
                 <th className="px-4 py-2 text-left font-medium text-muted-foreground">Ano</th>
-                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Individuais (TRACONET)</th>
+                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Positivos individuais</th>
                 <th className="px-4 py-2 text-right font-medium text-muted-foreground">Positivos consolidados</th>
                 <th className="px-4 py-2 text-right font-medium text-muted-foreground">Diferença</th>
                 <th className="px-4 py-2 text-center font-medium text-muted-foreground">Risco</th>
@@ -334,7 +376,7 @@ function DivergenciasPanel({ data }: { data: SinanAuditResult }) {
             <thead>
               <tr className="border-b bg-muted/40">
                 <th className="px-4 py-2 text-left font-medium text-muted-foreground">GVE</th>
-                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Individuais (TRACONET)</th>
+                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Positivos individuais</th>
                 <th className="px-4 py-2 text-right font-medium text-muted-foreground">Positivos consolidados</th>
                 <th className="px-4 py-2 text-right font-medium text-muted-foreground">Diferença</th>
                 <th className="px-4 py-2 text-center font-medium text-muted-foreground">Risco</th>
@@ -363,7 +405,7 @@ function DivergenciasPanel({ data }: { data: SinanAuditResult }) {
                 <th className="px-4 py-2 text-left font-medium text-muted-foreground">Município</th>
                 <th className="px-4 py-2 text-left font-medium text-muted-foreground">GVE</th>
                 <th className="px-4 py-2 text-right font-medium text-muted-foreground">Ano</th>
-                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Individuais</th>
+                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Positivos individuais</th>
                 <th className="px-4 py-2 text-right font-medium text-muted-foreground">Positivos consolidados</th>
                 <th className="px-4 py-2 text-right font-medium text-muted-foreground">Diferença</th>
                 <th className="px-4 py-2 text-center font-medium text-muted-foreground">Risco</th>
@@ -468,7 +510,7 @@ export function SinanQualidadeView() {
     setFilters({ municipio, gve, yearStart, yearEnd });
   }
 
-  const totalCases = (data?.totalTraconet ?? 0) + (data?.totalNottraconet ?? 0);
+  const hasImportedData = Boolean(data && (data.totalTraconet > 0 || data.totalNottraconetRows > 0));
   const highRisk     = data?.crossBankDivergences.filter((d) => d.risco === "alto").length ?? 0;
   const criticalCount = (data?.tfSemTratamento ?? 0) + (data?.ttSemCircurgia ?? 0) + (data?.semGraduacao ?? 0);
 
@@ -579,7 +621,7 @@ export function SinanQualidadeView() {
       )}
 
       {/* Sem dados */}
-      {!isLoading && !apiError && data && totalCases === 0 && (
+      {!isLoading && !apiError && data && !hasImportedData && (
         <div className="flex h-48 flex-col items-center justify-center gap-3 rounded-lg border bg-card text-muted-foreground">
           <Database className="h-10 w-10 opacity-30" />
           <p className="text-sm">Nenhum registro SINAN importado ainda.</p>
@@ -587,7 +629,7 @@ export function SinanQualidadeView() {
         </div>
       )}
 
-      {data && totalCases > 0 && (
+      {data && hasImportedData && (
         <>
           {/* Aviso de inversão de bancos */}
           {data.diagnostico?.aviso && (
@@ -623,7 +665,7 @@ END;`}</pre>
               {(["traconet", "nottraconet"] as const).map((banco) => {
                 const d = data.diagnostico[banco];
                 const label = banco === "traconet" ? "TRACONET — Casos Individuais" : "NOTTRACONET — Consolidado";
-                const count = banco === "traconet" ? data.totalTraconet : data.totalNottraconet;
+                const count = banco === "traconet" ? data.totalTraconet : data.totalNottraconetRows;
                 return (
                   <div key={banco} className="rounded-lg border bg-card p-4 space-y-2">
                     <div className="flex items-center justify-between">
@@ -687,14 +729,25 @@ END;`}</pre>
             </CardContent>
           </Card>
 
+          <ConsolidatedMetricsPanel data={data} />
+
           {/* Cards de resumo */}
           <div className="grid gap-4 sm:grid-cols-3">
             <Card>
               <CardContent className="pt-5">
-                <div className="text-xs text-muted-foreground mb-1">Total de casos comparados</div>
-                <div className="text-3xl font-bold tabular-nums">{totalCases.toLocaleString("pt-BR")}</div>
+                <div className="text-xs text-muted-foreground mb-1">TRACONET importado</div>
+                <div className="text-3xl font-bold tabular-nums">{data.totalTraconet.toLocaleString("pt-BR")}</div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  TRACONET: {data.totalTraconet.toLocaleString("pt-BR")} casos individuais. NOTTRACONET: {data.totalNottraconet.toLocaleString("pt-BR")} casos positivos consolidados.
+                  Positivos individuais comparáveis: {data.totalTraconetPositive.toLocaleString("pt-BR")}. Anos inválidos: {data.totalTraconetInvalidYear.toLocaleString("pt-BR")}.
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-5">
+                <div className="text-xs text-muted-foreground mb-1">NOTTRACONET/NTRACOMA importado</div>
+                <div className="text-3xl font-bold tabular-nums">{data.totalNottraconetRows.toLocaleString("pt-BR")}</div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  Positivos consolidados: {data.totalNottraconet.toLocaleString("pt-BR")}. Anos inválidos: {data.totalNottraconetInvalidYear.toLocaleString("pt-BR")}.
                 </div>
               </CardContent>
             </Card>

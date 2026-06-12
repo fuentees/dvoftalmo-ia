@@ -47,9 +47,22 @@ const fieldCandidates = {
 const consolidatedPositiveFieldCandidates = [
   "NU_CASOPOS", "NU_CAS_POS", "NU_POSITIV", "NU_POSITIVOS", "NU_POS",
   "CASOPOS", "CAS_POS", "CASOS_POS", "POSITIVOS", "N_POSITIVO",
-  "QT_POS", "QTD_POS", "TOTAL_POS", "TOT_POS", "NU_CASOS", "CASOS",
-  "TOTAL_CASOS", "TOT_CASOS", "QT_CASOS", "QTD_CASOS"
+  "QT_POS", "QTD_POS", "TOTAL_POS", "TOT_POS"
 ];
+
+const consolidatedMetricCandidates = {
+  examinados: ["NU_EXAMIN", "NU_EXAM", "EXAMINADOS", "N_EXAMIN", "QT_EXAM", "QTD_EXAM", "TOTAL_EXAM", "TOT_EXAM"],
+  positivos: consolidatedPositiveFieldCandidates,
+  casosInformados: ["NU_CASOS", "CASOS", "TOTAL_CASOS", "TOT_CASOS", "QT_CASOS", "QTD_CASOS"],
+  negativos: ["NU_CASONEG", "NU_NEGATIV", "NU_NEGATIVOS", "NEGATIVOS", "CASOS_NEG", "CASONEG", "QT_NEG", "QTD_NEG"],
+  tratados: ["NU_TRATAD", "NU_TRATADOS", "TRATADOS", "QT_TRAT", "QTD_TRAT", "TOTAL_TRAT"],
+  comunicantes: ["NU_COMUNIC", "NU_COMUNICAN", "COMUNICANTES", "QT_COMUNIC", "QTD_COMUNIC"],
+  tf: ["NU_TF", "TF", "CASOS_TF", "QT_TF"],
+  ti: ["NU_TI", "TI", "CASOS_TI", "QT_TI"],
+  ts: ["NU_TS", "TS", "CASOS_TS", "QT_TS"],
+  tt: ["NU_TT", "TT", "CASOS_TT", "QT_TT"],
+  co: ["NU_CO", "CO", "CASOS_CO", "QT_CO"]
+};
 
 function getValue(row: RawRow, candidates: string[]) {
   const keys = Object.keys(row);
@@ -393,7 +406,12 @@ function labelForDimension(dimension: string) {
 
 export interface SinanAuditResult {
   totalTraconet: number;
+  totalNottraconetRows: number;
   totalNottraconet: number;
+  totalTraconetPositive: number;
+  totalTraconetInvalidYear: number;
+  totalNottraconetInvalidYear: number;
+  consolidatedMetrics: Record<string, { value: number; field: string | null; rowsMissing: number }>;
   diagnostico: {
     traconet: { colunas: string[]; municipiosAmostra: string[]; anosAmostra: number[]; camposPreenchidos: string[] };
     nottraconet: { colunas: string[]; municipiosAmostra: string[]; anosAmostra: number[]; camposPreenchidos: string[] };
@@ -485,6 +503,40 @@ function sinanCaseWeight(row: Record<string, unknown>): number {
     return found ? toNonNegativeNumber(found.value) ?? 0 : 0;
   }
   return 1;
+}
+
+function isValidAuditYear(row: Record<string, unknown>, currentYear: number) {
+  const ano = Number(row.ano);
+  return Number.isFinite(ano) && ano >= 1975 && ano <= currentYear;
+}
+
+function isPositiveTraconetCase(row: Record<string, unknown>) {
+  const label = normalizeBankLabel(row.classificacao);
+  if (["TF", "TI", "TS", "TT", "CO", "TF+TT"].includes(label)) return true;
+  if (label.includes("+")) {
+    return label.split("+").some((item) => ["TF", "TI", "TS", "TT", "CO"].includes(item));
+  }
+  return false;
+}
+
+function sumConsolidatedMetric(rows: Array<Record<string, unknown>>, candidates: string[]) {
+  const usage = new Map<string, number>();
+  let value = 0;
+  let rowsMissing = 0;
+
+  for (const row of rows) {
+    const found = getRawValue(row, candidates);
+    const n = found ? toNonNegativeNumber(found.value) : null;
+    if (found && n != null) {
+      usage.set(found.key, (usage.get(found.key) ?? 0) + 1);
+      value += n;
+    } else {
+      rowsMissing += 1;
+    }
+  }
+
+  const field = Array.from(usage.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+  return { value, field, rowsMissing };
 }
 
 function normalizeBankLabel(v: unknown): string {
@@ -580,10 +632,23 @@ export async function auditarSinanTracoma(opts?: {
     nottraconetRows = nottraconetRows.filter((row) => normalizeText(resolveGveBasic(row)).includes(wantedGve));
   }
 
+  const currentYear = new Date().getFullYear();
+  const traconetInvalidYearRows = traconetRows.filter((row) => !isValidAuditYear(row, currentYear));
+  const nottraconetInvalidYearRows = nottraconetRows.filter((row) => !isValidAuditYear(row, currentYear));
+  const traconetComparableRows = traconetRows.filter((row) => isValidAuditYear(row, currentYear));
+  const nottraconetComparableRows = nottraconetRows.filter((row) => isValidAuditYear(row, currentYear));
+
   // Totais reais: TRACONET = registros individuais; NOTTRACONET = soma de casos positivos
   const totalTraconetCount    = traconetRows.length;
-  const totalNottraconetCount = nottraconetRows.reduce((s, r) => s + ntcCasoPos(r), 0);
+  const totalTraconetPositive = traconetComparableRows.filter(isPositiveTraconetCase).length;
+  const totalNottraconetCount = nottraconetComparableRows.reduce((s, r) => s + ntcCasoPos(r), 0);
   const consolidatedPositiveField = Array.from(positiveFieldUsage.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+  const consolidatedMetrics = Object.fromEntries(
+    Object.entries(consolidatedMetricCandidates).map(([name, candidates]) => [
+      name,
+      sumConsolidatedMetric(nottraconetComparableRows, candidates)
+    ])
+  );
 
   const notificationIdCandidates = ["NU_NOTIFIC", "ID_NOTIFIC", "NUM_NOTIFIC", "NOTIFIC", "NU_NOTIF", "ID"];
   const notificationIdMap = new Map<string, { count: number; municipio: string; ano: number }>();
@@ -641,7 +706,7 @@ export async function auditarSinanTracoma(opts?: {
   // r.gve é null em ambos os bancos (SINAN DBF não inclui campo GVE),
   // por isso usa lookup estático pelo código IBGE armazenado em r.municipio.
   const gvePorMunicipio = new Map<string, string>();
-  for (const r of [...traconetRows, ...nottraconetRows]) {
+  for (const r of [...traconetComparableRows, ...nottraconetComparableRows]) {
     const mun = normMunicipio(r.municipio);
     if (!gvePorMunicipio.has(mun)) {
       const gve = (r.gve ? String(r.gve).trim() : null)
@@ -650,8 +715,9 @@ export async function auditarSinanTracoma(opts?: {
     }
   }
 
-  const traconetMap    = countTraconetByKey(traconetRows);
-  const nottraconetMap = countNottraconetByKey(nottraconetRows);
+  const positiveTraconetRows = traconetComparableRows.filter(isPositiveTraconetCase);
+  const traconetMap    = countTraconetByKey(positiveTraconetRows);
+  const nottraconetMap = countNottraconetByKey(nottraconetComparableRows);
   const allKeys = new Set([...traconetMap.keys(), ...nottraconetMap.keys()]);
 
   const comparisonsByMunicipalityYear: SinanAuditResult["comparisonsByMunicipalityYear"] = [];
@@ -715,8 +781,8 @@ export async function auditarSinanTracoma(opts?: {
     }
     return m;
   }
-  const tcGveMap  = countByGve(traconetRows,    () => 1);
-  const ntcGveMap = countByGve(nottraconetRows, ntcCasoPos);
+  const tcGveMap  = countByGve(positiveTraconetRows, () => 1);
+  const ntcGveMap = countByGve(nottraconetComparableRows, ntcCasoPos);
   const allGves   = new Set([...tcGveMap.keys(), ...ntcGveMap.keys()]);
   const divergencesByGve: SinanAuditResult["divergencesByGve"] = Array.from(allGves).map((gve) => {
     const tc   = tcGveMap.get(gve)  ?? 0;
@@ -752,7 +818,6 @@ export async function auditarSinanTracoma(opts?: {
     .sort((a, b) => b.count - a.count);
 
   // ── Checks clínicos: aplicar SOMENTE nos casos individuais (TRACONET) ─────
-  const currentYear = new Date().getFullYear();
   const semGraduacao  = traconetRows.filter((r) => isBlank(r.classificacao)).length;
   const semTratamento = traconetRows.filter((r) => isBlank(r.tratamento)).length;
   const semConclusao  = traconetRows.filter((r) => isBlank(r.conclusao)).length;
@@ -776,11 +841,7 @@ export async function auditarSinanTracoma(opts?: {
     return !trat.includes("cirurg") && !trat.includes("epila") && !conc.includes("cirurg");
   }).length;
 
-  const allRows = [...traconetRows, ...nottraconetRows];
-  const anoImpossivel = allRows.filter((r) => {
-    const ano = Number(r.ano);
-    return Number.isFinite(ano) && (ano < 1975 || ano > currentYear);
-  }).length;
+  const anoImpossivel = traconetInvalidYearRows.length + nottraconetInvalidYearRows.length;
 
   // ── Recommendations ───────────────────────────────────────────────────────
   const rec: string[] = [];
@@ -799,6 +860,9 @@ export async function auditarSinanTracoma(opts?: {
   } else if (consolidatedRowsWithoutPositiveField > 0) {
     rec.push(`${consolidatedRowsWithoutPositiveField} linha(s) do consolidado nao possuem campo de casos positivos preenchido/mapeado; revisar o DBF consolidado antes de interpretar divergencias.`);
   }
+  if (totalTraconetCount !== totalTraconetPositive) {
+    rec.push(`TRACONET possui ${totalTraconetCount} registro(s) individual(is), dos quais ${totalTraconetPositive} foram classificados como positivos TF/TI/TS/TT/CO em anos validos. A comparacao com o consolidado usa apenas positivos individuais.`);
+  }
   if (duplicateNotificationIds.length > 0) {
     const exemplos = duplicateNotificationIds.slice(0, 3).map((d) => `${d.id} (${d.count}x)`).join(", ");
     rec.push(`${duplicateNotificationIds.length} identificador(es) de notificacao aparecem mais de uma vez no TRACONET. Verificar possiveis duplicidades. Exemplos: ${exemplos}.`);
@@ -813,7 +877,7 @@ export async function auditarSinanTracoma(opts?: {
   if (tfSemTratamento > 0) rec.push(`${tfSemTratamento} caso(s) TRACONET classificado(s) como TF sem tratamento registrado. TF ativo exige azitromicina — verificar se foi prescrita e registrada.`);
   if (ttSemCircurgia > 0)  rec.push(`${ttSemCircurgia} caso(s) TRACONET com TT confirmado sem encaminhamento para cirurgia/epilation. TT requer referencia oftalmologica — risco de progressao para cegueira.`);
   if (semConclusao > 0)    rec.push(`${semConclusao} caso(s) individual(is) sem conclusao/encerramento preenchido.`);
-  if (anoImpossivel > 0)   rec.push(`${anoImpossivel} registro(s) com ano impossivel (< 1975 ou > ${currentYear}). Corrigir data de notificacao na fonte.`);
+  if (anoImpossivel > 0)   rec.push(`${anoImpossivel} registro(s) com ano impossivel (< 1975 ou > ${currentYear}) foram retirados das tabelas comparativas e devem ser corrigidos na fonte.`);
   const baixoPct = Object.entries(fieldCompleteness)
     .filter(([, v]) => v.pct < 50 && v.total > 0)
     .map(([k, v]) => `${k}: ${v.pct}%`);
@@ -858,7 +922,12 @@ export async function auditarSinanTracoma(opts?: {
 
   return {
     totalTraconet: totalTraconetCount,
+    totalNottraconetRows: nottraconetRows.length,
     totalNottraconet: totalNottraconetCount,
+    totalTraconetPositive,
+    totalTraconetInvalidYear: traconetInvalidYearRows.length,
+    totalNottraconetInvalidYear: nottraconetInvalidYearRows.length,
+    consolidatedMetrics,
     diagnostico: {
       traconet: bankDiag(traconetRows, diagTraconet),
       nottraconet: bankDiag(nottraconetRows, diagNottraconet),
