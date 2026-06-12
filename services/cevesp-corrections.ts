@@ -7,7 +7,11 @@ export interface InvalidRecord {
   dtNotificacao: string | null;
   semEpidemio: number | null;
   municipio: string | null;
+  gve: string | null;
+  ano: number | null;
+  totalCaso: number | null;
   issue: string;
+  issueType: "data_tempo" | "conteudo";
   suggestedField: string;
   suggestedValue: string;
 }
@@ -59,8 +63,11 @@ export async function findInvalidRecords(limit = 100): Promise<InvalidRecord[]> 
     );
 
     const [rows] = await conn.query(
-      `SELECT \`${pkCol}\`, DtNotificacao, SemEpidemio, MunicipioNotificacao,
-              -- tag which rule matched
+      `SELECT \`${pkCol}\`,
+              DtNotificacao, SemEpidemio, MunicipioNotificacao,
+              GVE_NOME, ANO, TotalCaso,
+              COALESCE(FxMenorUmAno,0)+COALESCE(FxUmQuatro,0)+COALESCE(FxCincoNove,0)+COALESCE(FxDezQuatorze,0)+COALESCE(FxQuizeOuMais,0) AS total_faixa,
+              COALESCE(SexMasc,0)+COALESCE(SexFem,0) AS total_sexo,
               CASE
                 WHEN DtNotificacao IS NOT NULL
                      AND CAST(DtNotificacao AS CHAR) REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
@@ -70,7 +77,18 @@ export async function findInvalidRecords(limit = 100): Promise<InvalidRecord[]> 
                 WHEN year(DtNotificacao) < 1990      THEN 'ano_impossivel'
                 WHEN SemEpidemio > 53                THEN 'se_alta'
                 WHEN SemEpidemio < 1                 THEN 'se_baixa'
-                ELSE 'se_futura'
+                WHEN year(DtNotificacao) = ? AND SemEpidemio > ? THEN 'se_futura'
+                WHEN MunicipioNotificacao IS NULL OR TRIM(MunicipioNotificacao) = '' THEN 'municipio_ausente'
+                WHEN GVE_NOME IS NULL OR TRIM(GVE_NOME) = ''  THEN 'gve_ausente'
+                WHEN TotalCaso IS NULL OR TotalCaso = 0        THEN 'sem_casos'
+                WHEN TotalCaso < 0                             THEN 'casos_negativos'
+                WHEN TotalCaso > 0
+                     AND (COALESCE(FxMenorUmAno,0)+COALESCE(FxUmQuatro,0)+COALESCE(FxCincoNove,0)+COALESCE(FxDezQuatorze,0)+COALESCE(FxQuizeOuMais,0)) = 0
+                  THEN 'faixa_etaria_ausente'
+                WHEN TotalCaso > 0
+                     AND (COALESCE(SexMasc,0)+COALESCE(SexFem,0)) <> TotalCaso
+                  THEN 'sexo_divergente'
+                ELSE 'outro'
               END AS problema
        FROM \`${tableName}\`
        WHERE (
@@ -83,38 +101,46 @@ export async function findInvalidRecords(limit = 100): Promise<InvalidRecord[]> 
           OR SemEpidemio > 53
           OR SemEpidemio < 1
           OR (year(DtNotificacao) = ? AND SemEpidemio > ?)
+          OR (MunicipioNotificacao IS NULL OR TRIM(MunicipioNotificacao) = '')
+          OR (GVE_NOME IS NULL OR TRIM(GVE_NOME) = '')
+          OR (TotalCaso IS NULL OR TotalCaso = 0)
+          OR TotalCaso < 0
+          OR (TotalCaso > 0 AND (COALESCE(FxMenorUmAno,0)+COALESCE(FxUmQuatro,0)+COALESCE(FxCincoNove,0)+COALESCE(FxDezQuatorze,0)+COALESCE(FxQuizeOuMais,0)) = 0)
+          OR (TotalCaso > 0 AND (COALESCE(SexMasc,0)+COALESCE(SexFem,0)) <> TotalCaso)
        LIMIT ?`,
-      [currentYear, currentSe, limit]
+      [currentYear, currentSe, currentYear, currentSe, limit]
     );
 
-    return (rows as Array<Record<string, unknown>>).map((r) => {
-      const problema = String(r.problema ?? "");
-      const rawDt    = r.DtNotificacao ? String(r.DtNotificacao).split("T")[0] : null;
-      const ano      = rawDt ? parseInt(rawDt.slice(0, 4), 10) : null;
-      const se       = r.SemEpidemio != null ? Number(r.SemEpidemio) : null;
+    const DATA_TEMPO = new Set(["dia_impossivel", "data_futura", "ano_impossivel", "se_alta", "se_baixa", "se_futura"]);
 
-      let issue = "";
+    return (rows as Array<Record<string, unknown>>).map((r) => {
+      const problema   = String(r.problema ?? "");
+      const rawDt      = r.DtNotificacao ? String(r.DtNotificacao).split("T")[0] : null;
+      const anoData    = rawDt ? parseInt(rawDt.slice(0, 4), 10) : null;
+      const se         = r.SemEpidemio  != null ? Number(r.SemEpidemio)  : null;
+      const totalCaso  = r.TotalCaso    != null ? Number(r.TotalCaso)    : null;
+      const totalFaixa = r.total_faixa  != null ? Number(r.total_faixa)  : null;
+      const totalSexo  = r.total_sexo   != null ? Number(r.total_sexo)   : null;
+
+      let issue          = "";
       let suggestedField = "";
       let suggestedValue = "";
 
       if (problema === "dia_impossivel" && rawDt) {
-        // e.g. "2026-04-31" → suggest last valid day of that month
         const [y, m] = rawDt.split("-").map(Number);
-        const lastDay = new Date(y, m, 0).getDate(); // day 0 of next month = last day of current month
+        const lastDay = new Date(y, m, 0).getDate();
         issue = `Dia impossível: ${rawDt} (${["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"][m-1]} tem ${lastDay} dias)`;
         suggestedField = "DtNotificacao";
         suggestedValue = `${y}-${String(m).padStart(2,"0")}-${String(lastDay).padStart(2,"0")}`;
       } else if (problema === "data_futura" && rawDt) {
         issue = `Data futura: ${rawDt}`;
         suggestedField = "DtNotificacao";
-        const d = new Date(rawDt);
-        d.setFullYear(currentYear);
+        const d = new Date(rawDt); d.setFullYear(currentYear);
         suggestedValue = d.toISOString().split("T")[0];
       } else if (problema === "ano_impossivel" && rawDt) {
-        issue = `Ano impossível: ${ano}`;
+        issue = `Ano impossível: ${anoData}`;
         suggestedField = "DtNotificacao";
-        const d = new Date(rawDt);
-        d.setFullYear(currentYear);
+        const d = new Date(rawDt); d.setFullYear(currentYear);
         suggestedValue = d.toISOString().split("T")[0];
       } else if (se !== null && (problema === "se_alta" || problema === "se_baixa")) {
         issue = `SE inválida: ${se}`;
@@ -124,15 +150,33 @@ export async function findInvalidRecords(limit = 100): Promise<InvalidRecord[]> 
         issue = `SE futura: ${se} (SE atual: ${currentSe})`;
         suggestedField = "SemEpidemio";
         suggestedValue = String(currentSe);
+      } else if (problema === "municipio_ausente") {
+        issue = "Município ausente";
+      } else if (problema === "gve_ausente") {
+        issue = "GVE ausente";
+      } else if (problema === "sem_casos") {
+        issue = totalCaso === null ? "TotalCaso não informado" : "Nenhum caso confirmado (TotalCaso = 0)";
+      } else if (problema === "casos_negativos") {
+        issue = `Total de casos negativo: ${totalCaso}`;
+        suggestedField = "TotalCaso";
+        suggestedValue = "0";
+      } else if (problema === "faixa_etaria_ausente") {
+        issue = `Faixa etária ausente (${totalFaixa ?? 0} informado para ${totalCaso} caso(s))`;
+      } else if (problema === "sexo_divergente") {
+        issue = `Sexo diverge: Masc+Fem=${totalSexo} ≠ TotalCaso=${totalCaso}`;
       }
 
       return {
-        recordId: String(r[pkCol]),
-        pkColumn: pkCol,
+        recordId:      String(r[pkCol]),
+        pkColumn:      pkCol,
         dtNotificacao: rawDt,
-        semEpidemio: se,
-        municipio: r.MunicipioNotificacao ? String(r.MunicipioNotificacao) : null,
+        semEpidemio:   se,
+        municipio:     r.MunicipioNotificacao ? String(r.MunicipioNotificacao) : null,
+        gve:           r.GVE_NOME            ? String(r.GVE_NOME)             : null,
+        ano:           r.ANO                 ? Number(r.ANO)                  : null,
+        totalCaso,
         issue,
+        issueType: (DATA_TEMPO.has(problema) ? "data_tempo" : "conteudo") as "data_tempo" | "conteudo",
         suggestedField,
         suggestedValue
       };

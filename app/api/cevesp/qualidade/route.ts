@@ -13,12 +13,33 @@ export async function GET() {
     const records = await findInvalidRecords(500);
 
     const byType: Record<string, number> = {};
+    const gveMap: Record<string, number> = {};
+    const anoMap: Record<string, number> = {};
+    const municipioMap: Record<string, { gve: string | null; count: number }> = {};
+
     for (const r of records) {
-      const key = r.issue.split(":")[0].trim();
-      byType[key] = (byType[key] ?? 0) + 1;
+      const typeKey = r.issue.split(":")[0].trim();
+      byType[typeKey] = (byType[typeKey] ?? 0) + 1;
+
+      if (r.gve) gveMap[r.gve] = (gveMap[r.gve] ?? 0) + 1;
+      if (r.ano) anoMap[String(r.ano)] = (anoMap[String(r.ano)] ?? 0) + 1;
+      if (r.municipio) {
+        if (!municipioMap[r.municipio]) municipioMap[r.municipio] = { gve: r.gve, count: 0 };
+        municipioMap[r.municipio].count++;
+      }
     }
 
-    return NextResponse.json({ records, byType, total: records.length });
+    const byGve = Object.entries(gveMap)
+      .map(([gve, count]) => ({ gve, count }))
+      .sort((a, b) => b.count - a.count);
+    const byAno = Object.entries(anoMap)
+      .map(([ano, count]) => ({ ano: Number(ano), count }))
+      .sort((a, b) => a.ano - b.ano);
+    const byMunicipio = Object.entries(municipioMap)
+      .map(([municipio, { gve, count }]) => ({ municipio, gve, count }))
+      .sort((a, b) => b.count - a.count);
+
+    return NextResponse.json({ records, byType, byGve, byAno, byMunicipio, total: records.length });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.toLowerCase().includes("econnrefused") || msg.toLowerCase().includes("connect")) {
