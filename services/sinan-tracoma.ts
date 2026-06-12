@@ -408,6 +408,7 @@ export interface SinanAuditResult {
   totalTraconet: number;
   totalNottraconetRows: number;
   totalNottraconet: number;
+  totalTraconetComparable: number;
   totalTraconetPositive: number;
   totalTraconetInvalidYear: number;
   totalNottraconetInvalidYear: number;
@@ -640,6 +641,7 @@ export async function auditarSinanTracoma(opts?: {
 
   // Totais reais: TRACONET = registros individuais; NOTTRACONET = soma de casos positivos
   const totalTraconetCount    = traconetRows.length;
+  const totalTraconetComparable = traconetComparableRows.length;
   const totalTraconetPositive = traconetComparableRows.filter(isPositiveTraconetCase).length;
   const totalNottraconetCount = nottraconetComparableRows.reduce((s, r) => s + ntcCasoPos(r), 0);
   const consolidatedPositiveField = Array.from(positiveFieldUsage.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
@@ -715,8 +717,7 @@ export async function auditarSinanTracoma(opts?: {
     }
   }
 
-  const positiveTraconetRows = traconetComparableRows.filter(isPositiveTraconetCase);
-  const traconetMap    = countTraconetByKey(positiveTraconetRows);
+  const traconetMap    = countTraconetByKey(traconetComparableRows);
   const nottraconetMap = countNottraconetByKey(nottraconetComparableRows);
   const allKeys = new Set([...traconetMap.keys(), ...nottraconetMap.keys()]);
 
@@ -781,7 +782,7 @@ export async function auditarSinanTracoma(opts?: {
     }
     return m;
   }
-  const tcGveMap  = countByGve(positiveTraconetRows, () => 1);
+  const tcGveMap  = countByGve(traconetComparableRows, () => 1);
   const ntcGveMap = countByGve(nottraconetComparableRows, ntcCasoPos);
   const allGves   = new Set([...tcGveMap.keys(), ...ntcGveMap.keys()]);
   const divergencesByGve: SinanAuditResult["divergencesByGve"] = Array.from(allGves).map((gve) => {
@@ -860,8 +861,8 @@ export async function auditarSinanTracoma(opts?: {
   } else if (consolidatedRowsWithoutPositiveField > 0) {
     rec.push(`${consolidatedRowsWithoutPositiveField} linha(s) do consolidado nao possuem campo de casos positivos preenchido/mapeado; revisar o DBF consolidado antes de interpretar divergencias.`);
   }
-  if (totalTraconetCount !== totalTraconetPositive) {
-    rec.push(`TRACONET possui ${totalTraconetCount} registro(s) individual(is), dos quais ${totalTraconetPositive} foram classificados como positivos TF/TI/TS/TT/CO em anos validos. A comparacao com o consolidado usa apenas positivos individuais.`);
+  if (totalTraconetPositive === 0 && totalTraconetComparable > 0) {
+    rec.push(`Nenhuma forma clinica TF/TI/TS/TT/CO foi mapeada no TRACONET. A comparacao principal usa 1 linha TRACONET = 1 caso individual; a graduacao clinica permanece como alerta de completude.`);
   }
   if (duplicateNotificationIds.length > 0) {
     const exemplos = duplicateNotificationIds.slice(0, 3).map((d) => `${d.id} (${d.count}x)`).join(", ");
@@ -924,6 +925,7 @@ export async function auditarSinanTracoma(opts?: {
     totalTraconet: totalTraconetCount,
     totalNottraconetRows: nottraconetRows.length,
     totalNottraconet: totalNottraconetCount,
+    totalTraconetComparable,
     totalTraconetPositive,
     totalTraconetInvalidYear: traconetInvalidYearRows.length,
     totalNottraconetInvalidYear: nottraconetInvalidYearRows.length,

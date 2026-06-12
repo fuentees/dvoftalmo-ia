@@ -316,13 +316,13 @@ function DivergenciasPanel({ data }: { data: SinanAuditResult }) {
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-base flex items-center gap-2">
-          Divergências: Positivos Individuais (TRACONET) × Positivos Consolidados (NOTTRACONET)
+          Divergências: Casos Individuais (TRACONET) × Positivos Consolidados (NOTTRACONET)
           <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
             {total} municípios/ano
           </span>
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          A comparação usa positivos individuais TF/TI/TS/TT/CO contra a variável de positivos do consolidado. Anos inválidos ficam fora desta tabela e aparecem como alerta de qualidade.
+          A comparação usa 1 linha do TRACONET como 1 caso individual e compara com a variável de positivos do consolidado. Anos inválidos ficam fora desta tabela e aparecem como alerta de qualidade.
         </p>
         {/* Tabs */}
         <div className="mt-3 flex gap-1 border-b">
@@ -349,7 +349,7 @@ function DivergenciasPanel({ data }: { data: SinanAuditResult }) {
             <thead>
               <tr className="border-b bg-muted/40">
                 <th className="px-4 py-2 text-left font-medium text-muted-foreground">Ano</th>
-                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Positivos individuais</th>
+                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Casos individuais</th>
                 <th className="px-4 py-2 text-right font-medium text-muted-foreground">Positivos consolidados</th>
                 <th className="px-4 py-2 text-right font-medium text-muted-foreground">Diferença</th>
                 <th className="px-4 py-2 text-center font-medium text-muted-foreground">Risco</th>
@@ -376,7 +376,7 @@ function DivergenciasPanel({ data }: { data: SinanAuditResult }) {
             <thead>
               <tr className="border-b bg-muted/40">
                 <th className="px-4 py-2 text-left font-medium text-muted-foreground">GVE</th>
-                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Positivos individuais</th>
+                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Casos individuais</th>
                 <th className="px-4 py-2 text-right font-medium text-muted-foreground">Positivos consolidados</th>
                 <th className="px-4 py-2 text-right font-medium text-muted-foreground">Diferença</th>
                 <th className="px-4 py-2 text-center font-medium text-muted-foreground">Risco</th>
@@ -405,7 +405,7 @@ function DivergenciasPanel({ data }: { data: SinanAuditResult }) {
                 <th className="px-4 py-2 text-left font-medium text-muted-foreground">Município</th>
                 <th className="px-4 py-2 text-left font-medium text-muted-foreground">GVE</th>
                 <th className="px-4 py-2 text-right font-medium text-muted-foreground">Ano</th>
-                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Positivos individuais</th>
+                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Casos individuais</th>
                 <th className="px-4 py-2 text-right font-medium text-muted-foreground">Positivos consolidados</th>
                 <th className="px-4 py-2 text-right font-medium text-muted-foreground">Diferença</th>
                 <th className="px-4 py-2 text-center font-medium text-muted-foreground">Risco</th>
@@ -738,7 +738,7 @@ END;`}</pre>
                 <div className="text-xs text-muted-foreground mb-1">TRACONET importado</div>
                 <div className="text-3xl font-bold tabular-nums">{data.totalTraconet.toLocaleString("pt-BR")}</div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  Positivos individuais comparáveis: {data.totalTraconetPositive.toLocaleString("pt-BR")}. Anos inválidos: {data.totalTraconetInvalidYear.toLocaleString("pt-BR")}.
+                  Casos individuais comparáveis: {data.totalTraconetComparable.toLocaleString("pt-BR")}. Formas clínicas positivas mapeadas: {data.totalTraconetPositive.toLocaleString("pt-BR")}. Anos inválidos: {data.totalTraconetInvalidYear.toLocaleString("pt-BR")}.
                 </div>
               </CardContent>
             </Card>
