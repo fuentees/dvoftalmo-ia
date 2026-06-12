@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { nomeMunicipio } from "@/lib/municipios-sp";
 
 export type SinanTracomaBank = "traconet" | "nottraconet";
 
@@ -28,7 +29,8 @@ const fieldCandidates = {
   agravo: ["ID_AGRAVO", "AGRAVO", "NM_AGRAVO", "NOME_AGRAVO", "COD_AGRAVO"],
   ano: ["ANO", "NU_ANO", "ANO_NOT", "ANO_NOTIFIC", "DT_NOTIFIC"],
   date: ["DT_NOTIFIC", "DT_NOTIFICACAO", "DT_NOT", "DT_SIN_PRI", "DT_DIAG"],
-  municipio: ["ID_MUNICIP", "MUNICIPIO", "NM_MUNICIP", "MUN_NOT", "MUNICIPIO_NOTIFICACAO", "ID_MN_RESI", "MUN_RES"],
+  // Preferir campo de nome antes de código IBGE para futuros imports
+  municipio: ["NM_MUNICIP", "MUNICIPIO", "MUNICIPIO_NOTIFICACAO", "MUN_NOT", "MUN_RES", "ID_MUNICIP", "ID_MN_RESI"],
   ibge: ["CO_MUNICIP", "IBGE", "ID_MUNICIP", "ID_MN_RESI"],
   gve: ["GVE", "GVE_NOME", "NM_GVE", "REGIONAL", "REG_SAUDE"],
   drs: ["DRS", "DRS_NOME", "NM_DRS"],
@@ -391,7 +393,23 @@ export interface SinanAuditResult {
   };
   crossBankDivergences: Array<{
     municipio: string;
+    municipioNome: string;
+    gve: string;
     ano: number;
+    traconet: number;
+    nottraconet: number;
+    diff: number;
+    risco: "alto" | "medio" | "baixo";
+  }>;
+  divergencesByYear: Array<{
+    ano: number;
+    traconet: number;
+    nottraconet: number;
+    diff: number;
+    risco: "alto" | "medio" | "baixo";
+  }>;
+  divergencesByGve: Array<{
+    gve: string;
     traconet: number;
     nottraconet: number;
     diff: number;
@@ -450,7 +468,7 @@ export async function auditarSinanTracoma(opts?: {
 
   let ntcQ = supabase
     .from("sinan_tracoma_rows")
-    .select("source_bank, ano, municipio")
+    .select("source_bank, ano, municipio, gve")
     .eq("source_bank", "nottraconet");
   if (opts?.municipio) ntcQ = ntcQ.ilike("municipio", `%${opts.municipio}%`);
   if (opts?.yearStart) ntcQ = ntcQ.gte("ano", opts.yearStart);
@@ -491,6 +509,17 @@ export async function auditarSinanTracoma(opts?: {
     return m;
   }
 
+  // Para cross-bank, indexar também GVE por município (usando TRACONET como fonte)
+  const gvePorMunicipio = new Map<string, string>();
+  for (const r of traconetRows) {
+    const mun = normMunicipio(r.municipio);
+    if (!gvePorMunicipio.has(mun) && r.gve) gvePorMunicipio.set(mun, String(r.gve));
+  }
+  for (const r of nottraconetRows) {
+    const mun = normMunicipio(r.municipio);
+    if (!gvePorMunicipio.has(mun) && r.gve) gvePorMunicipio.set(mun, String(r.gve));
+  }
+
   const traconetMap    = countByKey(traconetRows);
   const nottraconetMap = countByKey(nottraconetRows);
   const allKeys = new Set([...traconetMap.keys(), ...nottraconetMap.keys()]);
@@ -499,13 +528,14 @@ export async function auditarSinanTracoma(opts?: {
   for (const key of allKeys) {
     const tc  = traconetMap.get(key)    ?? 0;
     const ntc = nottraconetMap.get(key) ?? 0;
-    // diff = consolidado - individuais: positivo = subregistro de individuais
     const diff = ntc - tc;
     if (diff === 0) continue;
     const [municipio, anoStr] = key.split("|");
     const abs = Math.abs(diff);
     crossBankDivergences.push({
       municipio,
+      municipioNome: nomeMunicipio(municipio),
+      gve: gvePorMunicipio.get(municipio) ?? "",
       ano: Number(anoStr) || 0,
       traconet: tc,
       nottraconet: ntc,
@@ -514,6 +544,48 @@ export async function auditarSinanTracoma(opts?: {
     });
   }
   crossBankDivergences.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+
+  // ── Por Ano ───────────────────────────────────────────────────────────────
+  const yearMap = new Map<number, { traconet: number; nottraconet: number }>();
+  for (const [key, tc] of traconetMap) {
+    const ano = Number(key.split("|")[1]) || 0;
+    const curr = yearMap.get(ano) ?? { traconet: 0, nottraconet: 0 };
+    curr.traconet += tc;
+    yearMap.set(ano, curr);
+  }
+  for (const [key, ntc] of nottraconetMap) {
+    const ano = Number(key.split("|")[1]) || 0;
+    const curr = yearMap.get(ano) ?? { traconet: 0, nottraconet: 0 };
+    curr.nottraconet += ntc;
+    yearMap.set(ano, curr);
+  }
+  const divergencesByYear: SinanAuditResult["divergencesByYear"] = Array.from(yearMap.entries())
+    .map(([ano, v]) => {
+      const diff = v.nottraconet - v.traconet;
+      const abs  = Math.abs(diff);
+      return { ano, traconet: v.traconet, nottraconet: v.nottraconet, diff, risco: abs >= 50 ? "alto" : abs >= 10 ? "medio" : "baixo" as "alto" | "medio" | "baixo" };
+    })
+    .sort((a, b) => a.ano - b.ano);
+
+  // ── Por GVE ───────────────────────────────────────────────────────────────
+  function countByGve(rs: Array<Record<string, unknown>>) {
+    const m = new Map<string, number>();
+    for (const r of rs) {
+      const gve = String(r.gve ?? "Não informado").trim() || "Não informado";
+      m.set(gve, (m.get(gve) ?? 0) + 1);
+    }
+    return m;
+  }
+  const tcGveMap  = countByGve(traconetRows);
+  const ntcGveMap = countByGve(nottraconetRows);
+  const allGves   = new Set([...tcGveMap.keys(), ...ntcGveMap.keys()]);
+  const divergencesByGve: SinanAuditResult["divergencesByGve"] = Array.from(allGves).map((gve) => {
+    const tc   = tcGveMap.get(gve)  ?? 0;
+    const ntc  = ntcGveMap.get(gve) ?? 0;
+    const diff = ntc - tc;
+    const abs  = Math.abs(diff);
+    return { gve, traconet: tc, nottraconet: ntc, diff, risco: abs >= 50 ? "alto" : abs >= 10 ? "medio" : "baixo" as "alto" | "medio" | "baixo" };
+  }).sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
 
   // ── Field completeness — somente TRACONET (individuais) tem campos clínicos ──
   const fieldsTraconet = ["agravo", "municipio", "gve", "classificacao", "criterio", "tratamento", "conclusao", "evolucao"];
@@ -625,7 +697,9 @@ export async function auditarSinanTracoma(opts?: {
       nottraconet: bankDiag(nottraconetRows, diagNottraconet),
       aviso
     },
-    crossBankDivergences: crossBankDivergences.slice(0, 50),
+    crossBankDivergences: crossBankDivergences.slice(0, 100),
+    divergencesByYear,
+    divergencesByGve,
     fieldCompleteness,
     semGraduacao,
     semTratamento,

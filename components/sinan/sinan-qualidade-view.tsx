@@ -58,6 +58,163 @@ function AlertCard({ count, label, severity, detail }: {
   );
 }
 
+type DivTab = "ano" | "gve" | "municipio";
+
+function DiffCell({ diff }: { diff: number }) {
+  return (
+    <td
+      className={`px-4 py-2 text-right tabular-nums font-semibold ${diff > 0 ? "text-red-600" : diff < 0 ? "text-amber-600" : "text-muted-foreground"}`}
+      title={diff > 0 ? "Consolidado > individuais: possível subregistro" : diff < 0 ? "Individuais > consolidado: verificar duplicidade" : ""}
+    >
+      {diff > 0 ? "+" : ""}{diff.toLocaleString("pt-BR")}
+    </td>
+  );
+}
+
+function RiscoCell({ risco }: { risco: string }) {
+  return (
+    <td className="px-4 py-2 text-center">
+      <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${RISK_COLOR[risco] ?? ""}`}>
+        {RISK_LABEL[risco] ?? risco}
+      </span>
+    </td>
+  );
+}
+
+function DivergenciasPanel({ data }: { data: SinanAuditResult }) {
+  const [tab, setTab] = useState<DivTab>("ano");
+
+  const total = data.crossBankDivergences.length;
+  const tabs: { id: DivTab; label: string }[] = [
+    { id: "ano",      label: "Por Ano"       },
+    { id: "gve",      label: "Por GVE"       },
+    { id: "municipio", label: "Por Município" }
+  ];
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          Divergências: Individuais (TRACONET) × Consolidado (NOTTRACONET)
+          <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+            {total} municípios/ano
+          </span>
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Diferença <span className="font-medium text-red-600">positiva</span> = consolidado tem mais registros que individuais (subregistro TRACONET).{" "}
+          Diferença <span className="font-medium text-amber-600">negativa</span> = individuais têm mais que consolidado (possível duplicidade).
+        </p>
+        {/* Tabs */}
+        <div className="mt-3 flex gap-1 border-b">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`px-3 py-1.5 text-xs font-medium transition-colors border-b-2 -mb-px ${
+                tab === t.id
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </CardHeader>
+      <CardContent className="overflow-x-auto p-0">
+
+        {/* ABA: Por Ano */}
+        {tab === "ano" && (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-muted/40">
+                <th className="px-4 py-2 text-left font-medium text-muted-foreground">Ano</th>
+                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Individuais (TRACONET)</th>
+                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Consolidado (NOTTRACONET)</th>
+                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Diferença</th>
+                <th className="px-4 py-2 text-center font-medium text-muted-foreground">Risco</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(data.divergencesByYear ?? []).map((d) => (
+                <tr key={d.ano} className="border-b last:border-0 hover:bg-muted/20">
+                  <td className="px-4 py-2 font-medium tabular-nums">{d.ano}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">{d.traconet.toLocaleString("pt-BR")}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">{d.nottraconet.toLocaleString("pt-BR")}</td>
+                  <DiffCell diff={d.diff} />
+                  <RiscoCell risco={d.risco} />
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+        {/* ABA: Por GVE */}
+        {tab === "gve" && (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-muted/40">
+                <th className="px-4 py-2 text-left font-medium text-muted-foreground">GVE</th>
+                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Individuais (TRACONET)</th>
+                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Consolidado (NOTTRACONET)</th>
+                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Diferença</th>
+                <th className="px-4 py-2 text-center font-medium text-muted-foreground">Risco</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(data.divergencesByGve ?? []).map((d, i) => (
+                <tr key={i} className="border-b last:border-0 hover:bg-muted/20">
+                  <td className="px-4 py-2 font-medium">{d.gve || <span className="text-muted-foreground italic">Não informado</span>}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">{d.traconet.toLocaleString("pt-BR")}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">{d.nottraconet.toLocaleString("pt-BR")}</td>
+                  <DiffCell diff={d.diff} />
+                  <RiscoCell risco={d.risco} />
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+        {/* ABA: Por Município */}
+        {tab === "municipio" && (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-muted/40">
+                <th className="px-4 py-2 text-left font-medium text-muted-foreground">Município</th>
+                <th className="px-4 py-2 text-left font-medium text-muted-foreground">GVE</th>
+                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Ano</th>
+                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Individuais</th>
+                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Consolidado</th>
+                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Diferença</th>
+                <th className="px-4 py-2 text-center font-medium text-muted-foreground">Risco</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.crossBankDivergences.map((d, i) => (
+                <tr key={i} className="border-b last:border-0 hover:bg-muted/20">
+                  <td className="px-4 py-2 font-medium">
+                    {d.municipioNome !== d.municipio ? d.municipioNome : d.municipio}
+                    {d.municipioNome !== d.municipio && (
+                      <span className="ml-1 text-[10px] text-muted-foreground">({d.municipio})</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2 text-xs text-muted-foreground">{d.gve || "—"}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">{d.ano}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">{d.traconet.toLocaleString("pt-BR")}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">{d.nottraconet.toLocaleString("pt-BR")}</td>
+                  <DiffCell diff={d.diff} />
+                  <RiscoCell risco={d.risco} />
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+      </CardContent>
+    </Card>
+  );
+}
+
 const FIELD_LABELS: Record<string, string> = {
   source_bank: "Banco (TRACONET/NOTTRACONET)",
   agravo: "Agravo",
@@ -383,56 +540,9 @@ END;`}</pre>
             </CardContent>
           </Card>
 
-          {/* Divergências entre bancos */}
-          {data.crossBankDivergences.length > 0 && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  Divergências: Individuais (TRACONET) × Consolidado (NOTTRACONET)
-                  <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
-                    {data.crossBankDivergences.length}
-                  </span>
-                </CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  Município/ano com contagem diferente entre os dois bancos.
-                  Diferença <span className="font-medium text-red-600">positiva</span> = consolidado tem mais casos que individuais (subregistro de TRACONET).
-                  Diferença <span className="font-medium text-amber-600">negativa</span> = individuais têm mais que consolidado (possível duplicidade).
-                </p>
-              </CardHeader>
-              <CardContent className="overflow-x-auto p-0">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b bg-muted/40">
-                      <th className="px-4 py-2 text-left font-medium text-muted-foreground">Município</th>
-                      <th className="px-4 py-2 text-right font-medium text-muted-foreground">Ano</th>
-                      <th className="px-4 py-2 text-right font-medium text-muted-foreground">Individuais (TRACONET)</th>
-                      <th className="px-4 py-2 text-right font-medium text-muted-foreground">Consolidado (NOTTRACONET)</th>
-                      <th className="px-4 py-2 text-right font-medium text-muted-foreground">Diferença</th>
-                      <th className="px-4 py-2 text-center font-medium text-muted-foreground">Risco</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.crossBankDivergences.map((d, i) => (
-                      <tr key={i} className="border-b last:border-0 hover:bg-muted/20">
-                        <td className="px-4 py-2 font-medium">{d.municipio}</td>
-                        <td className="px-4 py-2 text-right tabular-nums">{d.ano}</td>
-                        <td className="px-4 py-2 text-right tabular-nums">{d.traconet.toLocaleString("pt-BR")}</td>
-                        <td className="px-4 py-2 text-right tabular-nums">{d.nottraconet.toLocaleString("pt-BR")}</td>
-                        <td className={`px-4 py-2 text-right tabular-nums font-semibold ${d.diff > 0 ? "text-red-600" : "text-amber-600"}`}
-                            title={d.diff > 0 ? "Consolidado > individuais: possível subregistro de casos individuais" : "Individuais > consolidado: verificar duplicidade"}>
-                          {d.diff > 0 ? "+" : ""}{d.diff.toLocaleString("pt-BR")}
-                        </td>
-                        <td className="px-4 py-2 text-center">
-                          <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${RISK_COLOR[d.risco]}`}>
-                            {RISK_LABEL[d.risco]}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </CardContent>
-            </Card>
+          {/* Divergências entre bancos — 3 abas */}
+          {(data.crossBankDivergences.length > 0 || data.divergencesByYear?.length > 0) && (
+            <DivergenciasPanel data={data} />
           )}
 
           {/* Completude de campos */}
