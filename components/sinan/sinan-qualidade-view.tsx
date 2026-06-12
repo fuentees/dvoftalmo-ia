@@ -6,6 +6,18 @@ import {
   Database, RefreshCw, XCircle
 } from "lucide-react";
 import { useState } from "react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis
+} from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { SinanAuditResult } from "@/services/sinan-tracoma";
@@ -535,6 +547,284 @@ const FIELD_LABELS: Record<string, string> = {
   conclusao: "Conclusão/encerramento"
 };
 
+const CHART_COLORS = ["#0f766e", "#dc2626", "#2563eb", "#d97706", "#64748b"];
+
+function statusText(count: number, clinicalMappingMissing = false) {
+  if (clinicalMappingMissing) return "Revisar mapeamento";
+  if (count === 0) return "Sem pendencia";
+  if (count >= 100) return "Prioridade alta";
+  if (count >= 10) return "Prioridade media";
+  return "Verificar";
+}
+
+function QualityCommandCenter({
+  data,
+  clinicalMappingMissing,
+  criticalCount,
+  highRisk
+}: {
+  data: SinanAuditResult;
+  clinicalMappingMissing: boolean;
+  criticalCount: number;
+  highRisk: number;
+}) {
+  const yearChartData = [...(data.divergencesByYear ?? [])]
+    .sort((a, b) => a.ano - b.ano)
+    .map((row) => ({
+      ano: String(row.ano),
+      individuais: row.traconet,
+      consolidados: row.nottraconet
+    }));
+
+  const topGveData = [...(data.divergencesByGve ?? [])]
+    .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff))
+    .slice(0, 8)
+    .map((row) => ({
+      gve: row.gve || "Nao informado",
+      diferenca: Math.abs(row.diff),
+      sinal: row.diff
+    }));
+
+  const completenessValues = Object.values(data.fieldCompleteness);
+  const avgCompleteness = completenessValues.length
+    ? Math.round(completenessValues.reduce((sum, stat) => sum + stat.pct, 0) / completenessValues.length)
+    : 0;
+
+  const lowCompleteness = Object.entries(data.fieldCompleteness)
+    .map(([field, stat]) => ({
+      campo: FIELD_LABELS[field] ?? field,
+      pct: stat.pct
+    }))
+    .sort((a, b) => a.pct - b.pct)
+    .slice(0, 8);
+
+  const priorityItems = [
+    {
+      label: clinicalMappingMissing ? "Forma clinica nao mapeada" : "Sem forma clinica",
+      count: data.semGraduacao,
+      tone: clinicalMappingMissing ? "amber" : data.semGraduacao > 0 ? "red" : "green",
+      detail: clinicalMappingMissing ? "Mapear colunas TF/TI/TS/TT/CO antes de tratar como erro." : "Revisar classificacao clinica no TRACONET."
+    },
+    {
+      label: "Divergencias de alto risco",
+      count: highRisk,
+      tone: highRisk > 0 ? "red" : "green",
+      detail: "Municipio/ano com diferenca relevante entre individual e consolidado."
+    },
+    {
+      label: "TF sem tratamento",
+      count: data.tfSemTratamento,
+      tone: data.tfSemTratamento > 0 ? "red" : "green",
+      detail: "TF ativo exige registro de tratamento."
+    },
+    {
+      label: "TT sem cirurgia",
+      count: data.ttSemCircurgia,
+      tone: data.ttSemCircurgia > 0 ? "red" : "green",
+      detail: "TT deve ter encaminhamento ou referencia registrada."
+    },
+    {
+      label: "Sem conclusao",
+      count: data.semConclusao,
+      tone: data.semConclusao > 0 ? "amber" : "green",
+      detail: "Encerrar investigacoes pendentes."
+    },
+    {
+      label: "IDs duplicados",
+      count: data.duplicateNotificationIds?.length ?? 0,
+      tone: (data.duplicateNotificationIds?.length ?? 0) > 0 ? "red" : "green",
+      detail: "NU_NOTIFIC repetido sugere duplicidade."
+    }
+  ].sort((a, b) => b.count - a.count);
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 lg:grid-cols-[1.1fr_1.9fr]">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Prioridades de Correcao</CardTitle>
+            <p className="text-xs text-muted-foreground">O que merece revisao primeiro na base importada.</p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {priorityItems.slice(0, 5).map((item) => (
+              <div key={item.label} className="flex items-start justify-between gap-3 rounded-md border p-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium">{item.label}</div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">{item.detail}</div>
+                </div>
+                <div className="text-right">
+                  <div className={`text-xl font-semibold tabular-nums ${
+                    item.tone === "red" ? "text-red-700" : item.tone === "amber" ? "text-amber-700" : "text-green-700"
+                  }`}>
+                    {item.count.toLocaleString("pt-BR")}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">{statusText(item.count, item.label.includes("mapeada"))}</div>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Serie Anual: Individual x Consolidado</CardTitle>
+            </CardHeader>
+            <CardContent className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={yearChartData} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="ano" tickLine={false} axisLine={false} fontSize={11} />
+                  <YAxis tickLine={false} axisLine={false} fontSize={11} width={48} />
+                  <Tooltip formatter={(value) => Number(value).toLocaleString("pt-BR")} />
+                  <Line type="monotone" dataKey="individuais" name="TRACONET" stroke={CHART_COLORS[0]} strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="consolidados" name="Consolidado" stroke={CHART_COLORS[1]} strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Top GVE com Divergencia</CardTitle>
+            </CardHeader>
+            <CardContent className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={topGveData} layout="vertical" margin={{ top: 8, right: 12, left: 8, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                  <XAxis type="number" tickLine={false} axisLine={false} fontSize={11} />
+                  <YAxis type="category" dataKey="gve" tickLine={false} axisLine={false} fontSize={11} width={112} />
+                  <Tooltip formatter={(value) => Number(value).toLocaleString("pt-BR")} />
+                  <Bar dataKey="diferenca" name="Diferenca absoluta" radius={[0, 4, 4, 0]}>
+                    {topGveData.map((row, index) => (
+                      <Cell key={`${row.gve}-${index}`} fill={row.sinal > 0 ? CHART_COLORS[1] : CHART_COLORS[3]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card className={criticalCount > 0 ? "border-amber-300" : "border-green-200"}>
+          <CardContent className="pt-4">
+            <div className="text-xs text-muted-foreground">Alertas acionaveis</div>
+            <div className="mt-1 text-2xl font-semibold tabular-nums">{criticalCount.toLocaleString("pt-BR")}</div>
+          </CardContent>
+        </Card>
+        <Card className={highRisk > 0 ? "border-red-300" : "border-green-200"}>
+          <CardContent className="pt-4">
+            <div className="text-xs text-muted-foreground">Alto risco banco x banco</div>
+            <div className="mt-1 text-2xl font-semibold tabular-nums">{highRisk.toLocaleString("pt-BR")}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="text-xs text-muted-foreground">Completude media</div>
+            <div className="mt-1 text-2xl font-semibold tabular-nums">{avgCompleteness.toLocaleString("pt-BR")}%</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="text-xs text-muted-foreground">Casos positivos consolidados</div>
+            <div className="mt-1 text-2xl font-semibold tabular-nums">{data.totalNottraconet.toLocaleString("pt-BR")}</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {lowCompleteness.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Campos com Menor Completude</CardTitle>
+          </CardHeader>
+          <CardContent className="h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={lowCompleteness} layout="vertical" margin={{ top: 8, right: 16, left: 8, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" domain={[0, 100]} tickLine={false} axisLine={false} fontSize={11} />
+                <YAxis type="category" dataKey="campo" tickLine={false} axisLine={false} fontSize={11} width={150} />
+                <Tooltip formatter={(value) => `${Number(value).toLocaleString("pt-BR")}%`} />
+                <Bar dataKey="pct" name="% preenchido" fill={CHART_COLORS[2]} radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function TechnicalDetailsPanel({ data }: { data: SinanAuditResult }) {
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Detalhes Tecnicos da Importacao</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Mapeamento, colunas originais e indicadores agregados ficam recolhidos aqui para auditoria tecnica.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <details className="rounded-md border p-3">
+          <summary className="cursor-pointer text-sm font-medium">Bancos, colunas e campos reconhecidos</summary>
+          {data.diagnostico && (
+            <div className="mt-3 grid gap-4 sm:grid-cols-2">
+              {(["traconet", "nottraconet"] as const).map((banco) => {
+                const d = data.diagnostico[banco];
+                const label = banco === "traconet" ? "TRACONET - Casos Individuais" : "NOTTRACONET - Consolidado";
+                const count = banco === "traconet" ? data.totalTraconet : data.totalNottraconetRows;
+                return (
+                  <div key={banco} className="rounded-md border bg-muted/20 p-3 text-xs">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <span className="font-semibold">{label}</span>
+                      <span className="rounded-full bg-background px-2 py-0.5 font-medium">{count.toLocaleString("pt-BR")} registros</span>
+                    </div>
+                    <p><span className="font-medium">Municipios:</span> {d.municipiosAmostra.join(", ") || "sem amostra"}</p>
+                    <p><span className="font-medium">Anos:</span> {d.anosAmostra.join(", ") || "sem amostra"}</p>
+                    <p><span className="font-medium">Campos reconhecidos:</span> {d.camposPreenchidos.join(", ") || "nenhum"}</p>
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-muted-foreground">Colunas originais</summary>
+                      <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{d.colunas.join(", ")}</p>
+                    </details>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </details>
+
+        <details className="rounded-md border p-3">
+          <summary className="cursor-pointer text-sm font-medium">Mapeamento do consolidado</summary>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <div>
+              <div className="text-xs text-muted-foreground">Campo usado para positivos</div>
+              <div className="font-medium">{data.consolidatedPositiveField ?? "nao identificado"}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Casos positivos consolidados</div>
+              <div className="font-medium tabular-nums">{data.totalNottraconet.toLocaleString("pt-BR")}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Linhas sem positivo mapeado</div>
+              <div className={`font-medium tabular-nums ${data.consolidatedRowsWithoutPositiveField > 0 ? "text-red-700" : "text-green-700"}`}>
+                {data.consolidatedRowsWithoutPositiveField.toLocaleString("pt-BR")}
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <details className="rounded-md border p-3">
+          <summary className="cursor-pointer text-sm font-medium">Indicadores agregados do consolidado</summary>
+          <div className="mt-3">
+            <ConsolidatedMetricsPanel data={data} />
+          </div>
+        </details>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function SinanQualidadeView() {
   const [municipio, setMunicipio] = useState("");
   const [gve,       setGve]       = useState("");
@@ -577,6 +867,11 @@ export function SinanQualidadeView() {
   const criticalCount =
     (data?.tfSemTratamento ?? 0) +
     (data?.ttSemCircurgia ?? 0) +
+    (data?.semTratamento ?? 0) +
+    (data?.semConclusao ?? 0) +
+    (data?.anoImpossivel ?? 0) +
+    (data?.missingNotificationId ?? 0) +
+    (data?.duplicateNotificationIds?.length ?? 0) +
     (clinicalMappingMissing ? 0 : data?.semGraduacao ?? 0);
 
   return (
@@ -725,12 +1020,12 @@ END;`}</pre>
           )}
 
           {/* Painel de diagnóstico — o que tem em cada banco */}
-          {data.diagnostico && (
+          {false && data!.diagnostico && (
             <div className="grid gap-4 sm:grid-cols-2">
               {(["traconet", "nottraconet"] as const).map((banco) => {
-                const d = data.diagnostico[banco];
+                const d = data!.diagnostico[banco];
                 const label = banco === "traconet" ? "TRACONET — Casos Individuais" : "NOTTRACONET — Consolidado";
-                const count = banco === "traconet" ? data.totalTraconet : data.totalNottraconetRows;
+                const count = banco === "traconet" ? data!.totalTraconet : data!.totalNottraconetRows;
                 return (
                   <div key={banco} className="rounded-lg border bg-card p-4 space-y-2">
                     <div className="flex items-center justify-between">
@@ -769,7 +1064,7 @@ END;`}</pre>
             </div>
           )}
 
-          <Card className={!data.consolidatedPositiveField && data.totalNottraconet === 0 ? "border-red-300 bg-red-50" : ""}>
+          <Card className={`hidden ${!data.consolidatedPositiveField && data.totalNottraconet === 0 ? "border-red-300 bg-red-50" : ""}`}>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Mapeamento do Consolidado (NOTTRACONET/NTRACOMA)</CardTitle>
               <p className="text-xs text-muted-foreground">
@@ -794,9 +1089,18 @@ END;`}</pre>
             </CardContent>
           </Card>
 
-          <ConsolidatedMetricsPanel data={data} />
+          <div className="hidden">
+            <ConsolidatedMetricsPanel data={data} />
+          </div>
 
           {/* Cards de resumo */}
+          <QualityCommandCenter
+            data={data}
+            clinicalMappingMissing={clinicalMappingMissing}
+            criticalCount={criticalCount}
+            highRisk={highRisk}
+          />
+
           <div className="grid gap-4 sm:grid-cols-3">
             <Card>
               <CardContent className="pt-5">
@@ -834,7 +1138,7 @@ END;`}</pre>
                   {criticalCount.toLocaleString("pt-BR")}
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  TF s/tratamento + TT s/cirurgia + s/graduação
+                  Soma de pendencias de preenchimento, duplicidade e encerramento
                 </div>
               </CardContent>
             </Card>
@@ -942,6 +1246,8 @@ END;`}</pre>
               </CardContent>
             </Card>
           )}
+
+          <TechnicalDetailsPanel data={data} />
         </>
       )}
     </div>
