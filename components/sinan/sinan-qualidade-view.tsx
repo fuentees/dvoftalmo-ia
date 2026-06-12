@@ -157,6 +157,30 @@ function ConsolidatedMetricsPanel({ data }: { data: SinanAuditResult }) {
   );
 }
 
+function ClinicalMappingNotice({ data }: { data: SinanAuditResult }) {
+  const rawColumns = data.diagnostico?.traconet?.colunas ?? [];
+  return (
+    <Card className="border-amber-200 bg-amber-50">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base text-amber-900">Forma clinica nao mapeada no TRACONET</CardTitle>
+        <p className="text-xs text-amber-800">
+          O TRACONET foi importado, mas a pagina nao identificou campos TF/TI/TS/TT/CO nos nomes esperados. Por isso nao vou listar todos os casos como sem forma clinica; isso parece problema de mapeamento, nao necessariamente erro de preenchimento.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-2 text-xs text-amber-900">
+        <div>Casos individuais importados: <span className="font-semibold">{data.totalTraconet.toLocaleString("pt-BR")}</span></div>
+        <div>Formas clinicas positivas mapeadas: <span className="font-semibold">{data.totalTraconetPositive.toLocaleString("pt-BR")}</span></div>
+        {rawColumns.length > 0 && (
+          <details>
+            <summary className="cursor-pointer font-medium">Ver colunas detectadas no TRACONET</summary>
+            <p className="mt-2 break-all font-mono text-[11px]">{rawColumns.join(", ")}</p>
+          </details>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 type DivTab = "ano" | "gve" | "municipio";
 type SFTab  = "gve" | "municipio";
 
@@ -235,7 +259,7 @@ function SemFormaClinicaPanel({ data }: { data: SinanAuditResult }) {
           </table>
         )}
         {tab === "municipio" && (
-          <table className="w-full text-sm">
+          <table className="w-full table-fixed text-sm">
             <thead>
               <tr className="border-b bg-muted/40">
                 <th className="px-4 py-2 text-left font-medium text-muted-foreground">Município</th>
@@ -298,14 +322,23 @@ function RiscoCell({ risco }: { risco: string }) {
 
 function DivergenciasPanel({ data }: { data: SinanAuditResult }) {
   const [tab, setTab] = useState<DivTab>("ano");
+  const [municipioBusca, setMunicipioBusca] = useState("");
+  const [mostrarTodosMunicipios, setMostrarTodosMunicipios] = useState(false);
 
   const total = data.crossBankDivergences.length;
   const municipalityRows = data.comparisonsByMunicipalityYear?.length
     ? data.comparisonsByMunicipalityYear
     : data.crossBankDivergences;
+  const normalizedBusca = municipioBusca.trim().toLowerCase();
+  const filteredMunicipalityRows = normalizedBusca
+    ? municipalityRows.filter((d) =>
+        `${d.municipio} ${d.municipioNome} ${d.gve} ${d.ano}`.toLowerCase().includes(normalizedBusca)
+      )
+    : municipalityRows;
+  const visibleMunicipalityRows = mostrarTodosMunicipios ? filteredMunicipalityRows : filteredMunicipalityRows.slice(0, 50);
   const totalYear = sumRows(data.divergencesByYear ?? []);
   const totalGve = sumRows(data.divergencesByGve ?? []);
-  const totalMunicipio = sumRows(municipalityRows);
+  const totalMunicipio = sumRows(filteredMunicipalityRows);
   const tabs: { id: DivTab; label: string }[] = [
     { id: "ano",      label: "Por Ano"       },
     { id: "gve",      label: "Por GVE"       },
@@ -399,6 +432,21 @@ function DivergenciasPanel({ data }: { data: SinanAuditResult }) {
 
         {/* ABA: Por Município */}
         {tab === "municipio" && (
+          <div>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/20 px-4 py-3">
+              <input
+                value={municipioBusca}
+                onChange={(event) => {
+                  setMunicipioBusca(event.target.value);
+                  setMostrarTodosMunicipios(false);
+                }}
+                placeholder="Filtrar municipio, GVE ou ano nesta tabela"
+                className="h-8 min-w-64 flex-1 rounded-md border bg-background px-2 text-sm"
+              />
+              <div className="text-xs text-muted-foreground">
+                Exibindo {visibleMunicipalityRows.length.toLocaleString("pt-BR")} de {filteredMunicipalityRows.length.toLocaleString("pt-BR")}
+              </div>
+            </div>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/40">
@@ -412,7 +460,7 @@ function DivergenciasPanel({ data }: { data: SinanAuditResult }) {
               </tr>
             </thead>
             <tbody>
-              {municipalityRows.map((d, i) => (
+              {visibleMunicipalityRows.map((d, i) => (
                 <tr key={i} className="border-b last:border-0 hover:bg-muted/20">
                   <td className="px-4 py-2 font-medium">
                     {d.municipioNome !== d.municipio ? d.municipioNome : d.municipio}
@@ -428,9 +476,17 @@ function DivergenciasPanel({ data }: { data: SinanAuditResult }) {
                   <RiscoCell risco={d.risco} />
                 </tr>
               ))}
-              <TotalRow label="Total" traconet={totalMunicipio.traconet} nottraconet={totalMunicipio.nottraconet} diff={totalMunicipio.diff} colSpan={3} />
+              <TotalRow label={municipioBusca ? "Total filtrado" : "Total"} traconet={totalMunicipio.traconet} nottraconet={totalMunicipio.nottraconet} diff={totalMunicipio.diff} colSpan={3} />
             </tbody>
           </table>
+          {!mostrarTodosMunicipios && filteredMunicipalityRows.length > visibleMunicipalityRows.length && (
+            <div className="border-t p-3 text-center">
+              <Button size="sm" variant="outline" onClick={() => setMostrarTodosMunicipios(true)}>
+                Mostrar todos os {filteredMunicipalityRows.length.toLocaleString("pt-BR")} registros
+              </Button>
+            </div>
+          )}
+          </div>
         )}
 
       </CardContent>
@@ -512,10 +568,19 @@ export function SinanQualidadeView() {
 
   const hasImportedData = Boolean(data && (data.totalTraconet > 0 || data.totalNottraconetRows > 0));
   const highRisk     = data?.crossBankDivergences.filter((d) => d.risco === "alto").length ?? 0;
-  const criticalCount = (data?.tfSemTratamento ?? 0) + (data?.ttSemCircurgia ?? 0) + (data?.semGraduacao ?? 0);
+  const clinicalMappingMissing = Boolean(
+    data &&
+    data.totalTraconet > 0 &&
+    data.totalTraconetPositive === 0 &&
+    data.semGraduacao === data.totalTraconet
+  );
+  const criticalCount =
+    (data?.tfSemTratamento ?? 0) +
+    (data?.ttSemCircurgia ?? 0) +
+    (clinicalMappingMissing ? 0 : data?.semGraduacao ?? 0);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 p-6">
+    <div className="mx-auto max-w-7xl space-y-6 p-6">
       {/* Header */}
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -536,7 +601,7 @@ export function SinanQualidadeView() {
       </div>
 
       {/* Filtros */}
-      <div className="flex flex-wrap items-end gap-3 rounded-lg border bg-card p-4">
+      <div className="sticky top-0 z-10 flex flex-wrap items-end gap-3 rounded-lg border bg-card/95 p-4 shadow-sm backdrop-blur">
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-muted-foreground">Município</label>
           <input
@@ -786,9 +851,9 @@ END;`}</pre>
             <CardContent className="grid gap-3 sm:grid-cols-2">
               <AlertCard
                 count={data.semGraduacao}
-                label="sem forma clínica (TF/TI/TS/TT/CO)"
-                severity={data.semGraduacao > 0 ? "critical" : "ok"}
-                detail="Casos individuais sem graduação clínica preenchida — campo essencial para definir conduta"
+                label={clinicalMappingMissing ? "forma clínica não mapeada" : "sem forma clínica (TF/TI/TS/TT/CO)"}
+                severity={clinicalMappingMissing ? "warning" : data.semGraduacao > 0 ? "critical" : "ok"}
+                detail={clinicalMappingMissing ? "Campo clínico não identificado no import; revisar nomes das colunas do TRACONET." : "Casos individuais sem graduação clínica preenchida — campo essencial para definir conduta"}
               />
               <AlertCard
                 count={data.tfSemTratamento}
@@ -824,7 +889,9 @@ END;`}</pre>
           </Card>
 
           {/* Sem Forma Clínica: onde corrigir */}
-          {(data.semFormaClinicaDetalhe?.length ?? 0) > 0 && (
+          {clinicalMappingMissing ? (
+            <ClinicalMappingNotice data={data} />
+          ) : (data.semFormaClinicaDetalhe?.length ?? 0) > 0 && (
             <SemFormaClinicaPanel data={data} />
           )}
 
