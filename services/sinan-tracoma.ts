@@ -436,23 +436,42 @@ export async function auditarSinanTracoma(opts?: {
 }): Promise<SinanAuditResult> {
   const supabase = createAdminClient();
 
-  let query = supabase
-    .from("sinan_tracoma_rows")
-    .select("source_bank, agravo, ano, municipio, gve, drs, classificacao, criterio, evolucao, tratamento, conclusao");
-
-  if (opts?.municipio) query = query.ilike("municipio", `%${opts.municipio}%`);
-  if (opts?.gve)       query = query.ilike("gve", `%${opts.gve}%`);
-  if (opts?.yearStart) query = query.gte("ano", opts.yearStart);
-  if (opts?.yearEnd)   query = query.lte("ano", opts.yearEnd);
-
-  const { data, error } = await query.limit(200000);
-  if (error) throw new Error(`SINAN auditoria: ${error.message}`);
-  const rows = (data ?? []) as Array<Record<string, unknown>>;
-
-  // TRACONET = casos individuais (tem TF/TT/sexo/idade/tratamento)
+  // Queries separadas por banco para evitar truncamento por max_rows do PostgREST.
+  // TRACONET = casos individuais (TF/TT/sexo/idade/tratamento)
   // NOTTRACONET = consolidado/agregados (nº examinados e positivos por localidade)
-  const traconetRows    = rows.filter((r) => r.source_bank === "traconet");
-  const nottraconetRows = rows.filter((r) => r.source_bank === "nottraconet");
+  let tcQ = supabase
+    .from("sinan_tracoma_rows")
+    .select("source_bank, agravo, ano, municipio, gve, drs, classificacao, criterio, evolucao, tratamento, conclusao")
+    .eq("source_bank", "traconet");
+  if (opts?.municipio) tcQ = tcQ.ilike("municipio", `%${opts.municipio}%`);
+  if (opts?.gve)       tcQ = tcQ.ilike("gve", `%${opts.gve}%`);
+  if (opts?.yearStart) tcQ = tcQ.gte("ano", opts.yearStart);
+  if (opts?.yearEnd)   tcQ = tcQ.lte("ano", opts.yearEnd);
+
+  let ntcQ = supabase
+    .from("sinan_tracoma_rows")
+    .select("source_bank, ano, municipio")
+    .eq("source_bank", "nottraconet");
+  if (opts?.municipio) ntcQ = ntcQ.ilike("municipio", `%${opts.municipio}%`);
+  if (opts?.yearStart) ntcQ = ntcQ.gte("ano", opts.yearStart);
+  if (opts?.yearEnd)   ntcQ = ntcQ.lte("ano", opts.yearEnd);
+
+  const [tcResult, ntcResult, tcCount, ntcCount] = await Promise.all([
+    tcQ.limit(200000),
+    ntcQ.limit(200000),
+    supabase.from("sinan_tracoma_rows").select("id", { count: "exact", head: true }).eq("source_bank", "traconet"),
+    supabase.from("sinan_tracoma_rows").select("id", { count: "exact", head: true }).eq("source_bank", "nottraconet")
+  ]);
+
+  if (tcResult.error) throw new Error(`SINAN auditoria (TRACONET): ${tcResult.error.message}`);
+  if (ntcResult.error) throw new Error(`SINAN auditoria (NOTTRACONET): ${ntcResult.error.message}`);
+
+  const traconetRows    = (tcResult.data  ?? []) as Array<Record<string, unknown>>;
+  const nottraconetRows = (ntcResult.data ?? []) as Array<Record<string, unknown>>;
+
+  // Totais reais via count (não afetados por limit)
+  const totalTraconetCount    = tcCount.count  ?? traconetRows.length;
+  const totalNottraconetCount = ntcCount.count ?? nottraconetRows.length;
 
   // ── Cross-bank comparison per municipio×ano ───────────────────────────────
   // Compara contagem de casos individuais (TRACONET) vs registros consolidados (NOTTRACONET)
@@ -463,7 +482,7 @@ export async function auditarSinanTracoma(opts?: {
       .normalize("NFD").replace(/[̀-ͯ]/g, "")
       .replace(/\s+/g, " ");
   }
-  function countByKey(rs: typeof rows) {
+  function countByKey(rs: Array<Record<string, unknown>>) {
     const m = new Map<string, number>();
     for (const r of rs) {
       const key = `${normMunicipio(r.municipio)}|${r.ano ?? "?"}`;
@@ -499,7 +518,7 @@ export async function auditarSinanTracoma(opts?: {
   // ── Field completeness — somente TRACONET (individuais) tem campos clínicos ──
   const fieldsTraconet = ["agravo", "municipio", "gve", "classificacao", "criterio", "tratamento", "conclusao", "evolucao"];
   const fieldCompleteness: SinanAuditResult["fieldCompleteness"] = {};
-  const baseRows = traconetRows.length > 0 ? traconetRows : rows; // fallback se só houver um banco
+  const baseRows = traconetRows.length > 0 ? traconetRows : nottraconetRows; // fallback se só houver um banco
   for (const f of fieldsTraconet) {
     const filled = baseRows.filter((r) => !isBlank(r[f])).length;
     fieldCompleteness[f] = { total: baseRows.length, filled, pct: baseRows.length ? Math.round((filled / baseRows.length) * 100) : 0 };
@@ -530,7 +549,8 @@ export async function auditarSinanTracoma(opts?: {
     return !trat.includes("cirurg") && !trat.includes("epila") && !conc.includes("cirurg");
   }).length;
 
-  const anoImpossivel = rows.filter((r) => {
+  const allRows = [...traconetRows, ...nottraconetRows];
+  const anoImpossivel = allRows.filter((r) => {
     const ano = Number(r.ano);
     return Number.isFinite(ano) && (ano < 1975 || ano > currentYear);
   }).length;
@@ -561,32 +581,33 @@ export async function auditarSinanTracoma(opts?: {
   if (baixoPct.length > 0) rec.push(`Campos TRACONET com completude < 50%: ${baixoPct.join(", ")}. Verificar mapeamento do arquivo importado.`);
   if (rec.length === 0) rec.push("Nenhuma inconsistencia critica detectada. Dados com boa completude e sem divergencias expressivas entre bancos.");
 
-  // Busca amostra de raw para diagnóstico (poucas linhas, não prejudica performance)
-  const diagSample = await supabase
-    .from("sinan_tracoma_rows")
-    .select("source_bank, raw")
-    .limit(20);
-  const diagRows = (diagSample.data ?? []) as Array<{ source_bank: string; raw: unknown }>;
-  const diagTraconet    = diagRows.filter((r) => r.source_bank === "traconet");
-  const diagNottraconet = diagRows.filter((r) => r.source_bank === "nottraconet");
+  // Busca amostra de raw para diagnóstico — queries separadas por banco para garantir 1 amostra de cada
+  const [diagTcSample, diagNtcSample] = await Promise.all([
+    supabase.from("sinan_tracoma_rows").select("source_bank, raw").eq("source_bank", "traconet").limit(1),
+    supabase.from("sinan_tracoma_rows").select("source_bank, raw").eq("source_bank", "nottraconet").limit(1)
+  ]);
+  const diagTraconet    = (diagTcSample.data  ?? []) as Array<{ source_bank: string; raw: unknown }>;
+  const diagNottraconet = (diagNtcSample.data ?? []) as Array<{ source_bank: string; raw: unknown }>;
 
   function rawKeys(r: { raw: unknown }): string[] {
     if (!r.raw || typeof r.raw !== "object") return [];
     return Object.keys(r.raw as Record<string, unknown>);
   }
 
-  function bankDiag(bankRows: typeof rows, diagSampleRows: typeof diagRows) {
-    if (!bankRows.length) return { colunas: [], municipiosAmostra: [], anosAmostra: [], camposPreenchidos: [] };
+  type DiagSample = Array<{ source_bank: string; raw: unknown }>;
+
+  function bankDiag(bankRows: Array<Record<string, unknown>>, diagSampleRows: DiagSample) {
+    if (!bankRows.length) return { colunas: [] as string[], municipiosAmostra: [] as string[], anosAmostra: [] as number[], camposPreenchidos: [] as string[] };
     const colunas = diagSampleRows.length > 0 ? rawKeys(diagSampleRows[0]).slice(0, 30) : [];
-    const munic = [...new Set(bankRows.map((r) => String(r.municipio ?? "")).filter(Boolean))].slice(0, 5);
-    const anos  = [...new Set(bankRows.map((r) => Number(r.ano)).filter((a) => a > 0))].sort().slice(0, 5);
+    const munic = [...new Set(bankRows.map((r) => String(r.municipio ?? "")).filter(Boolean))].slice(0, 5) as string[];
+    const anos  = [...new Set(bankRows.map((r) => Number(r.ano)).filter((a: number) => a > 0))].sort((a: number, b: number) => a - b).slice(0, 5) as number[];
     const normalizedCols = ["agravo","municipio","gve","classificacao","tratamento","conclusao"];
     const preenchidos = normalizedCols.filter((f) => bankRows.some((r) => !isBlank(r[f])));
     return { colunas, municipiosAmostra: munic, anosAmostra: anos, camposPreenchidos: preenchidos };
   }
 
   // Detecção de inversão: TRACONET deveria ter FORMA_TF/TT nos campos raw
-  function temCamposIndividuais(sample: typeof diagRows) {
+  function temCamposIndividuais(sample: DiagSample) {
     return sample.some((r) => rawKeys(r).some((k) => /forma_t[ftisco]/i.test(k)));
   }
   const traconetTemForma    = temCamposIndividuais(diagTraconet);
@@ -597,8 +618,8 @@ export async function auditarSinanTracoma(opts?: {
   }
 
   return {
-    totalTraconet: traconetRows.length,
-    totalNottraconet: nottraconetRows.length,
+    totalTraconet: totalTraconetCount,
+    totalNottraconet: totalNottraconetCount,
     diagnostico: {
       traconet: bankDiag(traconetRows, diagTraconet),
       nottraconet: bankDiag(nottraconetRows, diagNottraconet),

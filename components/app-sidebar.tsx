@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  BarChart3, Bell, Bot, Brain, CheckSquare, ChevronRight,
+  AlertCircle, BarChart3, Bell, Bot, Brain, CheckSquare, ChevronRight,
   ClipboardList, Database, FileText, GraduationCap, LayoutDashboard, Library,
   LogOut, Moon, Newspaper, Settings, ShieldAlert, Sun, User
 } from "lucide-react";
@@ -31,9 +31,10 @@ const groups = [
       { href: "/notificacoes", label: "Notificações",     icon: Bell },
       { href: "/alertas",      label: "Alertas",          icon: Bell },
       { href: "/boletins",     label: "Boletins",         icon: Newspaper },
-      { href: "/correcoes",       label: "Correções CEVESP",    icon: CheckSquare },
-      { href: "/auditoria",       label: "Auditoria",           icon: ClipboardList },
-      { href: "/sinan-qualidade", label: "Qualidade SINAN",     icon: ShieldAlert }
+      { href: "/correcoes",        label: "Correções CEVESP",  icon: CheckSquare  },
+      { href: "/cevesp-qualidade", label: "Qualidade CEVESP",  icon: AlertCircle  },
+      { href: "/auditoria",        label: "Auditoria",          icon: ClipboardList },
+      { href: "/sinan-qualidade",  label: "Qualidade SINAN",    icon: ShieldAlert  }
     ]
   },
   {
