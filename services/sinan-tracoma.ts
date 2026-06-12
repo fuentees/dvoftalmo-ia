@@ -561,25 +561,36 @@ export async function auditarSinanTracoma(opts?: {
   if (baixoPct.length > 0) rec.push(`Campos TRACONET com completude < 50%: ${baixoPct.join(", ")}. Verificar mapeamento do arquivo importado.`);
   if (rec.length === 0) rec.push("Nenhuma inconsistencia critica detectada. Dados com boa completude e sem divergencias expressivas entre bancos.");
 
-  function bankDiag(bankRows: typeof rows) {
+  // Busca amostra de raw para diagnóstico (poucas linhas, não prejudica performance)
+  const diagSample = await supabase
+    .from("sinan_tracoma_rows")
+    .select("source_bank, raw")
+    .limit(20);
+  const diagRows = (diagSample.data ?? []) as Array<{ source_bank: string; raw: unknown }>;
+  const diagTraconet    = diagRows.filter((r) => r.source_bank === "traconet");
+  const diagNottraconet = diagRows.filter((r) => r.source_bank === "nottraconet");
+
+  function rawKeys(r: { raw: unknown }): string[] {
+    if (!r.raw || typeof r.raw !== "object") return [];
+    return Object.keys(r.raw as Record<string, unknown>);
+  }
+
+  function bankDiag(bankRows: typeof rows, diagSampleRows: typeof diagRows) {
     if (!bankRows.length) return { colunas: [], municipiosAmostra: [], anosAmostra: [], camposPreenchidos: [] };
-    const rawCols = Object.keys(bankRows[0].raw as Record<string, unknown>).slice(0, 30);
+    const colunas = diagSampleRows.length > 0 ? rawKeys(diagSampleRows[0]).slice(0, 30) : [];
     const munic = [...new Set(bankRows.map((r) => String(r.municipio ?? "")).filter(Boolean))].slice(0, 5);
     const anos  = [...new Set(bankRows.map((r) => Number(r.ano)).filter((a) => a > 0))].sort().slice(0, 5);
     const normalizedCols = ["agravo","municipio","gve","classificacao","tratamento","conclusao"];
     const preenchidos = normalizedCols.filter((f) => bankRows.some((r) => !isBlank(r[f])));
-    return { colunas: rawCols, municipiosAmostra: munic, anosAmostra: anos, camposPreenchidos: preenchidos };
+    return { colunas, municipiosAmostra: munic, anosAmostra: anos, camposPreenchidos: preenchidos };
   }
 
-  // Aviso se os bancos parecem estar invertidos (TRACONET tem campos de consolidado e vice-versa)
-  const traconetTemForma = traconetRows.some((r) => {
-    const raw = r.raw as Record<string, unknown>;
-    return Object.keys(raw).some((k) => /forma_t[ftisco]/i.test(k) || /nu_caso/i.test(k));
-  });
-  const nottraconetTemForma = nottraconetRows.some((r) => {
-    const raw = r.raw as Record<string, unknown>;
-    return Object.keys(raw).some((k) => /forma_t[ftisco]/i.test(k) || /nu_caso/i.test(k));
-  });
+  // Detecção de inversão: TRACONET deveria ter FORMA_TF/TT nos campos raw
+  function temCamposIndividuais(sample: typeof diagRows) {
+    return sample.some((r) => rawKeys(r).some((k) => /forma_t[ftisco]/i.test(k)));
+  }
+  const traconetTemForma    = temCamposIndividuais(diagTraconet);
+  const nottraconetTemForma = temCamposIndividuais(diagNottraconet);
   let aviso: string | undefined;
   if (!traconetTemForma && nottraconetTemForma && traconetRows.length > 0 && nottraconetRows.length > 0) {
     aviso = "ATENÇÃO: Os bancos parecem estar INVERTIDOS na importação. TRACONET não tem campos FORMA_TF/TT mas NOTTRACONET tem. Execute o SQL de correção no Supabase para trocar os labels.";
@@ -589,8 +600,8 @@ export async function auditarSinanTracoma(opts?: {
     totalTraconet: traconetRows.length,
     totalNottraconet: nottraconetRows.length,
     diagnostico: {
-      traconet: bankDiag(traconetRows),
-      nottraconet: bankDiag(nottraconetRows),
+      traconet: bankDiag(traconetRows, diagTraconet),
+      nottraconet: bankDiag(nottraconetRows, diagNottraconet),
       aviso
     },
     crossBankDivergences: crossBankDivergences.slice(0, 50),
