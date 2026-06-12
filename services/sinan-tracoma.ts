@@ -47,7 +47,8 @@ const fieldCandidates = {
 const consolidatedPositiveFieldCandidates = [
   "NU_CASOPOS", "NU_CAS_POS", "NU_POSITIV", "NU_POSITIVOS", "NU_POS",
   "CASOPOS", "CAS_POS", "CASOS_POS", "POSITIVOS", "N_POSITIVO",
-  "QT_POS", "QTD_POS", "TOTAL_POS", "TOT_POS"
+  "QT_POS", "QTD_POS", "TOTAL_POS", "TOT_POS", "NU_CASOS", "CASOS",
+  "TOTAL_CASOS", "TOT_CASOS", "QT_CASOS", "QTD_CASOS"
 ];
 
 function getValue(row: RawRow, candidates: string[]) {
@@ -408,6 +409,16 @@ export interface SinanAuditResult {
     diff: number;
     risco: "alto" | "medio" | "baixo";
   }>;
+  comparisonsByMunicipalityYear: Array<{
+    municipio: string;
+    municipioNome: string;
+    gve: string;
+    ano: number;
+    traconet: number;
+    nottraconet: number;
+    diff: number;
+    risco: "alto" | "medio" | "baixo";
+  }>;
   divergencesByYear: Array<{
     ano: number;
     traconet: number;
@@ -643,15 +654,14 @@ export async function auditarSinanTracoma(opts?: {
   const nottraconetMap = countNottraconetByKey(nottraconetRows);
   const allKeys = new Set([...traconetMap.keys(), ...nottraconetMap.keys()]);
 
-  const crossBankDivergences: SinanAuditResult["crossBankDivergences"] = [];
+  const comparisonsByMunicipalityYear: SinanAuditResult["comparisonsByMunicipalityYear"] = [];
   for (const key of allKeys) {
     const tc  = traconetMap.get(key)    ?? 0;
     const ntc = nottraconetMap.get(key) ?? 0;
     const diff = ntc - tc;
-    if (diff === 0) continue;
     const [municipio, anoStr] = key.split("|");
     const abs = Math.abs(diff);
-    crossBankDivergences.push({
+    comparisonsByMunicipalityYear.push({
       municipio,
       municipioNome: nomeMunicipio(municipio),
       gve: gvePorMunicipio.get(municipio) ?? "",
@@ -662,6 +672,9 @@ export async function auditarSinanTracoma(opts?: {
       risco: abs >= 10 ? "alto" : abs >= 3 ? "medio" : "baixo"
     });
   }
+  comparisonsByMunicipalityYear.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+
+  const crossBankDivergences = comparisonsByMunicipalityYear.filter((row) => row.diff !== 0);
   crossBankDivergences.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
 
   // ── Por Ano ───────────────────────────────────────────────────────────────
@@ -851,7 +864,8 @@ export async function auditarSinanTracoma(opts?: {
       nottraconet: bankDiag(nottraconetRows, diagNottraconet),
       aviso
     },
-    crossBankDivergences: crossBankDivergences.slice(0, 100),
+    crossBankDivergences,
+    comparisonsByMunicipalityYear,
     divergencesByYear,
     divergencesByGve,
     fieldCompleteness,

@@ -257,6 +257,12 @@ function DivergenciasPanel({ data }: { data: SinanAuditResult }) {
   const [tab, setTab] = useState<DivTab>("ano");
 
   const total = data.crossBankDivergences.length;
+  const municipalityRows = data.comparisonsByMunicipalityYear?.length
+    ? data.comparisonsByMunicipalityYear
+    : data.crossBankDivergences;
+  const totalYear = sumRows(data.divergencesByYear ?? []);
+  const totalGve = sumRows(data.divergencesByGve ?? []);
+  const totalMunicipio = sumRows(municipalityRows);
   const tabs: { id: DivTab; label: string }[] = [
     { id: "ano",      label: "Por Ano"       },
     { id: "gve",      label: "Por GVE"       },
@@ -302,7 +308,7 @@ function DivergenciasPanel({ data }: { data: SinanAuditResult }) {
               <tr className="border-b bg-muted/40">
                 <th className="px-4 py-2 text-left font-medium text-muted-foreground">Ano</th>
                 <th className="px-4 py-2 text-right font-medium text-muted-foreground">Individuais (TRACONET)</th>
-                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Consolidado (NOTTRACONET)</th>
+                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Positivos consolidados</th>
                 <th className="px-4 py-2 text-right font-medium text-muted-foreground">Diferença</th>
                 <th className="px-4 py-2 text-center font-medium text-muted-foreground">Risco</th>
               </tr>
@@ -317,6 +323,7 @@ function DivergenciasPanel({ data }: { data: SinanAuditResult }) {
                   <RiscoCell risco={d.risco} />
                 </tr>
               ))}
+              <TotalRow label="Total" traconet={totalYear.traconet} nottraconet={totalYear.nottraconet} diff={totalYear.diff} colSpan={1} />
             </tbody>
           </table>
         )}
@@ -328,7 +335,7 @@ function DivergenciasPanel({ data }: { data: SinanAuditResult }) {
               <tr className="border-b bg-muted/40">
                 <th className="px-4 py-2 text-left font-medium text-muted-foreground">GVE</th>
                 <th className="px-4 py-2 text-right font-medium text-muted-foreground">Individuais (TRACONET)</th>
-                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Consolidado (NOTTRACONET)</th>
+                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Positivos consolidados</th>
                 <th className="px-4 py-2 text-right font-medium text-muted-foreground">Diferença</th>
                 <th className="px-4 py-2 text-center font-medium text-muted-foreground">Risco</th>
               </tr>
@@ -343,6 +350,7 @@ function DivergenciasPanel({ data }: { data: SinanAuditResult }) {
                   <RiscoCell risco={d.risco} />
                 </tr>
               ))}
+              <TotalRow label="Total" traconet={totalGve.traconet} nottraconet={totalGve.nottraconet} diff={totalGve.diff} colSpan={1} />
             </tbody>
           </table>
         )}
@@ -356,13 +364,13 @@ function DivergenciasPanel({ data }: { data: SinanAuditResult }) {
                 <th className="px-4 py-2 text-left font-medium text-muted-foreground">GVE</th>
                 <th className="px-4 py-2 text-right font-medium text-muted-foreground">Ano</th>
                 <th className="px-4 py-2 text-right font-medium text-muted-foreground">Individuais</th>
-                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Consolidado</th>
+                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Positivos consolidados</th>
                 <th className="px-4 py-2 text-right font-medium text-muted-foreground">Diferença</th>
                 <th className="px-4 py-2 text-center font-medium text-muted-foreground">Risco</th>
               </tr>
             </thead>
             <tbody>
-              {data.crossBankDivergences.map((d, i) => (
+              {municipalityRows.map((d, i) => (
                 <tr key={i} className="border-b last:border-0 hover:bg-muted/20">
                   <td className="px-4 py-2 font-medium">
                     {d.municipioNome !== d.municipio ? d.municipioNome : d.municipio}
@@ -378,12 +386,37 @@ function DivergenciasPanel({ data }: { data: SinanAuditResult }) {
                   <RiscoCell risco={d.risco} />
                 </tr>
               ))}
+              <TotalRow label="Total" traconet={totalMunicipio.traconet} nottraconet={totalMunicipio.nottraconet} diff={totalMunicipio.diff} colSpan={3} />
             </tbody>
           </table>
         )}
 
       </CardContent>
     </Card>
+  );
+}
+
+function sumRows(rows: Array<{ traconet: number; nottraconet: number }>) {
+  const traconet = rows.reduce((sum, row) => sum + Number(row.traconet ?? 0), 0);
+  const nottraconet = rows.reduce((sum, row) => sum + Number(row.nottraconet ?? 0), 0);
+  return { traconet, nottraconet, diff: nottraconet - traconet };
+}
+
+function TotalRow({ label, traconet, nottraconet, diff, colSpan }: {
+  label: string;
+  traconet: number;
+  nottraconet: number;
+  diff: number;
+  colSpan: number;
+}) {
+  return (
+    <tr className="border-t-2 bg-muted/50 font-semibold">
+      <td className="px-4 py-2" colSpan={colSpan}>{label}</td>
+      <td className="px-4 py-2 text-right tabular-nums">{traconet.toLocaleString("pt-BR")}</td>
+      <td className="px-4 py-2 text-right tabular-nums">{nottraconet.toLocaleString("pt-BR")}</td>
+      <DiffCell diff={diff} />
+      <td className="px-4 py-2 text-center text-xs text-muted-foreground">-</td>
+    </tr>
   );
 }
 
