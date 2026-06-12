@@ -569,6 +569,32 @@ export async function auditarSinanTracoma(opts?: {
 }): Promise<SinanAuditResult> {
   const supabase = createAdminClient();
 
+  async function fetchAuditRows(bank: SinanTracomaBank, columns: string) {
+    const pageSize = 1000;
+    const rows: Array<Record<string, unknown>> = [];
+
+    for (let from = 0; ; from += pageSize) {
+      let query = supabase
+        .from("sinan_tracoma_rows")
+        .select(columns)
+        .eq("source_bank", bank)
+        .range(from, from + pageSize - 1);
+
+      if (opts?.municipio) query = query.ilike("municipio", `%${opts.municipio}%`);
+      if (opts?.yearStart) query = query.gte("ano", opts.yearStart);
+      if (opts?.yearEnd) query = query.lte("ano", opts.yearEnd);
+
+      const { data, error } = await query;
+      if (error) throw new Error(`SINAN auditoria (${bank.toUpperCase()}): ${error.message}`);
+
+      const page = (data ?? []) as unknown as Array<Record<string, unknown>>;
+      rows.push(...page);
+      if (page.length < pageSize) break;
+    }
+
+    return rows;
+  }
+
   // Queries separadas por banco para evitar truncamento por max_rows do PostgREST.
   // TRACONET = casos individuais (TF/TT/sexo/idade/tratamento)
   // NOTTRACONET = consolidado/agregados (nº examinados e positivos por localidade)
@@ -598,6 +624,11 @@ export async function auditarSinanTracoma(opts?: {
 
   let traconetRows    = (tcResult.data  ?? []) as Array<Record<string, unknown>>;
   let nottraconetRows = (ntcResult.data ?? []) as Array<Record<string, unknown>>;
+
+  [traconetRows, nottraconetRows] = await Promise.all([
+    fetchAuditRows("traconet", "source_bank, agravo, ano, municipio, gve, drs, classificacao, criterio, evolucao, tratamento, conclusao, raw"),
+    fetchAuditRows("nottraconet", "source_bank, ano, municipio, gve, raw")
+  ]);
 
   // Extrai o total de casos positivos de uma linha do NOTTRACONET (campo NU_CASOPOS do raw).
   // Cada linha NOTTRACONET é um relatório consolidado — NU_CASOPOS = nº de casos positivos.
