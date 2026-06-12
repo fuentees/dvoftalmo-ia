@@ -474,17 +474,15 @@ export async function auditarSinanTracoma(opts?: {
 
   let ntcQ = supabase
     .from("sinan_tracoma_rows")
-    .select("source_bank, ano, municipio, gve")
+    .select("source_bank, ano, municipio, gve, raw")
     .eq("source_bank", "nottraconet");
   if (opts?.municipio) ntcQ = ntcQ.ilike("municipio", `%${opts.municipio}%`);
   if (opts?.yearStart) ntcQ = ntcQ.gte("ano", opts.yearStart);
   if (opts?.yearEnd)   ntcQ = ntcQ.lte("ano", opts.yearEnd);
 
-  const [tcResult, ntcResult, tcCount, ntcCount] = await Promise.all([
+  const [tcResult, ntcResult] = await Promise.all([
     tcQ.limit(200000),
     ntcQ.limit(200000),
-    supabase.from("sinan_tracoma_rows").select("id", { count: "exact", head: true }).eq("source_bank", "traconet"),
-    supabase.from("sinan_tracoma_rows").select("id", { count: "exact", head: true }).eq("source_bank", "nottraconet")
   ]);
 
   if (tcResult.error) throw new Error(`SINAN auditoria (TRACONET): ${tcResult.error.message}`);
@@ -493,9 +491,19 @@ export async function auditarSinanTracoma(opts?: {
   const traconetRows    = (tcResult.data  ?? []) as Array<Record<string, unknown>>;
   const nottraconetRows = (ntcResult.data ?? []) as Array<Record<string, unknown>>;
 
-  // Totais reais via count (não afetados por limit)
-  const totalTraconetCount    = tcCount.count  ?? traconetRows.length;
-  const totalNottraconetCount = ntcCount.count ?? nottraconetRows.length;
+  // Extrai o total de casos positivos de uma linha do NOTTRACONET (campo NU_CASOPOS do raw).
+  // Cada linha NOTTRACONET é um relatório consolidado — NU_CASOPOS = nº de casos positivos.
+  function ntcCasoPos(r: Record<string, unknown>): number {
+    const raw = r.raw as Record<string, unknown> | null;
+    if (!raw) return 1;
+    const v = raw["NU_CASOPOS"] ?? raw["nu_casopos"] ?? raw["CASOPOS"];
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? n : 1;
+  }
+
+  // Totais reais: TRACONET = registros individuais; NOTTRACONET = soma de casos positivos
+  const totalTraconetCount    = traconetRows.length;
+  const totalNottraconetCount = nottraconetRows.reduce((s, r) => s + ntcCasoPos(r), 0);
 
   // ── Cross-bank comparison per municipio×ano ───────────────────────────────
   // Compara contagem de casos individuais (TRACONET) vs registros consolidados (NOTTRACONET)
@@ -506,11 +514,21 @@ export async function auditarSinanTracoma(opts?: {
       .normalize("NFD").replace(/[̀-ͯ]/g, "")
       .replace(/\s+/g, " ");
   }
-  function countByKey(rs: Array<Record<string, unknown>>) {
+  // TRACONET: cada linha = 1 caso individual → soma +1
+  // NOTTRACONET: cada linha = relatório consolidado → soma NU_CASOPOS
+  function countTraconetByKey(rs: Array<Record<string, unknown>>) {
     const m = new Map<string, number>();
     for (const r of rs) {
       const key = `${normMunicipio(r.municipio)}|${r.ano ?? "?"}`;
       m.set(key, (m.get(key) ?? 0) + 1);
+    }
+    return m;
+  }
+  function countNottraconetByKey(rs: Array<Record<string, unknown>>) {
+    const m = new Map<string, number>();
+    for (const r of rs) {
+      const key = `${normMunicipio(r.municipio)}|${r.ano ?? "?"}`;
+      m.set(key, (m.get(key) ?? 0) + ntcCasoPos(r));
     }
     return m;
   }
@@ -528,8 +546,8 @@ export async function auditarSinanTracoma(opts?: {
     }
   }
 
-  const traconetMap    = countByKey(traconetRows);
-  const nottraconetMap = countByKey(nottraconetRows);
+  const traconetMap    = countTraconetByKey(traconetRows);
+  const nottraconetMap = countNottraconetByKey(nottraconetRows);
   const allKeys = new Set([...traconetMap.keys(), ...nottraconetMap.keys()]);
 
   const crossBankDivergences: SinanAuditResult["crossBankDivergences"] = [];
@@ -577,19 +595,22 @@ export async function auditarSinanTracoma(opts?: {
 
   // ── Por GVE ───────────────────────────────────────────────────────────────
   // r.gve é null em ambos os bancos; usar lookup estático pelo código IBGE em r.municipio
-  function countByGve(rs: Array<Record<string, unknown>>) {
+  function resolveGve(r: Record<string, unknown>): string {
+    return (r.gve ? String(r.gve).trim() : null)
+      ?? gvePorCodigo(r.municipio as string)
+      ?? gvePorMunicipio.get(normMunicipio(r.municipio))
+      ?? "Não informado";
+  }
+  function countByGve(rs: Array<Record<string, unknown>>, increment: (r: Record<string, unknown>) => number) {
     const m = new Map<string, number>();
     for (const r of rs) {
-      const gve = (r.gve ? String(r.gve).trim() : null)
-        ?? gvePorCodigo(r.municipio as string)
-        ?? gvePorMunicipio.get(normMunicipio(r.municipio))
-        ?? "Não informado";
-      m.set(gve, (m.get(gve) ?? 0) + 1);
+      const gve = resolveGve(r);
+      m.set(gve, (m.get(gve) ?? 0) + increment(r));
     }
     return m;
   }
-  const tcGveMap  = countByGve(traconetRows);
-  const ntcGveMap = countByGve(nottraconetRows);
+  const tcGveMap  = countByGve(traconetRows,    () => 1);
+  const ntcGveMap = countByGve(nottraconetRows, ntcCasoPos);
   const allGves   = new Set([...tcGveMap.keys(), ...ntcGveMap.keys()]);
   const divergencesByGve: SinanAuditResult["divergencesByGve"] = Array.from(allGves).map((gve) => {
     const tc   = tcGveMap.get(gve)  ?? 0;
