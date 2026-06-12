@@ -44,6 +44,12 @@ const fieldCandidates = {
   conclusao: ["CONCLUSAO", "DT_CONCLUSAO", "SIT_CONCLU", "CLASSI_FIN", "CLASSIFICACAO"]
 };
 
+const consolidatedPositiveFieldCandidates = [
+  "NU_CASOPOS", "NU_CAS_POS", "NU_POSITIV", "NU_POSITIVOS", "NU_POS",
+  "CASOPOS", "CAS_POS", "CASOS_POS", "POSITIVOS", "N_POSITIVO",
+  "QT_POS", "QTD_POS", "TOTAL_POS", "TOT_POS"
+];
+
 function getValue(row: RawRow, candidates: string[]) {
   const keys = Object.keys(row);
   for (const candidate of candidates) {
@@ -185,7 +191,7 @@ function parseQuestion(question: string) {
   // TRACONET = casos individuais (sexo, idade, TF/TT); NOTTRACONET = consolidado/agregados
   const bank: SinanTracomaBank | undefined =
     /traconet|casos?|individual|notificacao|sexo|idade|forma clinica/.test(lower) ? "traconet" :
-    /nottraconet|consolidado|consolidada|agregado/.test(lower) ? "nottraconet" :
+    /nottraconet|nottraconect|ntracoma|consolidado|consolidada|agregado/.test(lower) ? "nottraconet" :
     undefined;
   const metric =
     /municipios?/.test(lower) && /quantos|total|numero/.test(lower) ? "municipios" :
@@ -283,7 +289,7 @@ export async function runSinanTracomaAnalysis(question: string) {
   const supabase = createAdminClient();
   let query = supabase
     .from("sinan_tracoma_rows")
-    .select("source_bank, agravo, ano, dt_notificacao, municipio, gve, drs, unidade, classificacao, criterio, evolucao, tratamento, conclusao");
+    .select("source_bank, agravo, ano, dt_notificacao, municipio, gve, drs, unidade, classificacao, criterio, evolucao, tratamento, conclusao, raw");
 
   if (parsed.bank) query = query.eq("source_bank", parsed.bank);
   if (parsed.agravo) query = query.ilike("agravo", `%${parsed.agravo}%`);
@@ -299,14 +305,15 @@ export async function runSinanTracomaAnalysis(question: string) {
   const groups = new Map<string, number>();
   for (const row of rows) {
     const label = String(row[groupField] ?? "Nao informado");
-    groups.set(label, (groups.get(label) ?? 0) + 1);
+    groups.set(label, (groups.get(label) ?? 0) + sinanCaseWeight(row));
   }
   const resultRows = Array.from(groups.entries())
     .map(([label, valor]) => ({ [labelForDimension(groupField)]: label, Valor: valor }))
     .sort((a, b) => Number(b.Valor) - Number(a.Valor))
     .slice(0, Math.min(parsed.limit, 500));
 
-  const totalRow = { [labelForDimension(groupField)]: "Total", Valor: rows.length };
+  const totalCases = rows.reduce((sum, row) => sum + sinanCaseWeight(row), 0);
+  const totalRow = { [labelForDimension(groupField)]: "Total", Valor: totalCases };
   const banks = Array.from(new Set(rows.map((row) => String(row.source_bank ?? "")))).join(", ") || "nao identificado";
   const agravos = Array.from(new Set(rows.map((row) => String(row.agravo ?? "")).filter(Boolean))).slice(0, 5).join(", ") || "nao informado";
   const quality = buildQualityFindings(rows);
@@ -314,13 +321,13 @@ export async function runSinanTracomaAnalysis(question: string) {
   return {
     question,
     parsed,
-    metricLabel: "Registros SINAN Tracoma",
+    metricLabel: "Casos SINAN Tracoma",
     timeLabel: parsed.yearStart ? `${parsed.yearStart} a ${parsed.yearEnd}` : "todo o cache",
     columns: [labelForDimension(groupField), "Valor"],
     rows: [...resultRows, totalRow],
     quality,
     interpretation: [
-      `Foram encontrados ${rows.length} registros no cache SINAN Tracoma.`,
+      `Foram considerados ${totalCases} caso(s) SINAN Tracoma em ${rows.length} linha(s) do cache.`,
       `Banco(s) considerados: ${banks}. Agravo(s) observado(s): ${agravos}.`,
       parsed.agravo
         ? `A consulta aplicou filtro de agravo contendo "${parsed.agravo}".`
@@ -428,7 +435,45 @@ export interface SinanAuditResult {
     gve: string;
     count: number;
   }>;
+  consolidatedPositiveField: string | null;
+  consolidatedRowsWithoutPositiveField: number;
+  duplicateNotificationIds: Array<{
+    id: string;
+    count: number;
+    municipio: string;
+    ano: number;
+  }>;
+  missingNotificationId: number;
   recommendations: string[];
+}
+
+function rawObject(row: Record<string, unknown>): Record<string, unknown> {
+  return row.raw && typeof row.raw === "object" ? row.raw as Record<string, unknown> : {};
+}
+
+function getRawValue(row: Record<string, unknown>, candidates: string[]) {
+  const raw = rawObject(row);
+  const keys = Object.keys(raw);
+  for (const candidate of candidates) {
+    const key = keys.find((item) => item.toLowerCase() === candidate.toLowerCase());
+    if (key && raw[key] != null && String(raw[key]).trim() !== "") return { key, value: raw[key] };
+  }
+  return null;
+}
+
+function toNonNegativeNumber(value: unknown): number | null {
+  if (value == null) return null;
+  const normalized = String(value).trim().replace(",", ".");
+  const n = Number(normalized);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+function sinanCaseWeight(row: Record<string, unknown>): number {
+  if (row.source_bank === "nottraconet") {
+    const found = getRawValue(row, consolidatedPositiveFieldCandidates);
+    return found ? toNonNegativeNumber(found.value) ?? 0 : 0;
+  }
+  return 1;
 }
 
 function normalizeBankLabel(v: unknown): string {
@@ -465,10 +510,9 @@ export async function auditarSinanTracoma(opts?: {
   // NOTTRACONET = consolidado/agregados (nº examinados e positivos por localidade)
   let tcQ = supabase
     .from("sinan_tracoma_rows")
-    .select("source_bank, agravo, ano, municipio, gve, drs, classificacao, criterio, evolucao, tratamento, conclusao")
+    .select("source_bank, agravo, ano, municipio, gve, drs, classificacao, criterio, evolucao, tratamento, conclusao, raw")
     .eq("source_bank", "traconet");
   if (opts?.municipio) tcQ = tcQ.ilike("municipio", `%${opts.municipio}%`);
-  if (opts?.gve)       tcQ = tcQ.ilike("gve", `%${opts.gve}%`);
   if (opts?.yearStart) tcQ = tcQ.gte("ano", opts.yearStart);
   if (opts?.yearEnd)   tcQ = tcQ.lte("ano", opts.yearEnd);
 
@@ -488,22 +532,71 @@ export async function auditarSinanTracoma(opts?: {
   if (tcResult.error) throw new Error(`SINAN auditoria (TRACONET): ${tcResult.error.message}`);
   if (ntcResult.error) throw new Error(`SINAN auditoria (NOTTRACONET): ${ntcResult.error.message}`);
 
-  const traconetRows    = (tcResult.data  ?? []) as Array<Record<string, unknown>>;
-  const nottraconetRows = (ntcResult.data ?? []) as Array<Record<string, unknown>>;
+  let traconetRows    = (tcResult.data  ?? []) as Array<Record<string, unknown>>;
+  let nottraconetRows = (ntcResult.data ?? []) as Array<Record<string, unknown>>;
 
   // Extrai o total de casos positivos de uma linha do NOTTRACONET (campo NU_CASOPOS do raw).
   // Cada linha NOTTRACONET é um relatório consolidado — NU_CASOPOS = nº de casos positivos.
+  const positiveFieldUsage = new Map<string, number>();
+  const positiveValueCache = new WeakMap<object, number>();
+  let consolidatedRowsWithoutPositiveField = 0;
+
   function ntcCasoPos(r: Record<string, unknown>): number {
-    const raw = r.raw as Record<string, unknown> | null;
-    if (!raw) return 1;
-    const v = raw["NU_CASOPOS"] ?? raw["nu_casopos"] ?? raw["CASOPOS"];
-    const n = Number(v);
-    return Number.isFinite(n) && n >= 0 ? n : 1;
+    const cached = positiveValueCache.get(r);
+    if (cached != null) return cached;
+
+    const found = getRawValue(r, consolidatedPositiveFieldCandidates);
+    const n = found ? toNonNegativeNumber(found.value) : null;
+    if (found && n != null) {
+      positiveFieldUsage.set(found.key, (positiveFieldUsage.get(found.key) ?? 0) + 1);
+      positiveValueCache.set(r, n);
+      return n;
+    }
+    consolidatedRowsWithoutPositiveField += 1;
+    positiveValueCache.set(r, 0);
+    return 0;
+  }
+
+  function resolveGveBasic(r: Record<string, unknown>): string {
+    return (r.gve ? String(r.gve).trim() : null)
+      ?? gvePorCodigo(r.municipio as string)
+      ?? "";
+  }
+
+  if (opts?.gve) {
+    const wantedGve = normalizeText(opts.gve);
+    traconetRows = traconetRows.filter((row) => normalizeText(resolveGveBasic(row)).includes(wantedGve));
+    nottraconetRows = nottraconetRows.filter((row) => normalizeText(resolveGveBasic(row)).includes(wantedGve));
   }
 
   // Totais reais: TRACONET = registros individuais; NOTTRACONET = soma de casos positivos
   const totalTraconetCount    = traconetRows.length;
   const totalNottraconetCount = nottraconetRows.reduce((s, r) => s + ntcCasoPos(r), 0);
+  const consolidatedPositiveField = Array.from(positiveFieldUsage.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+
+  const notificationIdCandidates = ["NU_NOTIFIC", "ID_NOTIFIC", "NUM_NOTIFIC", "NOTIFIC", "NU_NOTIF", "ID"];
+  const notificationIdMap = new Map<string, { count: number; municipio: string; ano: number }>();
+  let missingNotificationId = 0;
+  for (const row of traconetRows) {
+    const found = getRawValue(row, notificationIdCandidates);
+    const id = found ? String(found.value ?? "").trim() : "";
+    if (!id) {
+      missingNotificationId += 1;
+      continue;
+    }
+    const current = notificationIdMap.get(id) ?? {
+      count: 0,
+      municipio: String(row.municipio ?? ""),
+      ano: Number(row.ano) || 0
+    };
+    current.count += 1;
+    notificationIdMap.set(id, current);
+  }
+  const duplicateNotificationIds = Array.from(notificationIdMap.entries())
+    .filter(([, value]) => value.count > 1)
+    .map(([id, value]) => ({ id, ...value }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 50);
 
   // ── Cross-bank comparison per municipio×ano ───────────────────────────────
   // Compara contagem de casos individuais (TRACONET) vs registros consolidados (NOTTRACONET)
@@ -682,11 +775,23 @@ export async function auditarSinanTracoma(opts?: {
   if (altoDivergencia.length > 0) {
     const top3 = altoDivergencia.slice(0, 3).map((d) => {
       const tipo = d.diff > 0
-        ? `consolidado(${d.nottraconet}) > individuais(${d.traconet}): subregistro de casos individuais`
-        : `individuais(${d.traconet}) > consolidado(${d.nottraconet}): possivel duplicidade`;
+        ? `positivos consolidados(${d.nottraconet}) > individuais(${d.traconet}): subregistro de casos individuais`
+        : `individuais(${d.traconet}) > positivos consolidados(${d.nottraconet}): possivel duplicidade ou ausencia no consolidado`;
       return `${d.municipio} ${d.ano}: ${tipo}`;
     }).join("; ");
-    rec.push(`DIVERGENCIA ALTA em ${altoDivergencia.length} municipio(s)/periodo(s) entre TRACONET (individuais) e NOTTRACONET (consolidado). Exemplos: ${top3}.`);
+    rec.push(`DIVERGENCIA ALTA em ${altoDivergencia.length} municipio(s)/periodo(s) entre TRACONET (casos individuais) e NOTTRACONET/NTRACOMA (casos positivos consolidados). Exemplos: ${top3}.`);
+  }
+  if (nottraconetRows.length > 0 && !consolidatedPositiveField) {
+    rec.push("O banco consolidado NOTTRACONET/NTRACOMA foi importado, mas nenhum campo de casos positivos foi reconhecido. A comparacao entre bancos fica indisponivel ate mapear a variavel correta de positivos.");
+  } else if (consolidatedRowsWithoutPositiveField > 0) {
+    rec.push(`${consolidatedRowsWithoutPositiveField} linha(s) do consolidado nao possuem campo de casos positivos preenchido/mapeado; revisar o DBF consolidado antes de interpretar divergencias.`);
+  }
+  if (duplicateNotificationIds.length > 0) {
+    const exemplos = duplicateNotificationIds.slice(0, 3).map((d) => `${d.id} (${d.count}x)`).join(", ");
+    rec.push(`${duplicateNotificationIds.length} identificador(es) de notificacao aparecem mais de uma vez no TRACONET. Verificar possiveis duplicidades. Exemplos: ${exemplos}.`);
+  }
+  if (missingNotificationId > 0) {
+    rec.push(`${missingNotificationId} caso(s) individual(is) do TRACONET sem identificador de notificacao mapeado. Isso limita a deteccao de duplicidades.`);
   }
   if (semGraduacao > 0) {
     const pct = traconetRows.length ? Math.round((semGraduacao / traconetRows.length) * 100) : 0;
@@ -757,6 +862,10 @@ export async function auditarSinanTracoma(opts?: {
     ttSemCircurgia,
     anoImpossivel,
     semFormaClinicaDetalhe,
+    consolidatedPositiveField,
+    consolidatedRowsWithoutPositiveField,
+    duplicateNotificationIds,
+    missingNotificationId,
     recommendations: rec
   };
 }

@@ -444,13 +444,17 @@ async function executeTool(
       });
       const lines: string[] = [
         `=== AUDITORIA SINAN TRACOMA ===`,
-        `Total TRACONET (consolidado): ${result.totalTraconet}`,
-        `Total NOTTRACONET (individuais): ${result.totalNottraconet}`
+        `Total TRACONET (casos individuais): ${result.totalTraconet}`,
+        `Total NOTTRACONET/NTRACOMA (casos positivos consolidados): ${result.totalNottraconet}`,
+        `Campo de positivos no consolidado: ${result.consolidatedPositiveField ?? "nao identificado"}`,
+        `Linhas consolidadas sem positivo mapeado: ${result.consolidatedRowsWithoutPositiveField}`,
+        `IDs de notificacao duplicados no TRACONET: ${result.duplicateNotificationIds.length}`,
+        `Casos individuais sem ID de notificacao: ${result.missingNotificationId}`
       ];
       if (result.crossBankDivergences.length > 0) {
         lines.push(`\n--- Divergências TRACONET vs NOTTRACONET (${result.crossBankDivergences.length}) ---`);
         for (const d of result.crossBankDivergences.slice(0, 20)) {
-          lines.push(`  ${d.municipio} ${d.ano}: consolidado=${d.traconet} individuais=${d.nottraconet} diff=${d.diff > 0 ? "+" : ""}${d.diff} [risco ${d.risco}]`);
+          lines.push(`  ${d.municipio} ${d.ano}: individuais=${d.traconet} positivos_consolidados=${d.nottraconet} diff=${d.diff > 0 ? "+" : ""}${d.diff} [risco ${d.risco}]`);
         }
         if (result.crossBankDivergences.length > 20) {
           lines.push(`  ... e mais ${result.crossBankDivergences.length - 20} divergências.`);

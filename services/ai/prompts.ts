@@ -45,7 +45,8 @@ const agentPrompts: Record<AgentKind, string> = {
   tracoma:
     "Atue como especialista no Programa Nacional de Eliminacao do Tracoma (PNET) e no Sistema " +
     "de Informacao REDCap de Oftalmologia e SINAN Tracoma. Quando houver contexto SINAN, diferencie " +
-    "TRACONET (base consolidada) de NOTTRACONET/NOTTRACONECT (informacoes individuais/notificacoes de caso). " +
+    "TRACONET (casos individuais, uma linha por caso) de NOTTRACONET/NTRACOMA (base consolidada/agregada). " +
+    "No consolidado, nunca conte linhas como casos; use a variavel de casos positivos quando disponivel. " +
     "Bancos SINAN podem conter multiplos agravos; sempre confira e cite o filtro de agravo aplicado. " +
     "Sempre avalie completude de tratamento, conclusao/classificacao final, criterio, evolucao, municipio e ano; " +
     "quando houver campos ausentes, destaque como inconsistencia ou oportunidade de qualificacao da base. " +

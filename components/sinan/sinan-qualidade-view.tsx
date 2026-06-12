@@ -58,6 +58,62 @@ function AlertCard({ count, label, severity, detail }: {
   );
 }
 
+function NotificationIdPanel({ data }: { data: SinanAuditResult }) {
+  if (!data.missingNotificationId && !data.duplicateNotificationIds?.length) return null;
+
+  return (
+    <Card className="border-amber-200">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Identificador da Notificacao - TRACONET</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Verifica NU_NOTIFIC e variacoes no banco individual. Duplicidade desse identificador sugere caso repetido ou importacao duplicada.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <AlertCard
+            count={data.missingNotificationId ?? 0}
+            label="sem ID de notificacao"
+            severity={data.missingNotificationId > 0 ? "warning" : "ok"}
+            detail="Sem esse campo, a tela nao consegue rastrear duplicidades com seguranca."
+          />
+          <AlertCard
+            count={data.duplicateNotificationIds?.length ?? 0}
+            label="IDs duplicados"
+            severity={(data.duplicateNotificationIds?.length ?? 0) > 0 ? "critical" : "ok"}
+            detail="O mesmo NU_NOTIFIC aparece em mais de uma linha do TRACONET."
+          />
+        </div>
+
+        {(data.duplicateNotificationIds?.length ?? 0) > 0 && (
+          <div className="overflow-x-auto rounded-md border">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/40">
+                  <th className="px-4 py-2 text-left font-medium text-muted-foreground">ID notificacao</th>
+                  <th className="px-4 py-2 text-left font-medium text-muted-foreground">Municipio</th>
+                  <th className="px-4 py-2 text-right font-medium text-muted-foreground">Ano</th>
+                  <th className="px-4 py-2 text-right font-medium text-muted-foreground">Repeticoes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.duplicateNotificationIds.slice(0, 20).map((item) => (
+                  <tr key={item.id} className="border-b last:border-0">
+                    <td className="px-4 py-2 font-mono text-xs">{item.id}</td>
+                    <td className="px-4 py-2">{item.municipio}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{item.ano || "-"}</td>
+                    <td className="px-4 py-2 text-right tabular-nums font-semibold text-red-700">{item.count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 type DivTab = "ano" | "gve" | "municipio";
 type SFTab  = "gve" | "municipio";
 
@@ -217,8 +273,8 @@ function DivergenciasPanel({ data }: { data: SinanAuditResult }) {
           </span>
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          Diferença <span className="font-medium text-red-600">positiva</span> = consolidado tem mais registros que individuais (subregistro TRACONET).{" "}
-          Diferença <span className="font-medium text-amber-600">negativa</span> = individuais têm mais que consolidado (possível duplicidade).
+          Diferença <span className="font-medium text-red-600">positiva</span> = casos positivos consolidados maiores que os individuais (possível subregistro no TRACONET).{" "}
+          Diferença <span className="font-medium text-amber-600">negativa</span> = individuais maiores que positivos consolidados (possível duplicidade ou ausência no consolidado).
         </p>
         {/* Tabs */}
         <div className="mt-3 flex gap-1 border-b">
@@ -379,7 +435,7 @@ export function SinanQualidadeView() {
     setFilters({ municipio, gve, yearStart, yearEnd });
   }
 
-  const totalRecords = (data?.totalTraconet ?? 0) + (data?.totalNottraconet ?? 0);
+  const totalCases = (data?.totalTraconet ?? 0) + (data?.totalNottraconet ?? 0);
   const highRisk     = data?.crossBankDivergences.filter((d) => d.risco === "alto").length ?? 0;
   const criticalCount = (data?.tfSemTratamento ?? 0) + (data?.ttSemCircurgia ?? 0) + (data?.semGraduacao ?? 0);
 
@@ -490,7 +546,7 @@ export function SinanQualidadeView() {
       )}
 
       {/* Sem dados */}
-      {!isLoading && !apiError && data && totalRecords === 0 && (
+      {!isLoading && !apiError && data && totalCases === 0 && (
         <div className="flex h-48 flex-col items-center justify-center gap-3 rounded-lg border bg-card text-muted-foreground">
           <Database className="h-10 w-10 opacity-30" />
           <p className="text-sm">Nenhum registro SINAN importado ainda.</p>
@@ -498,7 +554,7 @@ export function SinanQualidadeView() {
         </div>
       )}
 
-      {data && totalRecords > 0 && (
+      {data && totalCases > 0 && (
         <>
           {/* Aviso de inversão de bancos */}
           {data.diagnostico?.aviso && (
@@ -573,14 +629,39 @@ END;`}</pre>
             </div>
           )}
 
+          <Card className={!data.consolidatedPositiveField && data.totalNottraconet === 0 ? "border-red-300 bg-red-50" : ""}>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Mapeamento do Consolidado (NOTTRACONET/NTRACOMA)</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                O consolidado nao e contado por linha. A comparacao usa a soma da variavel de casos positivos.
+              </p>
+            </CardHeader>
+            <CardContent className="grid gap-3 sm:grid-cols-3">
+              <div>
+                <div className="text-xs text-muted-foreground">Campo usado para positivos</div>
+                <div className="font-medium">{data.consolidatedPositiveField ?? "nao identificado"}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Casos positivos consolidados</div>
+                <div className="font-medium tabular-nums">{data.totalNottraconet.toLocaleString("pt-BR")}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Linhas sem positivo mapeado</div>
+                <div className={`font-medium tabular-nums ${data.consolidatedRowsWithoutPositiveField > 0 ? "text-red-700" : "text-green-700"}`}>
+                  {data.consolidatedRowsWithoutPositiveField.toLocaleString("pt-BR")}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Cards de resumo */}
           <div className="grid gap-4 sm:grid-cols-3">
             <Card>
               <CardContent className="pt-5">
-                <div className="text-xs text-muted-foreground mb-1">Total de registros</div>
-                <div className="text-3xl font-bold tabular-nums">{totalRecords.toLocaleString("pt-BR")}</div>
+                <div className="text-xs text-muted-foreground mb-1">Total de casos comparados</div>
+                <div className="text-3xl font-bold tabular-nums">{totalCases.toLocaleString("pt-BR")}</div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  Individuais (TRACONET): {data.totalTraconet.toLocaleString("pt-BR")} · Consolidado (NOTTRACONET): {data.totalNottraconet.toLocaleString("pt-BR")}
+                  TRACONET: {data.totalTraconet.toLocaleString("pt-BR")} casos individuais. NOTTRACONET: {data.totalNottraconet.toLocaleString("pt-BR")} casos positivos consolidados.
                 </div>
               </CardContent>
             </Card>
@@ -660,6 +741,8 @@ END;`}</pre>
           {(data.semFormaClinicaDetalhe?.length ?? 0) > 0 && (
             <SemFormaClinicaPanel data={data} />
           )}
+
+          <NotificationIdPanel data={data} />
 
           {/* Divergências entre bancos — 3 abas */}
           {(data.crossBankDivergences.length > 0 || data.divergencesByYear?.length > 0) && (
