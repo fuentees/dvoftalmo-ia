@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { nomeMunicipio } from "@/lib/municipios-sp";
+import { nomeMunicipio, gvePorCodigo } from "@/lib/municipios-sp";
 
 export type SinanTracomaBank = "traconet" | "nottraconet";
 
@@ -416,12 +416,18 @@ export interface SinanAuditResult {
     risco: "alto" | "medio" | "baixo";
   }>;
   fieldCompleteness: Record<string, { total: number; filled: number; pct: number }>;
-  semGraduacao: number;          // classificacao em branco
-  semTratamento: number;         // tratamento em branco
-  semConclusao: number;          // conclusao em branco
-  tfSemTratamento: number;       // TF confirmado mas sem tratamento
-  ttSemCircurgia: number;        // TT confirmado mas conclusao/tratamento não indica cirurgia
-  anoImpossivel: number;         // ano < 1975 ou > ano atual
+  semGraduacao: number;
+  semTratamento: number;
+  semConclusao: number;
+  tfSemTratamento: number;
+  ttSemCircurgia: number;
+  anoImpossivel: number;
+  semFormaClinicaDetalhe: Array<{
+    municipio: string;
+    municipioNome: string;
+    gve: string;
+    count: number;
+  }>;
   recommendations: string[];
 }
 
@@ -509,15 +515,17 @@ export async function auditarSinanTracoma(opts?: {
     return m;
   }
 
-  // Para cross-bank, indexar também GVE por município (usando TRACONET como fonte)
+  // Indexar GVE por município normalizado.
+  // r.gve é null em ambos os bancos (SINAN DBF não inclui campo GVE),
+  // por isso usa lookup estático pelo código IBGE armazenado em r.municipio.
   const gvePorMunicipio = new Map<string, string>();
-  for (const r of traconetRows) {
+  for (const r of [...traconetRows, ...nottraconetRows]) {
     const mun = normMunicipio(r.municipio);
-    if (!gvePorMunicipio.has(mun) && r.gve) gvePorMunicipio.set(mun, String(r.gve));
-  }
-  for (const r of nottraconetRows) {
-    const mun = normMunicipio(r.municipio);
-    if (!gvePorMunicipio.has(mun) && r.gve) gvePorMunicipio.set(mun, String(r.gve));
+    if (!gvePorMunicipio.has(mun)) {
+      const gve = (r.gve ? String(r.gve).trim() : null)
+        ?? gvePorCodigo(r.municipio as string);
+      if (gve) gvePorMunicipio.set(mun, gve);
+    }
   }
 
   const traconetMap    = countByKey(traconetRows);
@@ -568,10 +576,14 @@ export async function auditarSinanTracoma(opts?: {
     .sort((a, b) => a.ano - b.ano);
 
   // ── Por GVE ───────────────────────────────────────────────────────────────
+  // r.gve é null em ambos os bancos; usar lookup estático pelo código IBGE em r.municipio
   function countByGve(rs: Array<Record<string, unknown>>) {
     const m = new Map<string, number>();
     for (const r of rs) {
-      const gve = String(r.gve ?? "Não informado").trim() || "Não informado";
+      const gve = (r.gve ? String(r.gve).trim() : null)
+        ?? gvePorCodigo(r.municipio as string)
+        ?? gvePorMunicipio.get(normMunicipio(r.municipio))
+        ?? "Não informado";
       m.set(gve, (m.get(gve) ?? 0) + 1);
     }
     return m;
@@ -595,6 +607,22 @@ export async function auditarSinanTracoma(opts?: {
     const filled = baseRows.filter((r) => !isBlank(r[f])).length;
     fieldCompleteness[f] = { total: baseRows.length, filled, pct: baseRows.length ? Math.round((filled / baseRows.length) * 100) : 0 };
   }
+
+  // ── Sem forma clínica: detalhe por município ──────────────────────────────
+  const semFormaMap = new Map<string, number>();
+  for (const r of traconetRows) {
+    if (!isBlank(r.classificacao)) continue;
+    const mun = String(r.municipio ?? "?").trim();
+    semFormaMap.set(mun, (semFormaMap.get(mun) ?? 0) + 1);
+  }
+  const semFormaClinicaDetalhe = Array.from(semFormaMap.entries())
+    .map(([municipio, count]) => ({
+      municipio,
+      municipioNome: nomeMunicipio(municipio),
+      gve: gvePorCodigo(municipio) ?? gvePorMunicipio.get(normMunicipio(municipio)) ?? "Não informado",
+      count
+    }))
+    .sort((a, b) => b.count - a.count);
 
   // ── Checks clínicos: aplicar SOMENTE nos casos individuais (TRACONET) ─────
   const currentYear = new Date().getFullYear();
@@ -707,6 +735,7 @@ export async function auditarSinanTracoma(opts?: {
     tfSemTratamento,
     ttSemCircurgia,
     anoImpossivel,
+    semFormaClinicaDetalhe,
     recommendations: rec
   };
 }

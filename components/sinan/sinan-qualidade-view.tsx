@@ -59,6 +59,122 @@ function AlertCard({ count, label, severity, detail }: {
 }
 
 type DivTab = "ano" | "gve" | "municipio";
+type SFTab  = "gve" | "municipio";
+
+function SemFormaClinicaPanel({ data }: { data: SinanAuditResult }) {
+  const [tab, setTab] = useState<SFTab>("gve");
+  const detalhe = data.semFormaClinicaDetalhe ?? [];
+  if (detalhe.length === 0) return null;
+
+  // Aggregate by GVE
+  const gveMap = new Map<string, number>();
+  for (const d of detalhe) {
+    gveMap.set(d.gve, (gveMap.get(d.gve) ?? 0) + d.count);
+  }
+  const byGve = Array.from(gveMap.entries())
+    .map(([gve, count]) => ({ gve, count }))
+    .sort((a, b) => b.count - a.count);
+
+  const maxCount = Math.max(...detalhe.map((d) => d.count), 1);
+
+  return (
+    <Card className="border-amber-200">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <span className="text-amber-700">Sem Forma Clínica — Onde Corrigir</span>
+          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+            {data.semGraduacao.toLocaleString("pt-BR")} casos
+          </span>
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Casos individuais (TRACONET) sem TF/TI/TS/TT/CO preenchido, agrupados por GVE e município.
+          Use para direcionar a correção na fonte.
+        </p>
+        <div className="mt-3 flex gap-1 border-b">
+          {(["gve", "municipio"] as SFTab[]).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`px-3 py-1.5 text-xs font-medium transition-colors border-b-2 -mb-px ${
+                tab === t ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t === "gve" ? "Por GVE" : "Por Município"}
+            </button>
+          ))}
+        </div>
+      </CardHeader>
+      <CardContent className="overflow-x-auto p-0">
+        {tab === "gve" && (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-muted/40">
+                <th className="px-4 py-2 text-left font-medium text-muted-foreground">GVE</th>
+                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Casos s/ forma clínica</th>
+                <th className="px-4 py-2 text-muted-foreground" />
+              </tr>
+            </thead>
+            <tbody>
+              {byGve.map((d) => {
+                const maxGve = Math.max(...byGve.map((x) => x.count), 1);
+                const pct = Math.round((d.count / maxGve) * 100);
+                return (
+                  <tr key={d.gve} className="border-b last:border-0 hover:bg-muted/20">
+                    <td className="px-4 py-2 font-medium">{d.gve}</td>
+                    <td className="px-4 py-2 text-right tabular-nums font-semibold text-amber-700">
+                      {d.count.toLocaleString("pt-BR")}
+                    </td>
+                    <td className="px-4 py-2 w-40">
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                        <div className="h-full rounded-full bg-amber-400" style={{ width: `${pct}%` }} />
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+        {tab === "municipio" && (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-muted/40">
+                <th className="px-4 py-2 text-left font-medium text-muted-foreground">Município</th>
+                <th className="px-4 py-2 text-left font-medium text-muted-foreground">GVE</th>
+                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Casos s/ forma clínica</th>
+                <th className="px-4 py-2 text-muted-foreground" />
+              </tr>
+            </thead>
+            <tbody>
+              {detalhe.map((d, i) => {
+                const pct = Math.round((d.count / maxCount) * 100);
+                return (
+                  <tr key={i} className="border-b last:border-0 hover:bg-muted/20">
+                    <td className="px-4 py-2 font-medium">
+                      {d.municipioNome !== d.municipio ? d.municipioNome : d.municipio}
+                      {d.municipioNome !== d.municipio && (
+                        <span className="ml-1 text-[10px] text-muted-foreground">({d.municipio})</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-xs text-muted-foreground">{d.gve}</td>
+                    <td className="px-4 py-2 text-right tabular-nums font-semibold text-amber-700">
+                      {d.count.toLocaleString("pt-BR")}
+                    </td>
+                    <td className="px-4 py-2 w-40">
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                        <div className="h-full rounded-full bg-amber-400" style={{ width: `${pct}%` }} />
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 function DiffCell({ diff }: { diff: number }) {
   return (
@@ -539,6 +655,11 @@ END;`}</pre>
               />
             </CardContent>
           </Card>
+
+          {/* Sem Forma Clínica: onde corrigir */}
+          {(data.semFormaClinicaDetalhe?.length ?? 0) > 0 && (
+            <SemFormaClinicaPanel data={data} />
+          )}
 
           {/* Divergências entre bancos — 3 abas */}
           {(data.crossBankDivergences.length > 0 || data.divergencesByYear?.length > 0) && (
