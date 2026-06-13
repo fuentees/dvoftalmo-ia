@@ -562,9 +562,16 @@ function sinanCaseWeight(row: Record<string, unknown>): number {
   return 1;
 }
 
+function resolveAuditYear(row: Record<string, unknown>): number | null {
+  const direct = Number(row.ano);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  const fromRaw = toNumberOrNull(getRawValue(row, fieldCandidates.ano)?.value);
+  return fromRaw && Number.isFinite(fromRaw) ? fromRaw : null;
+}
+
 function isValidAuditYear(row: Record<string, unknown>, currentYear: number) {
-  const ano = Number(row.ano);
-  return Number.isFinite(ano) && ano >= 1975 && ano <= currentYear;
+  const ano = resolveAuditYear(row);
+  return ano != null && Number.isFinite(ano) && ano >= 1975 && ano <= currentYear;
 }
 
 function isPositiveTraconetCase(row: Record<string, unknown>) {
@@ -761,8 +768,8 @@ export async function auditarSinanTracoma(opts?: {
   );
   const consolidatedMetricsByYear = Array.from(
     nottraconetComparableRows.reduce((map, row) => {
-      const ano = Number(row.ano);
-      if (!Number.isFinite(ano)) return map;
+      const ano = resolveAuditYear(row);
+      if (ano == null || !Number.isFinite(ano)) return map;
       const current = map.get(ano) ?? { ano, examinados: 0, positivos: 0, tratados: 0, linhas: 0 };
       current.examinados += sumConsolidatedExamined([row]).value;
       current.positivos += ntcCasoPos(row);
@@ -787,7 +794,7 @@ export async function auditarSinanTracoma(opts?: {
     const current = notificationIdMap.get(id) ?? {
       count: 0,
       municipio: String(row.municipio ?? ""),
-      ano: Number(row.ano) || 0
+      ano: resolveAuditYear(row) ?? 0
     };
     current.count += 1;
     notificationIdMap.set(id, current);
@@ -812,7 +819,7 @@ export async function auditarSinanTracoma(opts?: {
   function countTraconetByKey(rs: Array<Record<string, unknown>>) {
     const m = new Map<string, number>();
     for (const r of rs) {
-      const key = `${normMunicipio(r.municipio)}|${r.ano ?? "?"}`;
+      const key = `${normMunicipio(r.municipio)}|${resolveAuditYear(r) ?? "?"}`;
       m.set(key, (m.get(key) ?? 0) + 1);
     }
     return m;
@@ -820,7 +827,7 @@ export async function auditarSinanTracoma(opts?: {
   function countNottraconetByKey(rs: Array<Record<string, unknown>>) {
     const m = new Map<string, number>();
     for (const r of rs) {
-      const key = `${normMunicipio(r.municipio)}|${r.ano ?? "?"}`;
+      const key = `${normMunicipio(r.municipio)}|${resolveAuditYear(r) ?? "?"}`;
       m.set(key, (m.get(key) ?? 0) + ntcCasoPos(r));
     }
     return m;
@@ -1026,16 +1033,23 @@ export async function auditarSinanTracoma(opts?: {
     if (!bankRows.length) return { colunas: [] as string[], municipiosAmostra: [] as string[], anosAmostra: [] as number[], camposPreenchidos: [] as string[], camposNumericos: [] as Array<{ campo: string; exemplo: number }> };
     const colunas = diagSampleRows.length > 0 ? rawKeys(diagSampleRows[0]) : [];
     const munic = [...new Set(bankRows.map((r) => String(r.municipio ?? "")).filter(Boolean))].slice(0, 5) as string[];
-    const anos  = [...new Set(bankRows.map((r) => Number(r.ano)).filter((a: number) => a > 0))].sort((a: number, b: number) => a - b).slice(0, 5) as number[];
+    const anos  = [...new Set(bankRows.map((r) => resolveAuditYear(r)).filter((a): a is number => a != null && Number.isFinite(a) && a > 0))].sort((a: number, b: number) => a - b).slice(0, 5) as number[];
     const normalizedCols = ["agravo","municipio","gve","classificacao","tratamento","conclusao"];
     const preenchidos = normalizedCols.filter((f) => bankRows.some((r) => !isBlank(r[f])));
-    const sampleRaw = diagSampleRows[0]?.raw && typeof diagSampleRows[0].raw === "object"
-      ? diagSampleRows[0].raw as Record<string, unknown>
-      : {};
-    const camposNumericos = Object.entries(sampleRaw)
-      .map(([campo, valor]) => ({ campo, exemplo: toNonNegativeNumber(valor), score: scorePossibleExaminedField(campo) }))
-      .filter((item): item is { campo: string; exemplo: number; score: number } => item.exemplo != null && item.exemplo > 0)
-      .sort((a, b) => b.score - a.score || b.exemplo - a.exemplo)
+    const numericUsage = new Map<string, { exemplo: number; score: number; count: number }>();
+    for (const row of bankRows.slice(0, 200)) {
+      for (const [campo, valor] of Object.entries(rawObject(row))) {
+        const exemplo = toNonNegativeNumber(valor);
+        if (exemplo == null || exemplo <= 0) continue;
+        const current = numericUsage.get(campo) ?? { exemplo, score: scorePossibleExaminedField(campo), count: 0 };
+        current.count += 1;
+        if (exemplo > current.exemplo) current.exemplo = exemplo;
+        numericUsage.set(campo, current);
+      }
+    }
+    const camposNumericos = Array.from(numericUsage.entries())
+      .map(([campo, info]) => ({ campo, exemplo: info.exemplo, score: info.score, count: info.count }))
+      .sort((a, b) => b.score - a.score || b.count - a.count || b.exemplo - a.exemplo)
       .slice(0, 40)
       .map(({ campo, exemplo }) => ({ campo, exemplo }));
     return { colunas, municipiosAmostra: munic, anosAmostra: anos, camposPreenchidos: preenchidos, camposNumericos };

@@ -888,6 +888,48 @@ END;`}</pre>
           </div>
 
           {/* ── Gráfico temporal ─────────────────────────────────────────────── */}
+          <Card className="border-amber-200">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Variável de examinados no NOTTRACONET</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Campo usado na Sala de Situação:{" "}
+                <code className="rounded bg-muted px-1 font-mono">
+                  {data.consolidatedMetrics?.examinados?.field ?? "não reconhecido"}
+                </code>
+                {" "}· Total calculado:{" "}
+                <span className="font-semibold text-foreground">
+                  {(data.consolidatedMetrics?.examinados?.value ?? 0).toLocaleString("pt-BR")}
+                </span>
+              </p>
+            </CardHeader>
+            <CardContent>
+              {(data.diagnostico?.nottraconet?.camposNumericos?.length ?? 0) > 0 ? (
+                <div className="overflow-x-auto rounded-md border">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b bg-muted/40 text-left">
+                        <th className="px-3 py-2">Campo numérico candidato</th>
+                        <th className="px-3 py-2 text-right">Exemplo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.diagnostico.nottraconet.camposNumericos.slice(0, 12).map((item) => (
+                        <tr key={item.campo} className="border-b last:border-0">
+                          <td className="px-3 py-2 font-mono">{item.campo}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">{item.exemplo.toLocaleString("pt-BR")}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Nenhum campo numérico preenchido foi encontrado no consolidado. Verifique se o NOTTRACONET foi importado como banco consolidado.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
           {yearChartData.length > 1 && (
             <Card>
               <CardHeader className="pb-2">
