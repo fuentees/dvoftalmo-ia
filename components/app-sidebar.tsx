@@ -4,43 +4,59 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  AlertCircle, BarChart3, Bell, Bot, Brain, CheckSquare, ChevronRight,
-  ClipboardList, Database, FileText, GraduationCap, LayoutDashboard, Library,
-  LogOut, Moon, Newspaper, Settings, ShieldAlert, Sun, User
+  AlertCircle,
+  BarChart3,
+  Bell,
+  Bot,
+  Brain,
+  CheckSquare,
+  ChevronRight,
+  ClipboardList,
+  Database,
+  FileText,
+  GraduationCap,
+  LayoutDashboard,
+  Library,
+  LogOut,
+  Moon,
+  Newspaper,
+  Settings,
+  ShieldAlert,
+  Sun,
+  User
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 
 const groups = [
   {
-    label: "Início",
+    label: "Gestão",
     items: [
-      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard }
+      { href: "/dashboard", label: "Sala de Situação", icon: LayoutDashboard },
+      { href: "/alertas", label: "Alertas e Resposta", icon: Bell },
+      { href: "/boletins", label: "Boletins", icon: Newspaper }
     ]
   },
   {
-    label: "IA & Análise",
+    label: "Investigação",
     items: [
-      { href: "/chat", label: "Chat COS", icon: Bot },
-      { href: "/agentes", label: "Agentes", icon: GraduationCap }
+      { href: "/notificacoes", label: "CEVESP Conjuntivites", icon: BarChart3 },
+      { href: "/sinan-qualidade", label: "SINAN Tracoma", icon: ShieldAlert },
+      { href: "/cevesp-qualidade", label: "Qualidade CEVESP", icon: AlertCircle },
+      { href: "/correcoes", label: "Correções CEVESP", icon: CheckSquare }
     ]
   },
   {
-    label: "Vigilância",
+    label: "Inteligência",
     items: [
-      { href: "/notificacoes", label: "Notificações",     icon: Bell },
-      { href: "/alertas",      label: "Alertas",          icon: Bell },
-      { href: "/boletins",     label: "Boletins",         icon: Newspaper },
-      { href: "/correcoes",        label: "Correções CEVESP",  icon: CheckSquare  },
-      { href: "/cevesp-qualidade", label: "Qualidade CEVESP",  icon: AlertCircle  },
-      { href: "/auditoria",        label: "Auditoria",          icon: ClipboardList },
-      { href: "/sinan-qualidade",  label: "Qualidade SINAN",    icon: ShieldAlert  }
+      { href: "/chat", label: "Chat Epidemiológico", icon: Bot },
+      { href: "/agentes", label: "Agentes", icon: GraduationCap },
+      { href: "/base-conhecimento", label: "Base de Conhecimento", icon: Brain }
     ]
   },
   {
-    label: "Acervo",
+    label: "Documentos",
     items: [
-      { href: "/base-conhecimento", label: "Base de Conhecimento", icon: Brain },
       { href: "/documentos", label: "Documentos", icon: Library },
       { href: "/templates", label: "Templates", icon: FileText }
     ]
@@ -48,7 +64,8 @@ const groups = [
   {
     label: "Sistema",
     items: [
-      { href: "/sincronizacao", label: "Sincronização",      icon: Database },
+      { href: "/auditoria", label: "Auditoria", icon: ClipboardList },
+      { href: "/sincronizacao", label: "Sincronização", icon: Database },
       { href: "/configuracoes", label: "Configurações de IA", icon: Settings }
     ]
   }
@@ -70,7 +87,8 @@ export function AppSidebar() {
         setUserEmail(data.user.email ?? "");
         setUserName(
           data.user.user_metadata?.full_name ??
-          data.user.email?.split("@")[0] ?? ""
+          data.user.email?.split("@")[0] ??
+          ""
         );
       }
     });
@@ -90,18 +108,16 @@ export function AppSidebar() {
 
   return (
     <aside className="flex h-screen w-64 shrink-0 flex-col border-r bg-card">
-      {/* Logo */}
       <div className="flex h-14 items-center gap-3 border-b px-4">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
           <BarChart3 className="h-4 w-4 text-primary-foreground" />
         </div>
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold leading-tight">DvOftalmo IA</p>
-          <p className="truncate text-[11px] text-muted-foreground">Oftalmologia Sanitária · SP</p>
+          <p className="truncate text-[11px] text-muted-foreground">Vigilância em Saúde · SP</p>
         </div>
       </div>
 
-      {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 py-3">
         {groups.map((group) => (
           <div key={group.label} className="mb-4">
@@ -134,9 +150,7 @@ export function AppSidebar() {
         ))}
       </nav>
 
-      {/* Footer */}
-      <div className="border-t p-3 space-y-2">
-        {/* User */}
+      <div className="space-y-2 border-t p-3">
         <div className="flex items-center gap-2.5 rounded-md px-2 py-1.5">
           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10">
             <User className="h-3.5 w-3.5 text-primary" />
@@ -147,7 +161,6 @@ export function AppSidebar() {
           </div>
         </div>
 
-        {/* Actions */}
         <div className="flex gap-1.5">
           <button
             onClick={toggleTheme}
