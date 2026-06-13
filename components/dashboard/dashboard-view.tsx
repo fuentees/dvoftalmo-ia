@@ -40,7 +40,22 @@ interface SinanSnapshot {
   totalTraconet?: number;
   totalNottraconet?: number;
   totalNottraconetRows?: number;
+  consolidatedMetrics?: Record<string, { value: number; field: string | null; rowsMissing: number }>;
+  consolidatedMetricsByYear?: Array<{
+    ano: number;
+    examinados: number;
+    positivos: number;
+    tratados: number;
+    linhas: number;
+  }>;
   crossBankDivergences?: Array<{ risco?: string }>;
+  divergencesByYear?: Array<{
+    ano: number;
+    traconet: number;
+    nottraconet: number;
+    diff: number;
+    risco: "alto" | "medio" | "baixo";
+  }>;
   semGraduacao?: number;
   tfSemTratamento?: number;
   ttSemCircurgia?: number;
@@ -196,6 +211,8 @@ export function DashboardView() {
     ? new Date(kpis.data.generatedAt).toLocaleString("pt-BR")
     : "sem atualização";
   const tracomaHighRisk = sinan.data?.crossBankDivergences?.filter((item) => item.risco === "alto").length;
+  const consolidatedByYear = sinan.data?.consolidatedMetricsByYear ?? [];
+  const latestConsolidated = consolidatedByYear[consolidatedByYear.length - 1];
   const tracomaClinicalAlerts =
     (sinan.data?.tfSemTratamento ?? 0) +
     (sinan.data?.ttSemCircurgia ?? 0) +
@@ -283,13 +300,13 @@ export function DashboardView() {
                 tone="red"
               />
               <KpiCard
-                label="Tracoma individual"
-                value={sinan.isFetching ? "..." : formatValue(sinan.data?.totalTraconet)}
+                label={`Examinados ${latestConsolidated?.ano ?? ""}`.trim()}
+                value={sinan.isFetching ? "..." : formatValue(latestConsolidated?.examinados)}
                 icon={<Stethoscope className="h-4 w-4 text-primary" />}
               />
               <KpiCard
-                label="Divergências alto risco"
-                value={sinan.isFetching ? "..." : formatValue(tracomaHighRisk)}
+                label={`Casos tracoma ${latestConsolidated?.ano ?? ""}`.trim()}
+                value={sinan.isFetching ? "..." : formatValue(latestConsolidated?.positivos)}
                 icon={<AlertTriangle className="h-4 w-4 text-amber-600" />}
                 tone="amber"
               />
@@ -438,53 +455,127 @@ export function DashboardView() {
           <>
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <KpiCard
-                label="Individuais TRACONET"
-                value={sinan.isFetching ? "..." : formatValue(sinan.data?.totalTraconet)}
+                label={`Examinados ${latestConsolidated?.ano ?? ""}`.trim()}
+                value={sinan.isFetching ? "..." : formatValue(latestConsolidated?.examinados ?? sinan.data?.consolidatedMetrics?.examinados?.value)}
                 icon={<Database className="h-4 w-4 text-primary" />}
               />
               <KpiCard
-                label="Consolidado positivo"
-                value={sinan.isFetching ? "..." : formatValue(sinan.data?.totalNottraconet)}
+                label={`Casos positivos ${latestConsolidated?.ano ?? ""}`.trim()}
+                value={sinan.isFetching ? "..." : formatValue(latestConsolidated?.positivos ?? sinan.data?.totalNottraconet)}
                 icon={<BarChart2 className="h-4 w-4 text-primary" />}
               />
               <KpiCard
-                label="Divergências alto risco"
+                label="Individuais TRACONET"
+                value={sinan.isFetching ? "..." : formatValue(sinan.data?.totalTraconet)}
+                icon={<Stethoscope className="h-4 w-4 text-primary" />}
+              />
+              <KpiCard
+                label="Diferenças alto risco"
                 value={sinan.isFetching ? "..." : formatValue(tracomaHighRisk)}
                 icon={<AlertTriangle className="h-4 w-4 text-red-500" />}
                 tone="red"
               />
-              <KpiCard
-                label="Alertas clínicos"
-                value={sinan.isFetching ? "..." : formatValue(tracomaClinicalAlerts)}
-                icon={<Stethoscope className="h-4 w-4 text-amber-600" />}
-                tone="amber"
-              />
             </div>
 
-            <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+            <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle>Qualidade da base</CardTitle>
-                  <CardDescription>TRACONET x NOTTRACONET</CardDescription>
+                  <CardTitle>Consolidado por ano</CardTitle>
+                  <CardDescription>NOTTRACONET/NTRACOMA: examinados e positivos</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {!sinan.data ? (
+                  {consolidatedByYear.length === 0 ? (
                     <EmptyState title="SINAN indisponível" detail="Importe os bancos ou acesse com sessão válida." />
                   ) : (
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      {[
-                        { label: "Linhas consolidadas", value: sinan.data.totalNottraconetRows },
-                        { label: "Sem forma clínica", value: sinan.data.semGraduacao },
-                        { label: "TF sem tratamento", value: sinan.data.tfSemTratamento },
-                        { label: "TT sem cirurgia", value: sinan.data.ttSemCircurgia }
-                      ].map((item) => (
-                        <div key={item.label} className="rounded-md border p-3">
-                          <p className="text-xs text-muted-foreground">{item.label}</p>
-                          <p className="mt-1 text-2xl font-semibold tabular-nums">{formatValue(item.value)}</p>
-                        </div>
-                      ))}
+                    <div className="overflow-x-auto rounded-md border">
+                      <table className="w-full min-w-[460px] text-sm">
+                        <thead>
+                          <tr className="border-b bg-muted/50 text-left">
+                            <th className="px-3 py-2">Ano</th>
+                            <th className="px-3 py-2 text-right">Examinados</th>
+                            <th className="px-3 py-2 text-right">Positivos</th>
+                            <th className="px-3 py-2 text-right">% Pos.</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {consolidatedByYear.slice(-6).map((row) => (
+                            <tr key={row.ano} className="border-b last:border-0">
+                              <td className="px-3 py-2 font-medium">{row.ano}</td>
+                              <td className="px-3 py-2 text-right tabular-nums">{formatValue(row.examinados)}</td>
+                              <td className="px-3 py-2 text-right tabular-nums">{formatValue(row.positivos)}</td>
+                              <td className="px-3 py-2 text-right tabular-nums">
+                                {row.examinados > 0 ? `${((row.positivos / row.examinados) * 100).toFixed(1)}%` : "-"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle>Comparação dos bancos</CardTitle>
+                  <CardDescription>TRACONET individuais x consolidado positivo</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {(sinan.data?.divergencesByYear ?? []).length === 0 ? (
+                    <EmptyState title="Comparação indisponível" detail="Importe TRACONET e NOTTRACONET para comparar." />
+                  ) : (
+                    <div className="overflow-x-auto rounded-md border">
+                      <table className="w-full min-w-[520px] text-sm">
+                        <thead>
+                          <tr className="border-b bg-muted/50 text-left">
+                            <th className="px-3 py-2">Ano</th>
+                            <th className="px-3 py-2 text-right">TRACONET</th>
+                            <th className="px-3 py-2 text-right">Consolidado</th>
+                            <th className="px-3 py-2 text-right">Dif.</th>
+                            <th className="px-3 py-2 text-center">Risco</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(sinan.data?.divergencesByYear ?? []).slice(-6).map((row) => (
+                            <tr key={row.ano} className="border-b last:border-0">
+                              <td className="px-3 py-2 font-medium">{row.ano}</td>
+                              <td className="px-3 py-2 text-right tabular-nums">{formatValue(row.traconet)}</td>
+                              <td className="px-3 py-2 text-right tabular-nums">{formatValue(row.nottraconet)}</td>
+                              <td className={`px-3 py-2 text-right font-semibold tabular-nums ${row.diff === 0 ? "text-muted-foreground" : row.diff > 0 ? "text-red-600" : "text-amber-700"}`}>
+                                {row.diff > 0 ? "+" : ""}{formatValue(row.diff)}
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                <Badge className={row.risco === "alto" ? "border-red-200 bg-red-50 text-red-700" : row.risco === "medio" ? "border-amber-200 bg-amber-50 text-amber-700" : "bg-muted text-foreground"}>
+                                  {row.risco}
+                                </Badge>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle>Qualidade clínica</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-3 sm:grid-cols-2">
+                  {[
+                    { label: "Alertas clínicos", value: tracomaClinicalAlerts },
+                    { label: "Sem forma clínica", value: sinan.data?.semGraduacao },
+                    { label: "TF sem tratamento", value: sinan.data?.tfSemTratamento },
+                    { label: "TT sem cirurgia", value: sinan.data?.ttSemCircurgia }
+                  ].map((item) => (
+                    <div key={item.label} className="rounded-md border p-3">
+                      <p className="text-xs text-muted-foreground">{item.label}</p>
+                      <p className="mt-1 text-2xl font-semibold tabular-nums">{formatValue(item.value)}</p>
+                    </div>
+                  ))}
                 </CardContent>
               </Card>
 

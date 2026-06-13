@@ -413,6 +413,13 @@ export interface SinanAuditResult {
   totalTraconetInvalidYear: number;
   totalNottraconetInvalidYear: number;
   consolidatedMetrics: Record<string, { value: number; field: string | null; rowsMissing: number }>;
+  consolidatedMetricsByYear: Array<{
+    ano: number;
+    examinados: number;
+    positivos: number;
+    tratados: number;
+    linhas: number;
+  }>;
   diagnostico: {
     traconet: { colunas: string[]; municipiosAmostra: string[]; anosAmostra: number[]; camposPreenchidos: string[] };
     nottraconet: { colunas: string[]; municipiosAmostra: string[]; anosAmostra: number[]; camposPreenchidos: string[] };
@@ -682,6 +689,20 @@ export async function auditarSinanTracoma(opts?: {
       sumConsolidatedMetric(nottraconetComparableRows, candidates)
     ])
   );
+  const consolidatedMetricsByYear = Array.from(
+    nottraconetComparableRows.reduce((map, row) => {
+      const ano = Number(row.ano);
+      if (!Number.isFinite(ano)) return map;
+      const current = map.get(ano) ?? { ano, examinados: 0, positivos: 0, tratados: 0, linhas: 0 };
+      current.examinados += sumConsolidatedMetric([row], consolidatedMetricCandidates.examinados).value;
+      current.positivos += ntcCasoPos(row);
+      current.tratados += sumConsolidatedMetric([row], consolidatedMetricCandidates.tratados).value;
+      current.linhas += 1;
+      map.set(ano, current);
+      return map;
+    }, new Map<number, { ano: number; examinados: number; positivos: number; tratados: number; linhas: number }>())
+      .values()
+  ).sort((a, b) => a.ano - b.ano);
 
   const notificationIdCandidates = ["NU_NOTIFIC", "ID_NOTIFIC", "NUM_NOTIFIC", "NOTIFIC", "NU_NOTIF", "ID"];
   const notificationIdMap = new Map<string, { count: number; municipio: string; ano: number }>();
@@ -961,6 +982,7 @@ export async function auditarSinanTracoma(opts?: {
     totalTraconetInvalidYear: traconetInvalidYearRows.length,
     totalNottraconetInvalidYear: nottraconetInvalidYearRows.length,
     consolidatedMetrics,
+    consolidatedMetricsByYear,
     diagnostico: {
       traconet: bankDiag(traconetRows, diagTraconet),
       nottraconet: bankDiag(nottraconetRows, diagNottraconet),
