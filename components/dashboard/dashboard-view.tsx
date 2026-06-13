@@ -1,7 +1,6 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import type { AIProvider } from "@/services/ai/provider";
 import {
   Bar,
   BarChart,
@@ -19,134 +18,102 @@ import {
   BarChart2,
   CheckCircle2,
   Database,
-  FileWarning,
   MapPin,
   Microscope,
   RefreshCw,
   ShieldAlert,
-  Siren,
-  Stethoscope,
-  TrendingUp,
-  Users
+  TrendingUp
 } from "lucide-react";
 import Link from "next/link";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import type { CevespKpis } from "@/services/cevesp-kpis";
 import { AlertsPanel } from "@/components/dashboard/alerts-panel";
+import type { CevespKpis } from "@/services/cevesp-kpis";
 
-const PROVIDER_LABELS: Record<AIProvider, string> = {
-  openai: "OpenAI GPT-4.1-mini",
-  anthropic: "Anthropic Claude Haiku",
-  gemini: "Google Gemini Flash"
-};
-
-const surveillanceAxes = [
-  {
-    title: "Magnitude",
-    description: "Casos, notificações, surtos, internações evitáveis e óbitos quando aplicável.",
-    status: "Parcial",
-    href: "/notificacoes"
-  },
-  {
-    title: "Tempo",
-    description: "Semana epidemiológica, tendência, sazonalidade, canal endêmico e picos inesperados.",
-    status: "Operacional",
-    href: "/notificacoes"
-  },
-  {
-    title: "Lugar",
-    description: "GVE, DRS, município, unidade notificadora, CNES e concentração espacial.",
-    status: "Operacional",
-    href: "/notificacoes"
-  },
-  {
-    title: "Pessoa",
-    description: "Faixa etária, sexo, vulnerabilidades, exposição coletiva e grupos prioritários.",
-    status: "Parcial",
-    href: "/notificacoes"
-  },
-  {
-    title: "Qualidade",
-    description: "Completude, duplicidade, divergência entre bancos, oportunidade e consistência clínica.",
-    status: "Crítico",
-    href: "/sinan-qualidade"
-  },
-  {
-    title: "Resposta",
-    description: "Coleta laboratorial, medidas educativas, afastamento, encaminhamento e encerramento.",
-    status: "Parcial",
-    href: "/alertas"
-  }
+const nextActions = [
+  { label: "Validar alertas", href: "/alertas", tone: "red" },
+  { label: "Auditar SINAN", href: "/sinan-qualidade", tone: "amber" },
+  { label: "Qualidade CEVESP", href: "/cevesp-qualidade", tone: "amber" },
+  { label: "Gerar boletim", href: "/boletins", tone: "teal" }
 ];
 
-const diseasePortfolio = [
-  {
-    name: "Conjuntivites e surtos oculares",
-    source: "CEVESP",
-    whatToWatch: "aumento semanal, surtos, coletas, escolas, serviços de saúde e municípios silenciosos",
-    status: "Monitoramento ativo"
-  },
-  {
-    name: "Tracoma",
-    source: "SINAN / TRACONET / NOTTRACONET",
-    whatToWatch: "divergência entre bases, forma clínica, tratamento, cirurgia de TT e encerramento",
-    status: "Auditoria ativa"
-  },
-  {
-    name: "Outros agravos prioritários",
-    source: "A integrar",
-    whatToWatch: "incidência, oportunidade de notificação, cobertura territorial, gravidade e resposta",
-    status: "Lacuna estrutural"
-  }
+const watchlist = [
+  { label: "Conjuntivites", source: "CEVESP", status: "Ativo" },
+  { label: "Tracoma", source: "SINAN", status: "Auditoria" },
+  { label: "Outros agravos", source: "Pendente", status: "Integrar" }
 ];
 
-const gaps = [
-  "Criar cadastro de agravos monitorados com definição de caso, fonte, periodicidade, indicador principal, limiares e responsável técnico.",
-  "Adicionar mapa por município/GVE para detectar concentração espacial e áreas silenciosas sem notificação.",
-  "Medir oportunidade: data de início de sintomas, notificação, investigação, coleta, encerramento e tempo até resposta.",
-  "Incluir denominadores populacionais para taxas, comparação territorial justa e priorização por risco.",
-  "Padronizar matriz de alertas por nível: observação, atenção, investigação imediata e resposta coordenada.",
-  "Registrar plano de ação por alerta com responsável, prazo, status, evidência e devolutiva ao território."
+const missingSignals = [
+  "Mapa por município/GVE",
+  "Taxas com população",
+  "Oportunidade da notificação",
+  "Plano de ação por alerta"
 ];
 
-const weeklyRoutine = [
-  "Segunda: atualizar bases, revisar completude e emitir boletim preliminar.",
-  "Terça: validar alertas com GVE/município e separar sinais reais de artefatos de dado.",
-  "Quarta: priorizar investigação, coleta laboratorial e medidas de controle nos territórios críticos.",
-  "Quinta: revisar pendências de encerramento, tratamento, encaminhamentos e ações educativas.",
-  "Sexta: consolidar decisão, publicar boletim e registrar plano da semana seguinte."
-];
+function formatValue(value: number | undefined) {
+  if (value === undefined) return "-";
+  return value.toLocaleString("pt-BR");
+}
 
 function DeltaBadge({ delta }: { delta: number | null }) {
-  if (delta === null) return <span className="text-xs text-muted-foreground">sem comparativo</span>;
+  if (delta === null) return <span className="text-xs text-muted-foreground">sem base</span>;
   const up = delta > 0;
   const neutral = delta === 0;
   return (
-    <span className={`flex items-center gap-1 text-xs font-medium ${neutral ? "text-muted-foreground" : up ? "text-red-600" : "text-teal-600"}`}>
+    <span className={`inline-flex items-center gap-1 text-xs font-medium ${neutral ? "text-muted-foreground" : up ? "text-red-600" : "text-teal-600"}`}>
       {neutral ? null : up ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-      {delta > 0 ? "+" : ""}{delta}% vs período anterior
+      {delta > 0 ? "+" : ""}{delta}%
     </span>
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const cls =
-    status === "Crítico" || status === "Lacuna estrutural"
-      ? "border-red-200 bg-red-50 text-red-700"
-      : status === "Parcial"
-        ? "border-amber-200 bg-amber-50 text-amber-700"
-        : "border-teal-200 bg-teal-50 text-teal-700";
-  return <Badge className={cls}>{status}</Badge>;
+function riskState(data?: CevespKpis) {
+  if (!data) return { label: "Sem dados", cls: "bg-muted text-foreground", note: "sincronizar base" };
+  if ((data.weekDelta ?? 0) >= 30 || data.outbreaksCurrentYear > 0) {
+    return { label: "Atenção", cls: "border-red-200 bg-red-50 text-red-700", note: "validar território" };
+  }
+  if ((data.weekDelta ?? 0) >= 10) {
+    return { label: "Observação", cls: "border-amber-200 bg-amber-50 text-amber-700", note: "acompanhar tendência" };
+  }
+  return { label: "Estável", cls: "border-teal-200 bg-teal-50 text-teal-700", note: "manter rotina" };
 }
 
-function ActionLink({ href, label }: { href: string; label: string }) {
+function KpiCard({
+  label,
+  value,
+  icon,
+  delta,
+  tone = "default"
+}: {
+  label: string;
+  value: string;
+  icon: React.ReactNode;
+  delta?: number | null;
+  tone?: "default" | "red";
+}) {
   return (
-    <Link href={href} className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">
-      {label}
-      <ArrowRight className="h-3.5 w-3.5" />
-    </Link>
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between pb-1">
+        <CardTitle className="text-sm text-muted-foreground">{label}</CardTitle>
+        {icon}
+      </CardHeader>
+      <CardContent>
+        <div className={`text-3xl font-bold tabular-nums ${tone === "red" ? "text-red-600" : ""}`}>{value}</div>
+        {delta !== undefined && <DeltaBadge delta={delta} />}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ActionButton({ href, label }: { href: string; label: string }) {
+  return (
+    <Button asChild variant="outline" size="sm" className="justify-between">
+      <Link href={href}>
+        {label}
+        <ArrowRight className="h-4 w-4" />
+      </Link>
+    </Button>
   );
 }
 
@@ -163,15 +130,6 @@ export function DashboardView() {
     staleTime: 5 * 60 * 1000
   });
 
-  const settings = useQuery<{ ai_provider: AIProvider }>({
-    queryKey: ["settings"],
-    queryFn: async () => {
-      const res = await fetch("/api/settings");
-      return res.ok ? res.json() : { ai_provider: "openai" as AIProvider };
-    },
-    staleTime: 60 * 1000
-  });
-
   const weekData = kpis.data
     ? [
         { label: `SE ${kpis.data.previousWeek.se}`, cases: kpis.data.previousWeek.cases },
@@ -179,22 +137,23 @@ export function DashboardView() {
       ]
     : [];
 
+  const risk = riskState(kpis.data);
   const topMunicipalities = kpis.data?.topMunicipalitiesCurrentWeek ?? [];
-  const generatedAt = kpis.data?.generatedAt ? new Date(kpis.data.generatedAt).toLocaleString("pt-BR") : "aguardando atualização";
+  const generatedAt = kpis.data?.generatedAt
+    ? new Date(kpis.data.generatedAt).toLocaleString("pt-BR")
+    : "sem atualização";
 
   return (
     <div className="flex flex-col">
-      <div className="border-b bg-card px-6 py-5">
+      <div className="border-b bg-card px-6 py-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <Badge className="border-primary/30 bg-primary/10 text-primary">Sala de Situação</Badge>
-              <Badge className="bg-muted text-foreground">Oftalmologia sanitária</Badge>
+              <Badge className={risk.cls}>{risk.label}</Badge>
             </div>
-            <h1 className="text-2xl font-semibold tracking-tight">Monitoramento de doenças e problemas prioritários</h1>
-            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-              Painel para gestão pública: identifica sinais de alerta, fragilidades dos dados, territórios prioritários e ações necessárias para vigilância epidemiológica.
-            </p>
+            <h1 className="text-xl font-semibold tracking-tight">Vigilância oftalmológica</h1>
+            <p className="mt-1 text-sm text-muted-foreground">Estado atual, território prioritário e próxima ação.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" onClick={() => kpis.refetch()} disabled={kpis.isFetching}>
@@ -202,82 +161,65 @@ export function DashboardView() {
               Atualizar
             </Button>
             <Button size="sm" asChild>
-              <Link href="/notificacoes">Analisar CEVESP</Link>
+              <Link href="/notificacoes">Investigar CEVESP</Link>
             </Button>
           </div>
         </div>
       </div>
 
-      <div className="space-y-6 p-6">
+      <div className="space-y-5 p-6">
         {kpis.isError && (
           <Card className="border-amber-300 bg-amber-50">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-amber-800">
-                <AlertTriangle className="h-4 w-4" />
-                Banco CEVESP indisponível neste ambiente
-              </CardTitle>
-              <CardDescription className="text-amber-800/80">
-                Os indicadores dependem da rede da SES-SP, VPN ou cache sincronizado. A ausência de conexão deve ser tratada como risco operacional de vigilância.
-              </CardDescription>
-            </CardHeader>
+            <CardContent className="flex items-start gap-3 py-4 text-sm text-amber-900">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div>
+                <p className="font-medium">CEVESP indisponível</p>
+                <p className="text-amber-800/80">Sem rede/cache sincronizado, a sala opera apenas com módulos locais.</p>
+              </div>
+            </CardContent>
           </Card>
         )}
 
         <AlertsPanel />
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-1">
-              <CardTitle className="text-sm text-muted-foreground">Casos na SE {kpis.data?.currentWeek.se ?? "atual"}</CardTitle>
-              <BarChart2 className="h-4 w-4 text-primary" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">{kpis.isFetching ? "..." : (kpis.data?.currentWeek.cases ?? "-")}</div>
-              <DeltaBadge delta={kpis.data?.weekDelta ?? null} />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-1">
-              <CardTitle className="text-sm text-muted-foreground">Casos no ano</CardTitle>
-              <TrendingUp className="h-4 w-4 text-primary" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">{kpis.isFetching ? "..." : (kpis.data?.currentYear.cases ?? "-")}</div>
-              <DeltaBadge delta={kpis.data?.yearDelta ?? null} />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-1">
-              <CardTitle className="text-sm text-muted-foreground">Surtos no ano</CardTitle>
-              <ShieldAlert className="h-4 w-4 text-red-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-red-600">{kpis.isFetching ? "..." : (kpis.data?.outbreaksCurrentYear ?? "-")}</div>
-              <span className="text-xs text-muted-foreground">notificações com surto</span>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-1">
-              <CardTitle className="text-sm text-muted-foreground">Coletas biológicas</CardTitle>
-              <Microscope className="h-4 w-4 text-primary" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">{kpis.isFetching ? "..." : (kpis.data?.collectionsCurrentYear ?? "-")}</div>
-              <span className="text-xs text-muted-foreground">investigação laboratorial registrada</span>
-            </CardContent>
-          </Card>
+          <KpiCard
+            label={`Casos SE ${kpis.data?.currentWeek.se ?? "atual"}`}
+            value={kpis.isFetching ? "..." : formatValue(kpis.data?.currentWeek.cases)}
+            icon={<BarChart2 className="h-4 w-4 text-primary" />}
+            delta={kpis.data?.weekDelta ?? null}
+          />
+          <KpiCard
+            label="Casos no ano"
+            value={kpis.isFetching ? "..." : formatValue(kpis.data?.currentYear.cases)}
+            icon={<TrendingUp className="h-4 w-4 text-primary" />}
+            delta={kpis.data?.yearDelta ?? null}
+          />
+          <KpiCard
+            label="Surtos"
+            value={kpis.isFetching ? "..." : formatValue(kpis.data?.outbreaksCurrentYear)}
+            icon={<ShieldAlert className="h-4 w-4 text-red-500" />}
+            tone="red"
+          />
+          <KpiCard
+            label="Coletas"
+            value={kpis.isFetching ? "..." : formatValue(kpis.data?.collectionsCurrentYear)}
+            icon={<Microscope className="h-4 w-4 text-primary" />}
+          />
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+        <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
           <Card>
-            <CardHeader>
-              <CardTitle>Comparativo semanal</CardTitle>
-              <CardDescription>Variação de casos entre a semana epidemiológica atual e a anterior.</CardDescription>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <CardTitle>Semana epidemiológica</CardTitle>
+                  <CardDescription>Atual vs anterior</CardDescription>
+                </div>
+                <Badge className={risk.cls}>{risk.note}</Badge>
+              </div>
             </CardHeader>
-            <CardContent className="h-[260px]">
+            <CardContent className="h-[250px]">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={weekData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -291,24 +233,22 @@ export function DashboardView() {
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle>Municípios prioritários da semana</CardTitle>
-              <CardDescription>Usar esta lista para contato ativo, verificação de surtos e revisão de medidas locais.</CardDescription>
+            <CardHeader className="pb-2">
+              <CardTitle>Territórios críticos</CardTitle>
+              <CardDescription>Prioridade da semana</CardDescription>
             </CardHeader>
             <CardContent>
               {topMunicipalities.length === 0 ? (
-                <div className="flex h-[220px] flex-col items-center justify-center rounded-md border border-dashed text-center text-sm text-muted-foreground">
+                <div className="flex h-[250px] flex-col items-center justify-center rounded-md border border-dashed text-center text-sm text-muted-foreground">
                   <MapPin className="mb-2 h-8 w-8 opacity-40" />
-                  Nenhum município disponível. Sincronize o CEVESP ou revise o cache.
+                  Sem ranking disponível
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {topMunicipalities.map((item, index) => (
-                    <div key={item.name} className="flex items-center justify-between rounded-md border p-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{index + 1}. {item.name}</p>
-                        <p className="text-xs text-muted-foreground">priorizar validação territorial</p>
-                      </div>
+                  {topMunicipalities.slice(0, 5).map((item, index) => (
+                    <div key={item.name} className="grid grid-cols-[28px_1fr_auto] items-center gap-3 rounded-md border p-3">
+                      <span className="text-sm font-semibold text-muted-foreground">{index + 1}</span>
+                      <span className="truncate text-sm font-medium">{item.name}</span>
                       <span className="text-lg font-semibold tabular-nums">{item.cases}</span>
                     </div>
                   ))}
@@ -318,118 +258,58 @@ export function DashboardView() {
           </Card>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Carteira de agravos monitorados</CardTitle>
-            <CardDescription>O projeto precisa deixar explícito o que monitora, de onde vem o dado e qual problema deve ser identificado.</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-3 lg:grid-cols-3">
-            {diseasePortfolio.map((item) => (
-              <div key={item.name} className="rounded-md border p-4">
-                <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr_0.8fr]">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle>Monitorados</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {watchlist.map((item) => (
+                <div key={item.label} className="flex items-center justify-between rounded-md border p-3">
                   <div>
-                    <h3 className="text-sm font-semibold">{item.name}</h3>
+                    <p className="text-sm font-medium">{item.label}</p>
                     <p className="text-xs text-muted-foreground">{item.source}</p>
                   </div>
-                  <StatusBadge status={item.status} />
-                </div>
-                <p className="text-sm text-muted-foreground">{item.whatToWatch}</p>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-
-        <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-          <Card>
-            <CardHeader>
-              <CardTitle>Eixos mínimos de vigilância</CardTitle>
-              <CardDescription>Sem esses eixos, o sistema mostra números, mas não orienta decisão pública.</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3 md:grid-cols-2">
-              {surveillanceAxes.map((axis) => (
-                <div key={axis.title} className="rounded-md border p-3">
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <h3 className="text-sm font-semibold">{axis.title}</h3>
-                    <StatusBadge status={axis.status} />
-                  </div>
-                  <p className="mb-3 text-sm text-muted-foreground">{axis.description}</p>
-                  <ActionLink href={axis.href} label="Abrir módulo" />
+                  <Badge className="bg-muted text-foreground">{item.status}</Badge>
                 </div>
               ))}
             </CardContent>
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle>Lacunas críticas a implementar</CardTitle>
-              <CardDescription>Itens que faltam para transformar análise em monitoramento programático.</CardDescription>
+            <CardHeader className="pb-2">
+              <CardTitle>Fila do gestor</CardTitle>
+              <CardDescription>Ações que fecham vigilância e resposta</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
-              {gaps.map((gap) => (
-                <div key={gap} className="flex gap-3 rounded-md border p-3 text-sm">
-                  <FileWarning className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-                  <span>{gap}</span>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="grid gap-4 xl:grid-cols-3">
-          <Card className="xl:col-span-2">
-            <CardHeader>
-              <CardTitle>Rotina semanal de monitoramento</CardTitle>
-              <CardDescription>Agenda operacional para não depender apenas de consultas avulsas.</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-2 md:grid-cols-2">
-              {weeklyRoutine.map((item) => (
-                <div key={item} className="flex gap-3 rounded-md border p-3 text-sm">
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-teal-600" />
-                  <span>{item}</span>
-                </div>
+            <CardContent className="grid gap-2 sm:grid-cols-2">
+              {nextActions.map((action) => (
+                <ActionButton key={action.href} href={action.href} label={action.label} />
               ))}
             </CardContent>
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle>Próximas decisões</CardTitle>
-              <CardDescription>Ações de gestor para fechar o ciclo vigilância-resposta.</CardDescription>
+            <CardHeader className="pb-2">
+              <CardTitle>Sinais ausentes</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <ActionLink href="/alertas" label="Reconhecer alertas pendentes" />
-              <ActionLink href="/sinan-qualidade" label="Auditar qualidade SINAN" />
-              <ActionLink href="/cevesp-qualidade" label="Revisar qualidade CEVESP" />
-              <ActionLink href="/boletins" label="Consultar boletins" />
+            <CardContent className="space-y-2">
+              {missingSignals.map((signal) => (
+                <div key={signal} className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-amber-600" />
+                  <span>{signal}</span>
+                </div>
+              ))}
             </CardContent>
           </Card>
         </div>
 
         <Card>
-          <CardHeader>
-            <CardTitle>Governança e fontes</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
-            {[
-              { icon: Database, label: "Dados", value: kpis.isError ? "CEVESP offline/cache" : "CEVESP + SINAN importado" },
-              { icon: Stethoscope, label: "Escopo atual", value: "Conjuntivites e tracoma" },
-              { icon: Siren, label: "Resposta", value: "Alertas, boletins e auditorias" },
-              { icon: Users, label: "IA", value: PROVIDER_LABELS[settings.data?.ai_provider ?? "openai"] }
-            ].map((item) => {
-              const Icon = item.icon;
-              return (
-                <div key={item.label} className="rounded-md border p-3">
-                  <div className="mb-2 flex items-center gap-2 text-muted-foreground">
-                    <Icon className="h-4 w-4" />
-                    <p className="text-xs font-medium uppercase">{item.label}</p>
-                  </div>
-                  <p className="font-medium">{item.value}</p>
-                </div>
-              );
-            })}
-          </CardContent>
-          <CardContent className="pt-0 text-xs text-muted-foreground">
-            Última atualização dos indicadores: {generatedAt}
+          <CardContent className="flex flex-col gap-2 py-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+            <span className="inline-flex items-center gap-2">
+              <Database className="h-3.5 w-3.5" />
+              Base: CEVESP + SINAN importado
+            </span>
+            <span>Última atualização: {generatedAt}</span>
           </CardContent>
         </Card>
       </div>
