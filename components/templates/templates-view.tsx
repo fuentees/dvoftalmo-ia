@@ -94,7 +94,7 @@ export function TemplatesView() {
     }
   }
 
-  function useInChat(template: Template) {
+  function insertTemplateInChat(template: Template) {
     localStorage.setItem("dvoftalmo_draft_message", template.content);
     router.push("/chat");
   }
@@ -202,7 +202,7 @@ export function TemplatesView() {
                   </Button>
                   <Button
                     size="sm"
-                    onClick={() => useInChat(template)}
+                    onClick={() => insertTemplateInChat(template)}
                   >
                     <Wand2 className="h-4 w-4" />
                     Usar no Chat

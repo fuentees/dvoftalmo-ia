@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test:cevesp": "tsx tests/cevesp-parser.test.ts",
     "db:types": "supabase gen types typescript --local > lib/database.types.ts",
