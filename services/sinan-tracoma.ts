@@ -51,7 +51,12 @@ const consolidatedPositiveFieldCandidates = [
 ];
 
 const consolidatedMetricCandidates = {
-  examinados: ["NU_EXAMIN", "NU_EXAM", "EXAMINADOS", "N_EXAMIN", "QT_EXAM", "QTD_EXAM", "TOTAL_EXAM", "TOT_EXAM"],
+  examinados: [
+    "NU_EXAMINA", "NU_EXAMIN", "NU_EXAM", "EXAMINA", "EXAMINAD", "EXAMINADO", "EXAMINADOS",
+    "N_EXAMINA", "N_EXAMIN", "N_EXAM", "QT_EXAMINA", "QT_EXAMIN", "QT_EXAM",
+    "QTD_EXAMINA", "QTD_EXAMIN", "QTD_EXAM", "TOTAL_EXAMINA", "TOTAL_EXAMIN", "TOTAL_EXAM",
+    "TOT_EXAMINA", "TOT_EXAMIN", "TOT_EXAM"
+  ],
   positivos: consolidatedPositiveFieldCandidates,
   casosInformados: ["NU_CASOS", "CASOS", "TOTAL_CASOS", "TOT_CASOS", "QT_CASOS", "QTD_CASOS"],
   negativos: ["NU_CASONEG", "NU_NEGATIV", "NU_NEGATIVOS", "NEGATIVOS", "CASOS_NEG", "CASONEG", "QT_NEG", "QTD_NEG"],
@@ -495,12 +500,26 @@ function getRawValue(row: Record<string, unknown>, candidates: string[]) {
     const key = keys.find((item) => item.toLowerCase() === candidate.toLowerCase());
     if (key && raw[key] != null && String(raw[key]).trim() !== "") return { key, value: raw[key] };
   }
+  const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const normalizedCandidates = candidates.map(normalize);
+  for (const key of keys) {
+    const normalizedKey = normalize(key);
+    const match = normalizedCandidates.find((candidate) => (
+      normalizedKey === candidate ||
+      normalizedKey.startsWith(candidate) ||
+      candidate.startsWith(normalizedKey)
+    ));
+    if (match && raw[key] != null && String(raw[key]).trim() !== "") return { key, value: raw[key] };
+  }
   return null;
 }
 
 function toNonNegativeNumber(value: unknown): number | null {
   if (value == null) return null;
-  const normalized = String(value).trim().replace(",", ".");
+  const text = String(value).trim();
+  const normalized = text.includes(",")
+    ? text.replace(/\./g, "").replace(",", ".")
+    : text.replace(/(?<=\d)\.(?=\d{3}(\D|$))/g, "");
   const n = Number(normalized);
   return Number.isFinite(n) && n >= 0 ? n : null;
 }

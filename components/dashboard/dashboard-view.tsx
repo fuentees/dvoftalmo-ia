@@ -481,7 +481,12 @@ export function DashboardView() {
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle>Consolidado por ano</CardTitle>
-                  <CardDescription>NOTTRACONET/NTRACOMA: examinados e positivos</CardDescription>
+                  <CardDescription>
+                    NOTTRACONET/NTRACOMA
+                    {sinan.data?.consolidatedMetrics?.examinados?.field
+                      ? ` · examinados: ${sinan.data.consolidatedMetrics.examinados.field}`
+                      : ""}
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   {consolidatedByYear.length === 0 ? (
