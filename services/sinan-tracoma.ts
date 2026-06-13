@@ -27,7 +27,7 @@ type NormalizedSinanRow = {
 
 const fieldCandidates = {
   agravo: ["ID_AGRAVO", "AGRAVO", "NM_AGRAVO", "NOME_AGRAVO", "COD_AGRAVO"],
-  ano: ["ANO", "NU_ANO", "ANO_NOT", "ANO_NOTIFIC", "DT_NOTIFIC"],
+  ano: ["ANO", "NU_ANO", "ANO_NOT", "ANO_NOTIFIC", "ANO_INQUE", "ANO_INQ", "NU_ANO_INQ", "DT_NOTIFIC", "DT_INICIO", "DT_INQ"],
   date: ["DT_NOTIFIC", "DT_NOTIFICACAO", "DT_NOT", "DT_SIN_PRI", "DT_DIAG"],
   // Preferir campo de nome antes de código IBGE para futuros imports
   municipio: ["NM_MUNICIP", "MUNICIPIO", "MUNICIPIO_NOTIFICACAO", "MUN_NOT", "MUN_RES", "ID_MUNICIP", "ID_MN_RESI"],
@@ -55,7 +55,10 @@ const consolidatedMetricCandidates = {
     "NU_EXAMINA", "NU_EXAMIN", "NU_EXAM", "EXAMINA", "EXAMINAD", "EXAMINADO", "EXAMINADOS",
     "N_EXAMINA", "N_EXAMIN", "N_EXAM", "QT_EXAMINA", "QT_EXAMIN", "QT_EXAM",
     "QTD_EXAMINA", "QTD_EXAMIN", "QTD_EXAM", "TOTAL_EXAMINA", "TOTAL_EXAMIN", "TOTAL_EXAM",
-    "TOT_EXAMINA", "TOT_EXAMIN", "TOT_EXAM"
+    "TOT_EXAMINA", "TOT_EXAMIN", "TOT_EXAM", "EXAM", "EXAMIN", "EXAMINAC",
+    "NU_AVALIA", "NU_AVALIAD", "AVALIADOS", "QT_AVALIA", "QTD_AVALIA",
+    "NU_PESQ", "NU_PESQUIS", "PESQUISADOS", "QT_PESQ", "QTD_PESQ",
+    "NU_ALUNOS", "ALUNOS", "QT_ALUNOS", "QTD_ALUNOS"
   ],
   positivos: consolidatedPositiveFieldCandidates,
   casosInformados: ["NU_CASOS", "CASOS", "TOTAL_CASOS", "TOT_CASOS", "QT_CASOS", "QTD_CASOS"],
@@ -426,8 +429,8 @@ export interface SinanAuditResult {
     linhas: number;
   }>;
   diagnostico: {
-    traconet: { colunas: string[]; municipiosAmostra: string[]; anosAmostra: number[]; camposPreenchidos: string[] };
-    nottraconet: { colunas: string[]; municipiosAmostra: string[]; anosAmostra: number[]; camposPreenchidos: string[] };
+    traconet: { colunas: string[]; municipiosAmostra: string[]; anosAmostra: number[]; camposPreenchidos: string[]; camposNumericos: Array<{ campo: string; exemplo: number }> };
+    nottraconet: { colunas: string[]; municipiosAmostra: string[]; anosAmostra: number[]; camposPreenchidos: string[]; camposNumericos: Array<{ campo: string; exemplo: number }> };
     aviso?: string;
   };
   crossBankDivergences: Array<{
@@ -524,6 +527,33 @@ function toNonNegativeNumber(value: unknown): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
+function scorePossibleExaminedField(key: string) {
+  const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (!normalized) return -100;
+  if (/(caso|casos|casopos|positivo|positiv|negativo|negativ|trat|comunic|forma|tf|ti|ts|tt|co)/.test(normalized)) return -100;
+  if (/(municip|munic|ibge|codigo|cod|cnes|unidade|estabelec|uf|data|dt|semana|mes|ano|idade|sexo|id)/.test(normalized)) return -100;
+
+  let score = 0;
+  if (/(exam|examin|avalia|avaliad|pesq|pesquis|aluno|alunos|crianc|crianca|pessoa|pessoas)/.test(normalized)) score += 60;
+  if (/(nu|qt|qtd|total|tot|nro|num|numero)/.test(normalized)) score += 15;
+  return score;
+}
+
+function getPossibleExaminedValue(row: Record<string, unknown>) {
+  const direct = getRawValue(row, consolidatedMetricCandidates.examinados);
+  const directValue = direct ? toNonNegativeNumber(direct.value) : null;
+  if (direct && directValue != null) return { key: direct.key, value: directValue, inferred: false };
+
+  const raw = rawObject(row);
+  const candidates = Object.entries(raw)
+    .map(([key, value]) => ({ key, value: toNonNegativeNumber(value), score: scorePossibleExaminedField(key) }))
+    .filter((item): item is { key: string; value: number; score: number } => item.value != null && item.value > 0 && item.score >= 60)
+    .sort((a, b) => b.score - a.score || b.value - a.value);
+
+  const found = candidates[0];
+  return found ? { key: `${found.key} (inferido)`, value: found.value, inferred: true } : null;
+}
+
 function sinanCaseWeight(row: Record<string, unknown>): number {
   if (row.source_bank === "nottraconet") {
     const found = getRawValue(row, consolidatedPositiveFieldCandidates);
@@ -557,6 +587,25 @@ function sumConsolidatedMetric(rows: Array<Record<string, unknown>>, candidates:
     if (found && n != null) {
       usage.set(found.key, (usage.get(found.key) ?? 0) + 1);
       value += n;
+    } else {
+      rowsMissing += 1;
+    }
+  }
+
+  const field = Array.from(usage.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+  return { value, field, rowsMissing };
+}
+
+function sumConsolidatedExamined(rows: Array<Record<string, unknown>>) {
+  const usage = new Map<string, number>();
+  let value = 0;
+  let rowsMissing = 0;
+
+  for (const row of rows) {
+    const found = getPossibleExaminedValue(row);
+    if (found) {
+      usage.set(found.key, (usage.get(found.key) ?? 0) + 1);
+      value += found.value;
     } else {
       rowsMissing += 1;
     }
@@ -703,17 +752,19 @@ export async function auditarSinanTracoma(opts?: {
   const totalNottraconetCount = nottraconetComparableRows.reduce((s, r) => s + ntcCasoPos(r), 0);
   const consolidatedPositiveField = Array.from(positiveFieldUsage.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
   const consolidatedMetrics = Object.fromEntries(
-    Object.entries(consolidatedMetricCandidates).map(([name, candidates]) => [
-      name,
-      sumConsolidatedMetric(nottraconetComparableRows, candidates)
-    ])
+    Object.entries(consolidatedMetricCandidates).map(([name, candidates]) => {
+      const metric = name === "examinados"
+        ? sumConsolidatedExamined(nottraconetComparableRows)
+        : sumConsolidatedMetric(nottraconetComparableRows, candidates);
+      return [name, metric];
+    })
   );
   const consolidatedMetricsByYear = Array.from(
     nottraconetComparableRows.reduce((map, row) => {
       const ano = Number(row.ano);
       if (!Number.isFinite(ano)) return map;
       const current = map.get(ano) ?? { ano, examinados: 0, positivos: 0, tratados: 0, linhas: 0 };
-      current.examinados += sumConsolidatedMetric([row], consolidatedMetricCandidates.examinados).value;
+      current.examinados += sumConsolidatedExamined([row]).value;
       current.positivos += ntcCasoPos(row);
       current.tratados += sumConsolidatedMetric([row], consolidatedMetricCandidates.tratados).value;
       current.linhas += 1;
@@ -972,13 +1023,22 @@ export async function auditarSinanTracoma(opts?: {
   type DiagSample = Array<{ source_bank: string; raw: unknown }>;
 
   function bankDiag(bankRows: Array<Record<string, unknown>>, diagSampleRows: DiagSample) {
-    if (!bankRows.length) return { colunas: [] as string[], municipiosAmostra: [] as string[], anosAmostra: [] as number[], camposPreenchidos: [] as string[] };
-    const colunas = diagSampleRows.length > 0 ? rawKeys(diagSampleRows[0]).slice(0, 30) : [];
+    if (!bankRows.length) return { colunas: [] as string[], municipiosAmostra: [] as string[], anosAmostra: [] as number[], camposPreenchidos: [] as string[], camposNumericos: [] as Array<{ campo: string; exemplo: number }> };
+    const colunas = diagSampleRows.length > 0 ? rawKeys(diagSampleRows[0]) : [];
     const munic = [...new Set(bankRows.map((r) => String(r.municipio ?? "")).filter(Boolean))].slice(0, 5) as string[];
     const anos  = [...new Set(bankRows.map((r) => Number(r.ano)).filter((a: number) => a > 0))].sort((a: number, b: number) => a - b).slice(0, 5) as number[];
     const normalizedCols = ["agravo","municipio","gve","classificacao","tratamento","conclusao"];
     const preenchidos = normalizedCols.filter((f) => bankRows.some((r) => !isBlank(r[f])));
-    return { colunas, municipiosAmostra: munic, anosAmostra: anos, camposPreenchidos: preenchidos };
+    const sampleRaw = diagSampleRows[0]?.raw && typeof diagSampleRows[0].raw === "object"
+      ? diagSampleRows[0].raw as Record<string, unknown>
+      : {};
+    const camposNumericos = Object.entries(sampleRaw)
+      .map(([campo, valor]) => ({ campo, exemplo: toNonNegativeNumber(valor), score: scorePossibleExaminedField(campo) }))
+      .filter((item): item is { campo: string; exemplo: number; score: number } => item.exemplo != null && item.exemplo > 0)
+      .sort((a, b) => b.score - a.score || b.exemplo - a.exemplo)
+      .slice(0, 40)
+      .map(({ campo, exemplo }) => ({ campo, exemplo }));
+    return { colunas, municipiosAmostra: munic, anosAmostra: anos, camposPreenchidos: preenchidos, camposNumericos };
   }
 
   // Detecção de inversão: TRACONET deveria ter FORMA_TF/TT nos campos raw

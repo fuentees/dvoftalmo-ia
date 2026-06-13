@@ -603,6 +603,27 @@ function CompletudeTecnicoTab({ data }: { data: SinanAuditResult }) {
                       <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{d.colunas.join(", ")}</p>
                     </details>
                   )}
+                  {d.camposNumericos.length > 0 && (
+                    <details className="mt-1" open={banco === "nottraconet"}>
+                      <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+                        Campos numéricos com exemplo ({d.camposNumericos.length})
+                      </summary>
+                      <div className="mt-2 max-h-44 overflow-auto rounded-md border bg-background">
+                        <table className="w-full text-[11px]">
+                          <tbody>
+                            {d.camposNumericos.map((item) => (
+                              <tr key={item.campo} className="border-b last:border-0">
+                                <td className="px-2 py-1 font-mono">{item.campo}</td>
+                                <td className="px-2 py-1 text-right tabular-nums">
+                                  {item.exemplo.toLocaleString("pt-BR")}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </details>
+                  )}
                 </div>
               );
             })}
