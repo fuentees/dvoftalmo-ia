@@ -33,9 +33,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertsPanel } from "@/components/dashboard/alerts-panel";
 import { RateMap, type RateMapRow } from "@/components/epidemiology/rate-map";
-import { StateMap } from "@/components/epidemiology/sp-state-map";
-import { ChoroplethMap } from "@/components/epidemiology/choropleth-map";
-import spStateFeature from "@/sp_state_feature.json";
 import type { CevespKpis } from "@/services/cevesp-kpis";
 
 type Tab = "geral" | "conjuntivites" | "tracoma";
@@ -257,45 +254,6 @@ export function DashboardView() {
 
   const cevespMapLoaded = !!cevespRates.data?.mapRows?.length && !cevespRates.data.missingPopulation;
   const sinanMapLoaded = !!sinanRates.data?.mapRows?.length && !sinanRates.data.missingPopulation;
-
-  const stateRiskLabel = (counts: ReturnType<typeof riskSummary>) => {
-    if (counts.alto > 0) return "Alto";
-    if (counts.medio > 0) return "Médio";
-    if (counts.atencao > 0) return "Atenção";
-    if (counts.baixo > 0) return "Baixo";
-    return "Sem classificação";
-  };
-
-  const stateRiskColor = (counts: ReturnType<typeof riskSummary>) => {
-    if (counts.alto > 0) return "#dc2626";
-    if (counts.medio > 0) return "#f59e0b";
-    if (counts.atencao > 0) return "#84cc16";
-    return "#14b8a6";
-  };
-
-  const buildValueMap = (rows: RateMapRow[], valueKey: keyof RateMapRow) => {
-    const map: Record<string, number> = {};
-    rows.forEach((row) => {
-      const name = row.municipio || row.gve || "";
-      if (name) {
-        map[name] = (row[valueKey] as number) || 0;
-      }
-    });
-    return map;
-  };
-
-  const cevespMunicipiValueMap = buildValueMap(cevespRates.data?.byMunicipality ?? [], "incidencia100k");
-  const cevespGveValueMap = buildValueMap(cevespRates.data?.byGve ?? [], "incidencia100k");
-  const sinanMunicipiValueMap = buildValueMap(sinanRates.data?.byMunicipality ?? [], "prevalencia");
-  const sinanGveValueMap = buildValueMap(sinanRates.data?.byGve ?? [], "prevalencia");
-
-  const valueColorScheme = (value: number | null) => {
-    if (value === null || value === undefined) return "#94a3b8";
-    if (value >= 50) return "#dc2626";
-    if (value >= 20) return "#f59e0b";
-    if (value >= 5) return "#84cc16";
-    return "#14b8a6";
-  };
 
   const missingSignals = [
     ...(cevespRates.isError || (!cevespMapLoaded && !cevespRates.isLoading) ? ["Mapa por município/GVE (CEVESP)"] : []),
@@ -610,37 +568,6 @@ export function DashboardView() {
                         <span className="h-2.5 w-2.5 rounded-sm bg-[#14b8a6]" />{cevespRiskCounts.baixo}
                       </span>
                     </div>
-                    <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-                      <Card>
-                        <CardHeader className="pb-2">
-                          <CardTitle>Mapa geográfico de SP</CardTitle>
-                          <CardDescription>Contorno do estado com sinalização por risco</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <StateMap
-                            geoJson={spStateFeature as any}
-                            fillColor={stateRiskColor(cevespRiskCounts)}
-                            strokeColor="#0f766e"
-                          />
-                          <p className="mt-3 text-sm text-muted-foreground">
-                            Risco estadual: <span className="font-semibold text-foreground">{stateRiskLabel(cevespRiskCounts)}</span>
-                          </p>
-                        </CardContent>
-                      </Card>
-                      <Card>
-                        <CardHeader className="pb-2">
-                          <CardTitle>Mapa por {cevespMapView === "municipio" ? "município" : "GVE"}</CardTitle>
-                          <CardDescription>Coroplético com dados CEVESP</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <ChoroplethMap
-                            dataUrl={`/api/geo/shapefiles?type=${cevespMapView}`}
-                            valueMap={cevespMapView === "municipio" ? cevespMunicipiValueMap : cevespGveValueMap}
-                            colorScheme={valueColorScheme}
-                          />
-                        </CardContent>
-                      </Card>
-                    </div>
                     <RateMap
                       title={`CEVESP SP - ${cevespMapView === "municipio" ? "Municípios" : "GVE"}`}
                       description="Incidência de conjuntivite por 100 mil habitantes"
@@ -851,37 +778,6 @@ export function DashboardView() {
                         <span className="h-2.5 w-2.5 rounded-sm bg-[#84cc16]" />{sinanRiskCounts.atencao}
                         <span className="h-2.5 w-2.5 rounded-sm bg-[#14b8a6]" />{sinanRiskCounts.baixo}
                       </span>
-                    </div>
-                    <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-                      <Card>
-                        <CardHeader className="pb-2">
-                          <CardTitle>Mapa geográfico de SP</CardTitle>
-                          <CardDescription>Contorno do estado com sinalização por risco</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <StateMap
-                            geoJson={spStateFeature as any}
-                            fillColor={stateRiskColor(sinanRiskCounts)}
-                            strokeColor="#0f766e"
-                          />
-                          <p className="mt-3 text-sm text-muted-foreground">
-                            Risco estadual: <span className="font-semibold text-foreground">{stateRiskLabel(sinanRiskCounts)}</span>
-                          </p>
-                        </CardContent>
-                      </Card>
-                      <Card>
-                        <CardHeader className="pb-2">
-                          <CardTitle>Mapa por {sinanMapView === "municipio" ? "município" : "GVE"}</CardTitle>
-                          <CardDescription>Coroplético com dados Tracoma</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <ChoroplethMap
-                            dataUrl={`/api/geo/shapefiles?type=${sinanMapView}`}
-                            valueMap={sinanMapView === "municipio" ? sinanMunicipiValueMap : sinanGveValueMap}
-                            colorScheme={valueColorScheme}
-                          />
-                        </CardContent>
-                      </Card>
                     </div>
                     <RateMap
                       title={`SINAN Tracoma SP - ${sinanMapView === "municipio" ? "Municípios" : "GVE"}`}
