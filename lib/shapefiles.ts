@@ -1,5 +1,6 @@
 import { readFileSync } from "fs";
 import { resolve } from "path";
+import { pathToFileURL } from "url";
 import * as shapefile from "shapefile";
 import type { FeatureCollection } from "geojson";
 
@@ -17,7 +18,12 @@ export async function loadShapefileAsGeoJSON(
     console.log(`[shapefiles] SHP path: ${shpPath}`);
     console.log(`[shapefiles] DBF path: ${dbfPath}`);
 
-    const source = await shapefile.open(shpPath, dbfPath);
+    // Convert to file:// URLs — shapefile.open may require a proper URL in some runtimes (e.g. serverless)
+    const shpUrl = pathToFileURL(shpPath).href;
+    const dbfUrl = pathToFileURL(dbfPath).href;
+    console.log(`[shapefiles] Opening using file URLs: ${shpUrl}, ${dbfUrl}`);
+
+    const source = await shapefile.open(shpUrl, dbfUrl);
     const features: any[] = [];
 
     let result = await source.read();
