@@ -89,9 +89,15 @@ function mapInvalidCacheRow(r: Record<string, unknown>): InvalidRecord | null {
   } else if (!String(r.GVE_NOME ?? "").trim()) {
     problema = "gve_ausente";
     issue = "GVE ausente";
-  } else if (totalCaso === null || totalCaso === 0) {
+  } else if (totalCaso === null) {
     problema = "sem_casos";
     issue = totalCaso === null ? "TotalCaso não informado" : "Nenhum caso confirmado (TotalCaso = 0)";
+  } else if (totalCaso === 0 && totalFaixa > 0) {
+    problema = "faixa_etaria_divergente";
+    issue = `Faixa etaria diverge: soma das faixas=${totalFaixa} com TotalCaso=0`;
+  } else if (totalCaso === 0 && totalSexo > 0) {
+    problema = "sexo_divergente";
+    issue = `Sexo diverge: Masc+Fem=${totalSexo} com TotalCaso=0`;
   } else if (totalCaso < 0) {
     problema = "casos_negativos";
     issue = `Total de casos negativo: ${totalCaso}`;
@@ -210,8 +216,14 @@ export async function findInvalidRecords(limit?: number): Promise<InvalidRecord[
                 WHEN year(DtNotificacao) = ? AND SemEpidemio > ? THEN 'se_futura'
                 WHEN MunicipioNotificacao IS NULL OR TRIM(MunicipioNotificacao) = '' THEN 'municipio_ausente'
                 WHEN GVE_NOME IS NULL OR TRIM(GVE_NOME) = ''  THEN 'gve_ausente'
-                WHEN TotalCaso IS NULL OR TotalCaso = 0        THEN 'sem_casos'
+                WHEN TotalCaso IS NULL                         THEN 'sem_casos'
                 WHEN TotalCaso < 0                             THEN 'casos_negativos'
+                WHEN TotalCaso = 0
+                     AND (COALESCE(FxMenorUmAno,0)+COALESCE(FxUmQuatro,0)+COALESCE(FxCincoNove,0)+COALESCE(FxDezQuatorze,0)+COALESCE(FxQuizeOuMais,0)) > 0
+                  THEN 'faixa_etaria_divergente'
+                WHEN TotalCaso = 0
+                     AND (COALESCE(SexMasc,0)+COALESCE(SexFem,0)) > 0
+                  THEN 'sexo_divergente'
                 WHEN TotalCaso > 0
                      AND (COALESCE(FxMenorUmAno,0)+COALESCE(FxUmQuatro,0)+COALESCE(FxCincoNove,0)+COALESCE(FxDezQuatorze,0)+COALESCE(FxQuizeOuMais,0)) = 0
                   THEN 'faixa_etaria_ausente'
@@ -233,8 +245,10 @@ export async function findInvalidRecords(limit?: number): Promise<InvalidRecord[
           OR (year(DtNotificacao) = ? AND SemEpidemio > ?)
           OR (MunicipioNotificacao IS NULL OR TRIM(MunicipioNotificacao) = '')
           OR (GVE_NOME IS NULL OR TRIM(GVE_NOME) = '')
-          OR (TotalCaso IS NULL OR TotalCaso = 0)
+          OR TotalCaso IS NULL
           OR TotalCaso < 0
+          OR (TotalCaso = 0 AND (COALESCE(FxMenorUmAno,0)+COALESCE(FxUmQuatro,0)+COALESCE(FxCincoNove,0)+COALESCE(FxDezQuatorze,0)+COALESCE(FxQuizeOuMais,0)) > 0)
+          OR (TotalCaso = 0 AND (COALESCE(SexMasc,0)+COALESCE(SexFem,0)) > 0)
           OR (TotalCaso > 0 AND (COALESCE(FxMenorUmAno,0)+COALESCE(FxUmQuatro,0)+COALESCE(FxCincoNove,0)+COALESCE(FxDezQuatorze,0)+COALESCE(FxQuizeOuMais,0)) = 0)
           OR (TotalCaso > 0 AND (COALESCE(SexMasc,0)+COALESCE(SexFem,0)) <> TotalCaso)
        ${limit ? "LIMIT ?" : ""}`;
@@ -291,6 +305,8 @@ export async function findInvalidRecords(limit?: number): Promise<InvalidRecord[
         issue = `Total de casos negativo: ${totalCaso}`;
         suggestedField = "TotalCaso";
         suggestedValue = "0";
+      } else if (problema === "faixa_etaria_divergente") {
+        issue = `Faixa etaria diverge: soma das faixas=${totalFaixa ?? 0} com TotalCaso=0`;
       } else if (problema === "faixa_etaria_ausente") {
         issue = `Faixa etária ausente (${totalFaixa ?? 0} informado para ${totalCaso} caso(s))`;
       } else if (problema === "sexo_divergente") {
