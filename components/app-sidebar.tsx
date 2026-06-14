@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  AlertCircle,
   BarChart3,
   Bell,
   Bot,
@@ -41,9 +40,7 @@ const groups = [
     label: "Investigação",
     items: [
       { href: "/notificacoes", label: "CEVESP Conjuntivites", icon: BarChart3 },
-      { href: "/sinan-qualidade", label: "SINAN Tracoma", icon: ShieldAlert },
-      { href: "/cevesp-qualidade", label: "Qualidade CEVESP", icon: AlertCircle },
-      { href: "/correcoes", label: "Correções CEVESP", icon: CheckSquare }
+      { href: "/sinan-qualidade", label: "SINAN Tracoma", icon: ShieldAlert }
     ]
   },
   {
@@ -64,6 +61,7 @@ const groups = [
   {
     label: "Sistema",
     items: [
+      { href: "/correcoes", label: "Fila de Correções", icon: CheckSquare },
       { href: "/auditoria", label: "Auditoria", icon: ClipboardList },
       { href: "/sincronizacao", label: "Sincronização", icon: Database },
       { href: "/configuracoes", label: "Configurações de IA", icon: Settings }
