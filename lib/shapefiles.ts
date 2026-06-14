@@ -21,9 +21,32 @@ export async function loadShapefileAsGeoJSON(
     // Convert to file:// URLs — shapefile.open may require a proper URL in some runtimes (e.g. serverless)
     const shpUrl = pathToFileURL(shpPath).href;
     const dbfUrl = pathToFileURL(dbfPath).href;
-    console.log(`[shapefiles] Opening using file URLs: ${shpUrl}, ${dbfUrl}`);
+    console.log(`[shapefiles] Attempting open using file URLs: ${shpUrl}, ${dbfUrl}`);
 
-    const source = await shapefile.open(shpUrl, dbfUrl);
+    let source: any = null;
+    try {
+      source = await shapefile.open(shpUrl, dbfUrl);
+    } catch (firstErr) {
+      console.warn(`[shapefiles] Failed opening with file URLs: ${String(firstErr)}. Trying local paths...`);
+      try {
+        source = await shapefile.open(shpPath, dbfPath);
+      } catch (secondErr) {
+        console.warn(`[shapefiles] Failed opening with local paths: ${String(secondErr)}. Trying shapefile.read fallback...`);
+        try {
+          // shapefile.read returns a FeatureCollection directly
+          const fc = await (shapefile as any).read(shpPath);
+          if (fc && fc.type === "FeatureCollection") {
+            console.log(`[shapefiles] Loaded via shapefile.read fallback with ${fc.features?.length || 0} features.`);
+            return fc as FeatureCollection;
+          }
+        } catch (readErr) {
+          console.error(`[shapefiles] shapefile.read fallback failed: ${String(readErr)}`);
+          throw readErr;
+        }
+        // If we reach here without a source or fc, rethrow secondErr
+        throw secondErr;
+      }
+    }
     const features: any[] = [];
 
     let result = await source.read();
