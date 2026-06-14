@@ -43,6 +43,18 @@ export async function loadShapefileAsGeoJSON(
           console.error(`[shapefiles] shapefile.read fallback failed: ${String(readErr)}`);
           throw readErr;
         }
+        // As a last resort, read the .shp and .dbf files into memory and try opening from ArrayBuffers
+        try {
+          console.log(`[shapefiles] Attempting fallback: read files into memory and open from ArrayBuffers`);
+          const shpBuf = readFileSync(shpPath);
+          const dbfBuf = readFileSync(dbfPath);
+          const shpArray = shpBuf.buffer.slice(shpBuf.byteOffset, shpBuf.byteOffset + shpBuf.byteLength);
+          const dbfArray = dbfBuf.buffer.slice(dbfBuf.byteOffset, dbfBuf.byteOffset + dbfBuf.byteLength);
+          source = await shapefile.open(shpArray as any, dbfArray as any);
+        } catch (memErr) {
+          console.error(`[shapefiles] In-memory ArrayBuffer fallback failed: ${String(memErr)}`);
+          throw memErr;
+        }
         // If we reach here without a source or fc, rethrow secondErr
         throw secondErr;
       }
