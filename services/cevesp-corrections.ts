@@ -1,4 +1,4 @@
-import { createNotificationConnection, getNotificationTableName } from "@/lib/external/notification-db";
+import { createNotificationConnection, getNotificationTableName, isNotificationConnectionError } from "@/lib/external/notification-db";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export interface InvalidRecord {
@@ -26,6 +26,118 @@ export interface CorrectionProposal {
   reason: string;
 }
 
+function toNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(String(value).replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function currentEpiWeek() {
+  const now = new Date();
+  const startOfYear = new Date(now.getFullYear(), 0, 1);
+  return Math.ceil(((now.getTime() - startOfYear.getTime()) / 86_400_000 + startOfYear.getDay() + 1) / 7);
+}
+
+function mapInvalidCacheRow(r: Record<string, unknown>): InvalidRecord | null {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentSe = currentEpiWeek();
+  const rawDt = r.DtNotificacao ? String(r.DtNotificacao).split("T")[0] : null;
+  const anoData = rawDt ? parseInt(rawDt.slice(0, 4), 10) : null;
+  const se = toNumber(r.SemEpidemio);
+  const totalCaso = toNumber(r.TotalCaso);
+  const totalFaixa =
+    (toNumber(r.FxMenorUmAno) ?? 0) +
+    (toNumber(r.FxUmQuatro) ?? 0) +
+    (toNumber(r.FxCincoNove) ?? 0) +
+    (toNumber(r.FxDezQuatorze) ?? 0) +
+    (toNumber(r.FxQuizeOuMais) ?? 0);
+  const totalSexo = (toNumber(r.SexMasc) ?? 0) + (toNumber(r.SexFem) ?? 0);
+
+  let problema = "";
+  let issue = "";
+  let suggestedField = "";
+  let suggestedValue = "";
+
+  if (rawDt && anoData && anoData > currentYear) {
+    problema = "data_futura";
+    issue = `Data futura: ${rawDt}`;
+    suggestedField = "DtNotificacao";
+    const d = new Date(rawDt);
+    d.setFullYear(currentYear);
+    suggestedValue = d.toISOString().split("T")[0];
+  } else if (rawDt && anoData && anoData < 1990) {
+    problema = "ano_impossivel";
+    issue = `Ano impossível: ${anoData}`;
+    suggestedField = "DtNotificacao";
+    const d = new Date(rawDt);
+    d.setFullYear(currentYear);
+    suggestedValue = d.toISOString().split("T")[0];
+  } else if (se !== null && (se > 53 || se < 1)) {
+    problema = se > 53 ? "se_alta" : "se_baixa";
+    issue = `SE inválida: ${se}`;
+    suggestedField = "SemEpidemio";
+    suggestedValue = String(Math.min(currentSe, 53));
+  } else if (anoData === currentYear && se !== null && se > currentSe) {
+    problema = "se_futura";
+    issue = `SE futura: ${se} (SE atual: ${currentSe})`;
+    suggestedField = "SemEpidemio";
+    suggestedValue = String(currentSe);
+  } else if (!String(r.MunicipioNotificacao ?? "").trim()) {
+    problema = "municipio_ausente";
+    issue = "Município ausente";
+  } else if (!String(r.GVE_NOME ?? "").trim()) {
+    problema = "gve_ausente";
+    issue = "GVE ausente";
+  } else if (totalCaso === null || totalCaso === 0) {
+    problema = "sem_casos";
+    issue = totalCaso === null ? "TotalCaso não informado" : "Nenhum caso confirmado (TotalCaso = 0)";
+  } else if (totalCaso < 0) {
+    problema = "casos_negativos";
+    issue = `Total de casos negativo: ${totalCaso}`;
+    suggestedField = "TotalCaso";
+    suggestedValue = "0";
+  } else if (totalCaso > 0 && totalFaixa === 0) {
+    problema = "faixa_etaria_ausente";
+    issue = `Faixa etária ausente (${totalFaixa} informado para ${totalCaso} caso(s))`;
+  } else if (totalCaso > 0 && totalSexo !== totalCaso) {
+    problema = "sexo_divergente";
+    issue = `Sexo diverge: Masc+Fem=${totalSexo} ≠ TotalCaso=${totalCaso}`;
+  } else {
+    return null;
+  }
+
+  const DATA_TEMPO = new Set(["data_futura", "ano_impossivel", "se_alta", "se_baixa", "se_futura"]);
+  return {
+    recordId: String(r.id ?? r.row_key ?? `${r.DtNotificacao ?? ""}-${r.MunicipioNotificacao ?? ""}`),
+    pkColumn: "id",
+    dtNotificacao: rawDt,
+    semEpidemio: se,
+    municipio: r.MunicipioNotificacao ? String(r.MunicipioNotificacao) : null,
+    gve: r.GVE_NOME ? String(r.GVE_NOME) : null,
+    ano: toNumber(r.ANO) ?? anoData,
+    totalCaso,
+    issue,
+    issueType: (DATA_TEMPO.has(problema) ? "data_tempo" : "conteudo") as "data_tempo" | "conteudo",
+    suggestedField,
+    suggestedValue
+  };
+}
+
+async function findInvalidRecordsFromCache(limit = 100): Promise<InvalidRecord[]> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("cevesp_notificacoes")
+    .select('id,row_key,"DtNotificacao","SemEpidemio","MunicipioNotificacao","GVE_NOME","ANO","TotalCaso","FxMenorUmAno","FxUmQuatro","FxCincoNove","FxDezQuatorze","FxQuizeOuMais","SexMasc","SexFem"')
+    .limit(Math.max(limit * 20, 1000));
+  if (error) throw new Error(`Erro ao consultar cache CEVESP: ${error.message}`);
+
+  return (data ?? [])
+    .map((row) => mapInvalidCacheRow(row as Record<string, unknown>))
+    .filter((row): row is InvalidRecord => Boolean(row))
+    .slice(0, limit);
+}
+
 // Discover primary key column from INFORMATION_SCHEMA
 async function getPrimaryKeyColumn(tableName: string, dbName: string): Promise<string> {
   const conn = await createNotificationConnection();
@@ -49,9 +161,18 @@ async function getPrimaryKeyColumn(tableName: string, dbName: string): Promise<s
 }
 
 export async function findInvalidRecords(limit = 100): Promise<InvalidRecord[]> {
-  const tableName = getNotificationTableName();
+  let tableName: string;
+  let conn: Awaited<ReturnType<typeof createNotificationConnection>>;
+  try {
+    tableName = getNotificationTableName();
+    conn = await createNotificationConnection();
+  } catch (error) {
+    if (isNotificationConnectionError(error) || !process.env.NOTIFY_DB_HOST) {
+      return findInvalidRecordsFromCache(limit);
+    }
+    throw error;
+  }
   const dbName = process.env.NOTIFY_DB_NAME!;
-  const conn = await createNotificationConnection();
 
   try {
     const pkCol = await getPrimaryKeyColumn(tableName, dbName);
@@ -181,6 +302,11 @@ export async function findInvalidRecords(limit = 100): Promise<InvalidRecord[]> 
         suggestedValue
       };
     });
+  } catch (error) {
+    if (isNotificationConnectionError(error)) {
+      return findInvalidRecordsFromCache(limit);
+    }
+    throw error;
   } finally {
     await conn.end();
   }
