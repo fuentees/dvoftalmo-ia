@@ -6,7 +6,7 @@ import {
   Database, RefreshCw, XCircle, Activity,
   MapPin, Stethoscope, BarChart2
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   CartesianGrid, Line, LineChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -15,6 +15,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { RateMap, type RateMapRow } from "@/components/epidemiology/rate-map";
+import { listarGvesSp, listarMunicipiosPorGve } from "@/lib/municipios-sp";
 import type { SinanAuditResult } from "@/services/sinan-tracoma";
 
 interface ApiError { error: string; message?: string }
@@ -23,6 +24,8 @@ type SinanRatesData = {
   missingPopulation?: boolean;
   message?: string;
   analysisYear?: number;
+  periodStart?: number | null;
+  periodEnd?: number | null;
   populationYear?: number | null;
   byMunicipality?: RateMapRow[];
   byGve?: RateMapRow[];
@@ -715,15 +718,22 @@ export function SinanQualidadeView() {
   const [yearEnd,   setYearEnd]   = useState("");
   const [filters,   setFilters]   = useState<Record<string, string>>({});
   const [pageTab,   setPageTab]   = useState<PageTab>("divergencias");
+  const gveOptions = useMemo(() => listarGvesSp(), []);
+  const municipioOptions = useMemo(() => listarMunicipiosPorGve(gve), [gve]);
+
+  const buildFilterParams = (source: Record<string, string>) => {
+    const params = new URLSearchParams();
+    if (source.municipio) params.set("municipio", source.municipio);
+    if (source.gve)       params.set("gve",       source.gve);
+    if (source.yearStart) params.set("yearStart", source.yearStart);
+    if (source.yearEnd)   params.set("yearEnd",   source.yearEnd);
+    return params;
+  };
 
   const { data, error, isLoading, isFetching, refetch } = useQuery<SinanAuditResult, ApiError>({
     queryKey: ["sinan-auditoria", filters],
     queryFn: async () => {
-      const params = new URLSearchParams();
-      if (filters.municipio) params.set("municipio", filters.municipio);
-      if (filters.gve)       params.set("gve",       filters.gve);
-      if (filters.yearStart) params.set("yearStart", filters.yearStart);
-      if (filters.yearEnd)   params.set("yearEnd",   filters.yearEnd);
+      const params = buildFilterParams(filters);
       const res = await fetch(`/api/sinan/auditoria?${params}`);
       if (!res.ok) throw await res.json().catch(() => ({})) as ApiError;
       return res.json() as Promise<SinanAuditResult>;
@@ -732,9 +742,10 @@ export function SinanQualidadeView() {
   });
 
   const rates = useQuery<SinanRatesData, ApiError>({
-    queryKey: ["sinan-taxas"],
+    queryKey: ["sinan-taxas", filters],
     queryFn: async () => {
-      const res = await fetch("/api/sinan/taxas");
+      const params = buildFilterParams(filters);
+      const res = await fetch(`/api/sinan/taxas?${params}`);
       if (!res.ok) throw await res.json().catch(() => ({})) as ApiError;
       return res.json() as Promise<SinanRatesData>;
     },
@@ -785,31 +796,63 @@ export function SinanQualidadeView() {
             </p>
           </div>
         </div>
-        <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
-          <RefreshCw className={`mr-1.5 h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
+        <Button variant="outline" size="sm" onClick={() => { refetch(); rates.refetch(); }} disabled={isFetching || rates.isFetching}>
+          <RefreshCw className={`mr-1.5 h-4 w-4 ${isFetching || rates.isFetching ? "animate-spin" : ""}`} />
           Atualizar
         </Button>
       </div>
 
       {/* ── Filtros ─────────────────────────────────────────────────────────── */}
       <div className="sticky top-0 z-10 flex flex-wrap items-end gap-3 rounded-xl border bg-card/95 px-5 py-4 shadow-sm backdrop-blur">
-        {[
-          { label: "Município",  value: municipio, set: setMunicipio, placeholder: "Ex.: Araçatuba",   w: "w-44" },
-          { label: "GVE",        value: gve,       set: setGve,       placeholder: "Ex.: Osasco",       w: "w-36" },
-          { label: "Ano início", value: yearStart, set: setYearStart, placeholder: "2018",              w: "w-24", type: "number" },
-          { label: "Ano fim",    value: yearEnd,   set: setYearEnd,   placeholder: "2026",              w: "w-24", type: "number" }
-        ].map((f) => (
-          <div key={f.label} className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-muted-foreground">{f.label}</label>
-            <input
-              value={f.value}
-              onChange={(e) => f.set(e.target.value)}
-              placeholder={f.placeholder}
-              type={f.type ?? "text"}
-              className={`h-8 ${f.w} rounded-md border bg-background px-2.5 text-sm`}
-            />
-          </div>
-        ))}
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-muted-foreground">GVE</label>
+          <select
+            value={gve}
+            onChange={(e) => {
+              setGve(e.target.value);
+              setMunicipio("");
+            }}
+            className="h-8 w-56 rounded-md border bg-background px-2.5 text-sm"
+          >
+            <option value="">Todos os GVE</option>
+            {gveOptions.map((item) => (
+              <option key={item} value={item}>{item}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-muted-foreground">Município</label>
+          <select
+            value={municipio}
+            onChange={(e) => setMunicipio(e.target.value)}
+            className="h-8 w-64 rounded-md border bg-background px-2.5 text-sm"
+          >
+            <option value="">Todos os municípios</option>
+            {municipioOptions.map((item) => (
+              <option key={item.codigo} value={item.codigo}>{item.nome}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-muted-foreground">Ano início</label>
+          <input
+            value={yearStart}
+            onChange={(e) => setYearStart(e.target.value)}
+            placeholder="Todo"
+            type="number"
+            className="h-8 w-24 rounded-md border bg-background px-2.5 text-sm"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-muted-foreground">Ano fim</label>
+          <input
+            value={yearEnd}
+            onChange={(e) => setYearEnd(e.target.value)}
+            placeholder="Todo"
+            type="number"
+            className="h-8 w-24 rounded-md border bg-background px-2.5 text-sm"
+          />
+        </div>
         <Button size="sm" onClick={() => setFilters({ municipio, gve, yearStart, yearEnd })} disabled={isFetching}>
           Filtrar
         </Button>
@@ -1028,15 +1071,18 @@ END;`}</pre>
                   {rates.data && (
                     <>
                       <RateMap
-                        title={`Mapa operacional de prevalencia municipal${rates.data.analysisYear ? ` - ${rates.data.analysisYear}` : ""}`}
+                        title={`Mapa operacional de prevalencia por GVE${
+                          rates.data.periodStart && rates.data.periodEnd
+                            ? ` - ${rates.data.periodStart === rates.data.periodEnd ? rates.data.periodStart : `${rates.data.periodStart} a ${rates.data.periodEnd}`}`
+                            : ""
+                        }`}
                         description={`Prevalencia entre examinados, taxa de deteccao e cobertura. Populacao IBGE ${rates.data.populationYear ?? "-"}.`}
-                        rows={rates.data.mapRows ?? rates.data.byMunicipality ?? []}
+                        rows={rates.data.byGve ?? []}
                         valueKey="prevalencia"
                         valueLabel="%"
                         missingPopulation={rates.data.missingPopulation}
                         message={rates.data.message}
                         tableColumns={[
-                          { key: "municipio", label: "Municipio" },
                           { key: "gve", label: "GVE" },
                           { key: "examinados", label: "Examinados" },
                           { key: "positivos", label: "Positivos" },

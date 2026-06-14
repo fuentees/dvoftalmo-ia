@@ -205,7 +205,7 @@ function EmptyState({ title, detail }: { title: string; detail: string }) {
 export function DashboardView() {
   const [tab, setTab] = useState<Tab>("geral");
   const [cevespMapView, setCevespMapView] = useState<"municipio" | "gve">("municipio");
-  const [sinanMapView, setSinanMapView] = useState<"municipio" | "gve">("municipio");
+  const [sinanMapView, setSinanMapView] = useState<"municipio" | "gve">("gve");
 
   const kpis = useQuery<CevespKpis>({
     queryKey: ["cevesp-kpis"],

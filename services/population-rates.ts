@@ -159,7 +159,12 @@ export async function buildCevespRates() {
   };
 }
 
-export async function buildSinanTracomaRates() {
+export async function buildSinanTracomaRates(options?: {
+  municipio?: string;
+  gve?: string;
+  yearStart?: number;
+  yearEnd?: number;
+}) {
   const population = await loadPopulation();
   if (population.missing) {
     return { missingPopulation: true, message: "Tabela ibge_municipio_populacao ainda nao aplicada no Supabase." };
@@ -168,11 +173,24 @@ export async function buildSinanTracomaRates() {
   const rows = await fetchAll(
     "sinan_tracoma_rows",
     "source_bank, ano, municipio, raw",
-    (query) => query.eq("source_bank", "nottraconet")
+    (query) => {
+      let next = query.eq("source_bank", "nottraconet");
+      if (options?.municipio) next = next.ilike("municipio", `%${options.municipio}%`);
+      if (options?.yearStart) next = next.gte("ano", options.yearStart);
+      if (options?.yearEnd) next = next.lte("ano", options.yearEnd);
+      return next;
+    }
   );
   const years = rows.map((row) => Number(row.ano)).filter((year) => Number.isInteger(year) && year > 1900);
-  const analysisYear = Math.max(...years, 0);
-  const currentRows = rows.filter((row) => Number(row.ano) === analysisYear);
+  const minYear = years.length ? Math.min(...years) : 0;
+  const maxYear = years.length ? Math.max(...years) : 0;
+  const analysisYear = maxYear;
+  const selectedGve = String(options?.gve ?? "").trim();
+  const currentRows = rows.filter((row) => {
+    if (!selectedGve) return true;
+    const code = String(row.municipio ?? rawValue(row, ["ID_MUNICIP", "CO_MUNICIP"]) ?? "").replace(/\D/g, "").slice(0, 6);
+    return (gvePorCodigo(code) ?? "Nao informado") === selectedGve;
+  });
 
   const byMunicipality = new Map<string, { codigoIbge: string; municipio: string; gve: string; examinados: number; positivos: number }>();
   for (const row of currentRows) {
@@ -227,7 +245,9 @@ export async function buildSinanTracomaRates() {
 
   return {
     missingPopulation: false,
-    analysisYear,
+    analysisYear: maxYear,
+    periodStart: minYear || null,
+    periodEnd: maxYear || null,
     populationYear: population.latestYear,
     metric: "Prevalencia entre examinados, taxa de deteccao e cobertura de exame",
     methodology: "prevalencia = positivos / examinados x 100; taxa de deteccao = positivos / populacao x 100.000; cobertura = examinados / populacao x 100",

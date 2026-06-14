@@ -416,3 +416,19 @@ export function gvePorCodigo(codigo: string | null | undefined): string | null {
   if (!codigo) return null;
   return infoMunicipio(codigo)?.gve ?? null;
 }
+
+export function listarMunicipiosSp() {
+  return Object.entries(MUNICIPIOS_SP)
+    .map(([codigo, info]) => ({ codigo, nome: info.nome, gve: info.gve }))
+    .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+}
+
+export function listarGvesSp() {
+  return Array.from(new Set(Object.values(MUNICIPIOS_SP).map((info) => info.gve)))
+    .sort((a, b) => a.localeCompare(b, "pt-BR"));
+}
+
+export function listarMunicipiosPorGve(gve?: string | null) {
+  const selected = String(gve ?? "").trim();
+  return listarMunicipiosSp().filter((municipio) => !selected || municipio.gve === selected);
+}

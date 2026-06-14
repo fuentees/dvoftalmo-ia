@@ -713,6 +713,16 @@ export async function auditarSinanTracoma(opts?: {
     fetchAuditRows("nottraconet", "source_bank, ano, municipio, gve, raw")
   ]);
 
+  if (opts?.gve) {
+    const selectedGve = opts.gve;
+    const inGve = (row: Record<string, unknown>) => {
+      const rowGve = toStringOrNull(row.gve) ?? gvePorCodigo(row.municipio as string);
+      return rowGve === selectedGve;
+    };
+    traconetRows = traconetRows.filter(inGve);
+    nottraconetRows = nottraconetRows.filter(inGve);
+  }
+
   // Extrai o total de casos positivos de uma linha do NOTTRACONET (campo NU_CASOPOS do raw).
   // Cada linha NOTTRACONET é um relatório consolidado — NU_CASOPOS = nº de casos positivos.
   const positiveFieldUsage = new Map<string, number>();
