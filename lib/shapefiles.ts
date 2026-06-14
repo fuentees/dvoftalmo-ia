@@ -61,8 +61,9 @@ export async function loadShapefileAsGeoJSON(
           // if all fallbacks failed, throw consolidated error
           throw new Error(JSON.stringify({ message: "All shapefile open attempts failed", attempts: attemptErrors }));
         }
-        // If we reach here without a source or fc, throw consolidated error
-        throw new Error(JSON.stringify({ message: "Local path and read fallbacks failed", attempts: attemptErrors }));
+        if (!source) {
+          throw new Error(JSON.stringify({ message: "Local path and read fallbacks failed", attempts: attemptErrors }));
+        }
       }
     }
     const features: any[] = [];

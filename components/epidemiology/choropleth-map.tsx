@@ -62,6 +62,57 @@ function buildPaths(features: Feature<Geometry, any>[]) {
   }));
 }
 
+function normalizeKey(value: unknown) {
+  return String(value ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function normalizeValueMap(valueMap: Record<string, number>) {
+  const normalized: Record<string, number> = {};
+  for (const [key, value] of Object.entries(valueMap)) {
+    normalized[key] = value;
+    normalized[normalizeKey(key)] = value;
+    const digits = key.replace(/\D/g, "");
+    if (digits) {
+      normalized[digits] = value;
+      normalized[digits.slice(0, 6)] = value;
+    }
+  }
+  return normalized;
+}
+
+function featureCandidates(properties: any) {
+  const values = [
+    properties?.CD_MUN,
+    properties?.CODMUN6,
+    properties?.NM_MUN,
+    properties?.GVE,
+    properties?.DRS,
+    properties?.NOME,
+    properties?.Nome,
+    properties?.name
+  ].filter((value) => value !== undefined && value !== null && String(value).trim() !== "");
+
+  return values.flatMap((value) => {
+    const text = String(value);
+    const digits = text.replace(/\D/g, "");
+    return [
+      text,
+      normalizeKey(text),
+      digits,
+      digits ? digits.slice(0, 6) : ""
+    ].filter(Boolean);
+  });
+}
+
+function featureLabel(properties: any) {
+  return properties?.NM_MUN ?? properties?.GVE ?? properties?.DRS ?? properties?.NOME ?? properties?.Nome ?? properties?.name ?? "Regiao";
+}
+
 export function ChoroplethMap({
   dataUrl,
   valueMap = {},
@@ -134,21 +185,35 @@ export function ChoroplethMap({
 
   const features = geoData.type === "FeatureCollection" ? geoData.features : [geoData as any];
   const pathData = buildPaths(features);
+  const normalizedValueMap = normalizeValueMap(valueMap);
 
-  // Create a map of feature names to values for lookup
+  const getFeatureValue = (properties: any): number | null => {
+    for (const candidate of featureCandidates(properties)) {
+      const value = normalizedValueMap[candidate];
+      if (value !== undefined) return value;
+    }
+    return null;
+  };
+
   const getFeatureColor = (properties: any): string => {
-    const name = properties?.NOME || properties?.name || properties?.Nome || "";
-    const value = valueMap[name];
+    const value = getFeatureValue(properties);
     return colorScheme(value);
   };
 
   return (
     <div className={className}>
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 shadow-sm">
-        <svg viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`} className="h-[360px] w-full" preserveAspectRatio="xMidYMid meet">
+        <svg
+          viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
+          className="h-[360px] w-full"
+          preserveAspectRatio="xMidYMid meet"
+          role="img"
+          aria-label={label}
+        >
           {pathData.map((item, idx) => (
             item.paths.map((d: string, pathIdx: number) => {
-              const featureName = item.properties?.NOME || item.properties?.name || `Region ${idx}`;
+              const featureName = featureLabel(item.properties);
+              const featureValue = getFeatureValue(item.properties);
               return (
                 <path
                   key={`${idx}-${pathIdx}`}
@@ -161,7 +226,10 @@ export function ChoroplethMap({
                   fillRule="evenodd"
                   className="hover:stroke-2 hover:stroke-foreground transition-all"
                   data-title={featureName}
-                />
+                  aria-label={`${featureName}: ${featureValue ?? "sem valor"}`}
+                >
+                  <title>{`${featureName}: ${featureValue == null ? "sem valor" : featureValue.toLocaleString("pt-BR")}`}</title>
+                </path>
               );
             })
           ))}

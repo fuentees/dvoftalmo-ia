@@ -2,8 +2,11 @@
 
 import { AlertTriangle } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ChoroplethMap } from "@/components/epidemiology/choropleth-map";
 
 export type RateMapRow = {
+  codigoIbge?: string | null;
+  ano?: number;
   municipio?: string;
   gve?: string;
   casos?: number;
@@ -28,6 +31,15 @@ type RateMapProps = {
   message?: string;
 };
 
+function normalizeKey(value: unknown) {
+  return String(value ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 function formatValue(value: unknown, decimals = 0) {
   if (value == null || value === "") return "-";
   const n = Number(value);
@@ -36,6 +48,39 @@ function formatValue(value: unknown, decimals = 0) {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals
   });
+}
+
+function buildShapeValueMap(rows: RateMapRow[], valueKey: keyof RateMapRow) {
+  const valueMap: Record<string, number> = {};
+  for (const row of rows) {
+    const value = Number(row[valueKey] ?? 0);
+    if (!Number.isFinite(value)) continue;
+
+    const code = String(row.codigoIbge ?? "").replace(/\D/g, "");
+    if (code) {
+      valueMap[code] = value;
+      valueMap[code.slice(0, 6)] = value;
+    }
+
+    for (const key of [row.municipio, row.gve]) {
+      if (!key) continue;
+      valueMap[key] = value;
+      valueMap[normalizeKey(key)] = value;
+    }
+  }
+  return valueMap;
+}
+
+function colorFromRows(rows: RateMapRow[], valueKey: keyof RateMapRow) {
+  return (value: number | null) => {
+    if (value === null || value === undefined) return "#cbd5e1";
+    const match = rows.find((row) => Number(row[valueKey] ?? 0) === value);
+    if (match?.riskColor) return match.riskColor;
+    if (value >= 50) return "#dc2626";
+    if (value >= 20) return "#f59e0b";
+    if (value >= 5) return "#84cc16";
+    return "#14b8a6";
+  };
 }
 
 export function RateMap({
@@ -48,7 +93,8 @@ export function RateMap({
   missingPopulation,
   message
 }: RateMapProps) {
-  const visible = rows.slice(0, 80);
+  const shapeType = rows.some((row) => row.municipio || row.codigoIbge) ? "municipio" : "gve";
+  const valueMap = buildShapeValueMap(rows, valueKey);
 
   if (missingPopulation) {
     return (
@@ -74,24 +120,14 @@ export function RateMap({
           <CardDescription>{description}</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-5 gap-1 sm:grid-cols-8 md:grid-cols-10 xl:grid-cols-8">
-            {visible.map((row, index) => {
-              const value = row[valueKey];
-              const label = row.municipio ?? row.gve ?? `Item ${index + 1}`;
-              return (
-                <div
-                  key={`${label}-${index}`}
-                  className="group relative aspect-square rounded-sm border"
-                  style={{ backgroundColor: row.riskColor ?? "#94a3b8" }}
-                  title={`${label}: ${formatValue(value, 2)} ${valueLabel}`}
-                >
-                  <span className="absolute inset-0 flex items-center justify-center text-[9px] font-semibold text-white opacity-0 drop-shadow group-hover:opacity-100">
-                    {formatValue(value, 1)}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+          <ChoroplethMap
+            dataUrl={`/api/geo/shapefiles?type=${shapeType}`}
+            valueMap={valueMap}
+            colorScheme={colorFromRows(rows, valueKey)}
+          />
+          <p className="mt-2 text-xs text-muted-foreground">
+            Unidade do mapa: {valueLabel}. Areas sem correspondencia aparecem em cinza.
+          </p>
           <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
             <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#14b8a6]" />baixo</span>
             <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#84cc16]" />atenção</span>
