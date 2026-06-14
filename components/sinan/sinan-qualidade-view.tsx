@@ -14,9 +14,21 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { RateMap, type RateMapRow } from "@/components/epidemiology/rate-map";
 import type { SinanAuditResult } from "@/services/sinan-tracoma";
 
 interface ApiError { error: string; message?: string }
+
+type SinanRatesData = {
+  missingPopulation?: boolean;
+  message?: string;
+  analysisYear?: number;
+  populationYear?: number | null;
+  byMunicipality?: RateMapRow[];
+  byGve?: RateMapRow[];
+  mapRows?: RateMapRow[];
+  methodology?: string;
+};
 
 // ── Helpers visuais ───────────────────────────────────────────────────────────
 
@@ -694,7 +706,7 @@ function CompletudeTecnicoTab({ data }: { data: SinanAuditResult }) {
 
 // ── Componente principal ──────────────────────────────────────────────────────
 
-type PageTab = "divergencias" | "qualidade" | "completude";
+type PageTab = "divergencias" | "qualidade" | "completude" | "taxas";
 
 export function SinanQualidadeView() {
   const [municipio, setMunicipio] = useState("");
@@ -717,6 +729,17 @@ export function SinanQualidadeView() {
       return res.json() as Promise<SinanAuditResult>;
     },
     retry: false
+  });
+
+  const rates = useQuery<SinanRatesData, ApiError>({
+    queryKey: ["sinan-taxas"],
+    queryFn: async () => {
+      const res = await fetch("/api/sinan/taxas");
+      if (!res.ok) throw await res.json().catch(() => ({})) as ApiError;
+      return res.json() as Promise<SinanRatesData>;
+    },
+    retry: false,
+    staleTime: 5 * 60 * 1000
   });
 
   const apiError = error as ApiError | null;
@@ -742,7 +765,8 @@ export function SinanQualidadeView() {
   const pageTabs: { id: PageTab; label: string; icon: React.ReactNode; badge?: number }[] = [
     { id: "divergencias", label: "Divergências",    icon: <Activity className="h-4 w-4" />,   badge: data?.crossBankDivergences.length },
     { id: "qualidade",    label: "Qualidade Clínica", icon: <Stethoscope className="h-4 w-4" />, badge: alertasCount + (data?.semGraduacao ?? 0) },
-    { id: "completude",   label: "Completude & Técnico", icon: <BarChart2 className="h-4 w-4" /> }
+    { id: "completude",   label: "Completude & Técnico", icon: <BarChart2 className="h-4 w-4" /> },
+    { id: "taxas",        label: "Taxas", icon: <MapPin className="h-4 w-4" /> }
   ];
 
   return (
@@ -988,6 +1012,72 @@ END;`}</pre>
               {pageTab === "divergencias" && <DivergenciasTab data={data} />}
               {pageTab === "qualidade"    && <QualidadeClinicaTab data={data} clinicalMappingMissing={clinicalMappingMissing} />}
               {pageTab === "completude"   && <CompletudeTecnicoTab data={data} />}
+              {pageTab === "taxas" && (
+                <div className="space-y-4">
+                  {rates.isLoading && (
+                    <div className="flex h-28 items-center justify-center gap-2 text-sm text-muted-foreground">
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      Calculando taxas epidemiologicas...
+                    </div>
+                  )}
+                  {rates.error && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                      Nao foi possivel calcular as taxas: {rates.error.message ?? rates.error.error}
+                    </div>
+                  )}
+                  {rates.data && (
+                    <>
+                      <RateMap
+                        title={`Mapa operacional de prevalencia municipal${rates.data.analysisYear ? ` - ${rates.data.analysisYear}` : ""}`}
+                        description={`Prevalencia entre examinados, taxa de deteccao e cobertura. Populacao IBGE ${rates.data.populationYear ?? "-"}.`}
+                        rows={rates.data.mapRows ?? rates.data.byMunicipality ?? []}
+                        valueKey="prevalencia"
+                        valueLabel="%"
+                        missingPopulation={rates.data.missingPopulation}
+                        message={rates.data.message}
+                        tableColumns={[
+                          { key: "municipio", label: "Municipio" },
+                          { key: "gve", label: "GVE" },
+                          { key: "examinados", label: "Examinados" },
+                          { key: "positivos", label: "Positivos" },
+                          { key: "prevalencia", label: "Prevalencia %", decimals: 2 },
+                          { key: "taxaDeteccao100k", label: "Deteccao/100 mil", decimals: 2 },
+                          { key: "coberturaExame", label: "Cobertura %", decimals: 2 },
+                          { key: "populacao", label: "Populacao" }
+                        ]}
+                      />
+                      {(rates.data.byGve?.length ?? 0) > 0 && (
+                        <div className="overflow-x-auto rounded-md border">
+                          <table className="w-full min-w-[760px] text-sm">
+                            <thead>
+                              <tr className="border-b bg-muted/40 text-left">
+                                <th className="px-3 py-2">GVE</th>
+                                <th className="px-3 py-2 text-right">Examinados</th>
+                                <th className="px-3 py-2 text-right">Positivos</th>
+                                <th className="px-3 py-2 text-right">Prevalencia %</th>
+                                <th className="px-3 py-2 text-right">Deteccao/100 mil</th>
+                                <th className="px-3 py-2 text-right">Cobertura %</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(rates.data.byGve ?? []).map((row) => (
+                                <tr key={row.gve} className="border-b last:border-0">
+                                  <td className="px-3 py-2 font-medium">{row.gve}</td>
+                                  <td className="px-3 py-2 text-right tabular-nums">{Number(row.examinados ?? 0).toLocaleString("pt-BR")}</td>
+                                  <td className="px-3 py-2 text-right tabular-nums">{Number(row.positivos ?? 0).toLocaleString("pt-BR")}</td>
+                                  <td className="px-3 py-2 text-right tabular-nums">{Number(row.prevalencia ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}</td>
+                                  <td className="px-3 py-2 text-right tabular-nums">{Number(row.taxaDeteccao100k ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}</td>
+                                  <td className="px-3 py-2 text-right tabular-nums">{Number(row.coberturaExame ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </>

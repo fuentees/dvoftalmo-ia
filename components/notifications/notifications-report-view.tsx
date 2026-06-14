@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { RateMap, type RateMapRow } from "@/components/epidemiology/rate-map";
 import { EndemicChannelChart, EpidemicCharts } from "@/components/notifications/epidemic-charts";
 
 type HubTab = "situacao" | "consulta" | "canal" | "qualidade" | "saidas";
@@ -55,6 +56,17 @@ type QualityData = {
   byType: Record<string, number>;
   byGve: Array<{ gve: string; count: number }>;
   byMunicipio: Array<{ municipio: string; gve: string | null; count: number }>;
+};
+
+type CevespRatesData = {
+  missingPopulation?: boolean;
+  message?: string;
+  analysisYear?: number;
+  populationYear?: number | null;
+  byMunicipality?: RateMapRow[];
+  byGve?: RateMapRow[];
+  mapRows?: RateMapRow[];
+  methodology?: string;
 };
 
 type AskData = {
@@ -199,6 +211,42 @@ function ResultTable({ title, columns, rows, limit = 80 }: {
   );
 }
 
+function CevespRatesPanel({ data }: { data: CevespRatesData }) {
+  return (
+    <div className="space-y-4">
+      <RateMap
+        title={`Mapa operacional de incidencia municipal${data.analysisYear ? ` - ${data.analysisYear}` : ""}`}
+        description={`Casos de conjuntivite por 100 mil habitantes. Populacao IBGE ${data.populationYear ?? "-"}.`}
+        rows={data.mapRows ?? data.byMunicipality ?? []}
+        valueKey="incidencia100k"
+        valueLabel="por 100 mil"
+        missingPopulation={data.missingPopulation}
+        message={data.message}
+        tableColumns={[
+          { key: "municipio", label: "Municipio" },
+          { key: "gve", label: "GVE" },
+          { key: "casos", label: "Casos" },
+          { key: "populacao", label: "Populacao" },
+          { key: "incidencia100k", label: "Incidencia/100 mil", decimals: 2 }
+        ]}
+      />
+      {(data.byGve?.length ?? 0) > 0 && (
+        <ResultTable
+          title="Incidencia por GVE"
+          columns={["gve", "casos", "populacao", "incidencia100k"]}
+          rows={(data.byGve ?? []).map((row) => ({
+            gve: row.gve,
+            casos: row.casos,
+            populacao: row.populacao,
+            incidencia100k: Number(row.incidencia100k ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 })
+          }))}
+          limit={40}
+        />
+      )}
+    </div>
+  );
+}
+
 export function NotificationsReportView() {
   const [tab, setTab] = useState<HubTab>("situacao");
   const [question, setQuestion] = useState("Total de casos por GVE dos ultimos 5 anos por mes");
@@ -235,6 +283,17 @@ export function NotificationsReportView() {
       return data;
     },
     enabled: showEndemic || tab === "canal"
+  });
+
+  const rates = useQuery<CevespRatesData>({
+    queryKey: ["cevesp-taxas"],
+    queryFn: async () => {
+      const response = await fetch("/api/cevesp/taxas");
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Erro ao calcular taxas");
+      return data as CevespRatesData;
+    },
+    staleTime: 5 * 60 * 1000
   });
 
   const ask = useMutation<AskData>({
@@ -410,6 +469,8 @@ export function NotificationsReportView() {
               topGves={report.data.indicators.topGves ?? []}
             />
 
+            {rates.data && <CevespRatesPanel data={rates.data} />}
+
             <div className="grid gap-4 lg:grid-cols-3">
               <RankingList title="Municípios prioritários" items={report.data.indicators.topMunicipalities ?? []} />
               <RankingList title="GVEs prioritários" items={report.data.indicators.topGves ?? []} />
@@ -417,6 +478,8 @@ export function NotificationsReportView() {
             </div>
           </div>
         )}
+
+        {tab === "situacao" && !report.data && rates.data && <CevespRatesPanel data={rates.data} />}
 
         {tab === "consulta" && (
           <Card>
