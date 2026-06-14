@@ -335,11 +335,21 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
   const byGve = Array.from(gveMap.entries()).map(([gve, count]) => ({ gve, count })).sort((a, b) => b.count - a.count);
   const maxMuni = Math.max(...detalhe.map((d) => d.count), 1);
   const maxGve  = Math.max(...byGve.map((d) => d.count), 1);
+  const formaResumo = data.formaClinicaResumo ?? [];
+  const formaTotal = formaResumo.reduce((sum, item) => sum + item.count, 0);
+  const ttSemTsDetalhe = data.ttSemTsDetalhe ?? [];
+  const casosComForma = data.casosComFormaClinica ?? data.totalTraconetPositive ?? 0;
+  const casosSemForma = data.casosSemFormaPositiva ?? data.semGraduacao ?? 0;
 
   type SFSubTab = "gve" | "municipio";
   const [sfTab, setSfTab] = useState<SFSubTab>("gve");
 
   const alertas = [
+    {
+      count: data.ttSemTs ?? 0, tone: (data.ttSemTs ?? 0) > 0 ? "red" : "green",
+      label: "TT sem TS associado",
+      detail: "Pela regra de qualidade do servico, TT isolado deve ser revisado como possivel erro de classificacao ou digitacao clinica."
+    },
     {
       count: data.tfSemTratamento, tone: data.tfSemTratamento > 0 ? "red" : "green",
       label: "TF sem tratamento registrado",
@@ -379,7 +389,7 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
     <div className="space-y-4">
       <div className="flex gap-0 rounded-lg border overflow-hidden">
         {([
-          { id: "sem_forma" as QualTab, label: "Sem Forma Clínica", count: data.semGraduacao },
+          { id: "sem_forma" as QualTab, label: "Forma clinica", count: casosSemForma },
           { id: "alertas"   as QualTab, label: "Alertas Clínicos",  count: alertas.reduce((s, a) => s + a.count, 0) }
         ]).map((t) => (
           <button
@@ -397,20 +407,45 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
         ))}
       </div>
 
+      <div className="grid gap-3 md:grid-cols-3">
+        <KpiCard
+          label="Casos com forma compativel"
+          value={casosComForma.toLocaleString("pt-BR")}
+          sub="TF, TI, TS, TT ou CO marcados no TRACONET"
+          tone="green"
+          icon={<CheckCircle2 className="h-4 w-4" />}
+        />
+        <KpiCard
+          label="Sem forma positiva"
+          value={casosSemForma.toLocaleString("pt-BR")}
+          sub="Nao deveriam permanecer como caso sem TF/TI/TS/TT/CO"
+          tone={casosSemForma > 0 ? "red" : "green"}
+          icon={<XCircle className="h-4 w-4" />}
+        />
+        <KpiCard
+          label="TT sem TS"
+          value={(data.ttSemTs ?? 0).toLocaleString("pt-BR")}
+          sub="Registros para revisar classificacao clinica"
+          tone={(data.ttSemTs ?? 0) > 0 ? "red" : "green"}
+          icon={<AlertTriangle className="h-4 w-4" />}
+        />
+      </div>
+
       {tab === "sem_forma" && (
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <Card>
           <CardHeader className="pb-0">
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="text-base">
                   {clinicalMappingMissing
-                    ? "Forma Clínica Não Mapeada — Revisar Importação"
-                    : "Casos Sem Forma Clínica — Onde Corrigir"}
+                    ? "Forma clinica nao mapeada - revisar importacao"
+                    : "Erros de forma clinica - onde corrigir"}
                 </CardTitle>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {clinicalMappingMissing
-                    ? "O TRACONET foi importado, mas os campos TF/TI/TS/TT/CO não foram identificados nas colunas do arquivo. Verifique o mapeamento antes de tratar como erro de preenchimento."
-                    : "Casos individuais (TRACONET) sem graduação clínica TF/TI/TS/TT/CO. Agrupados por GVE e município para direcionar a correção na fonte."}
+                    ? "O TRACONET foi importado, mas os campos TF/TI/TS/TT/CO nao foram identificados nas colunas do arquivo. Verifique o mapeamento antes de tratar como erro de preenchimento."
+                    : "Casos individuais (TRACONET) sem nenhuma forma clinica positiva TF/TI/TS/TT/CO. Agrupados por GVE e municipio para direcionar correcao na fonte."}
                 </p>
               </div>
               {clinicalMappingMissing && (
@@ -524,9 +559,39 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
             )}
           </CardContent>
         </Card>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Distribuicao das formas clinicas</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Um registro pode entrar em mais de uma forma quando ha combinacao clinica.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {formaResumo.length ? formaResumo.map((item) => (
+              <div key={item.forma}>
+                <div className="mb-1 flex justify-between text-xs">
+                  <span className="font-medium">{item.forma}</span>
+                  <span className="tabular-nums text-muted-foreground">{item.count.toLocaleString("pt-BR")}</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-primary"
+                    style={{ width: `${Math.max(4, Math.round((item.count / Math.max(formaTotal, 1)) * 100))}%` }}
+                  />
+                </div>
+              </div>
+            )) : (
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
+                Nenhuma forma clinica positiva foi identificada no TRACONET importado.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+        </div>
       )}
 
       {tab === "alertas" && (
+        <div className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-2">
           {alertas.map((a) => {
             const icon = a.tone === "red"
@@ -554,6 +619,44 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
               </div>
             );
           })}
+        </div>
+        {ttSemTsDetalhe.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">TT sem TS - onde revisar</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Municipios com registros de TT sem TS associado, conforme regra de qualidade clinica definida.
+              </p>
+            </CardHeader>
+            <CardContent className="overflow-x-auto p-0">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/30">
+                    <th className={thCls}>Municipio</th>
+                    <th className={thCls}>GVE</th>
+                    <th className={`${thCls} text-right`}>Casos</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ttSemTsDetalhe.slice(0, 50).map((d, i) => (
+                    <tr key={i} className="border-b last:border-0 hover:bg-muted/20">
+                      <td className="px-4 py-2.5 font-medium">
+                        {d.municipioNome !== d.municipio ? d.municipioNome : d.municipio}
+                        {d.municipioNome !== d.municipio && (
+                          <span className="ml-1 text-[10px] text-muted-foreground">({d.municipio})</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-xs text-muted-foreground">{d.gve}</td>
+                      <td className="px-4 py-2.5 text-right font-semibold tabular-nums text-red-700">
+                        {d.count.toLocaleString("pt-BR")}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+        )}
         </div>
       )}
     </div>

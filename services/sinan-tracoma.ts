@@ -5,6 +5,9 @@ import { nomeMunicipio, gvePorCodigo } from "@/lib/municipios-sp";
 export type SinanTracomaBank = "traconet" | "nottraconet";
 
 type RawRow = Record<string, unknown>;
+type ClinicalForm = "TF" | "TI" | "TS" | "TT" | "CO";
+
+const CLINICAL_FORMS: ClinicalForm[] = ["TF", "TI", "TS", "TT", "CO"];
 
 type NormalizedSinanRow = {
   row_key: string;
@@ -123,31 +126,46 @@ function rowKey(row: RawRow, bank: SinanTracomaBank) {
 
 // Para TRACONET, a forma clínica vem de campos booleanos separados (dicionário SINAN v5).
 // "1" = Sim, "2" = Não, "9" = Ignorado.
-function deriveTraconetClassificacao(row: RawRow): string | null {
+function normalizeFlagText(value: unknown) {
+  return String(value ?? "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function isYesFlag(value: unknown) {
+  return ["1", "s", "sim", "true", "positivo"].includes(normalizeFlagText(value));
+}
+
+function isNoFlag(value: unknown) {
+  return ["2", "n", "nao", "false", "negativo"].includes(normalizeFlagText(value));
+}
+
+function deriveTraconetClinicalForms(row: RawRow) {
   const keys = Object.keys(row);
   function flag(candidates: string[]) {
     const key = keys.find((k) => candidates.some((c) => k.toLowerCase() === c.toLowerCase()));
     return key ? String(row[key] ?? "").trim() : null;
   }
-  const tf = flag(["FORMA_TF", "TP_FORMA_CLINICA_TF", "TF"]);
-  const tt = flag(["FORMA_TT", "TP_FORMA_CLINICA_TT", "TT"]);
-  const ti = flag(["FORMA_TI", "TP_FORMA_CLINICA_TI", "TI"]);
-  const ts = flag(["FORMA_TS", "TP_FORMA_CLINICA_TS", "TS"]);
-  const co = flag(["FORMA_CO", "TP_FORMA_CLINICA_CO", "CO"]);
+  const values: Array<{ form: ClinicalForm; value: string | null }> = [
+    { form: "TF", value: flag(["FORMA_TF", "TP_FORMA_CLINICA_TF", "TF"]) },
+    { form: "TI", value: flag(["FORMA_TI", "TP_FORMA_CLINICA_TI", "TI"]) },
+    { form: "TS", value: flag(["FORMA_TS", "TP_FORMA_CLINICA_TS", "TS"]) },
+    { form: "TT", value: flag(["FORMA_TT", "TP_FORMA_CLINICA_TT", "TT"]) },
+    { form: "CO", value: flag(["FORMA_CO", "TP_FORMA_CLINICA_CO", "CO"]) }
+  ];
+  const present = values.filter((item) => item.value !== null);
+  const forms = values.filter((item) => isYesFlag(item.value)).map((item) => item.form);
+  return {
+    forms,
+    fieldsSeen: present.length > 0,
+    allNo: present.length > 0 && forms.length === 0 && present.every((item) => isNoFlag(item.value))
+  };
+}
 
-  const formas: string[] = [];
-  if (tf === "1") formas.push("TF");
-  if (tt === "1") formas.push("TT");
-  if (ti === "1") formas.push("TI");
-  if (ts === "1") formas.push("TS");
-  if (co === "1") formas.push("CO");
-  if (formas.length > 0) return formas.join("+");
+function deriveTraconetClassificacao(row: RawRow): string | null {
+  const clinical = deriveTraconetClinicalForms(row);
+  if (clinical.forms.length > 0) return clinical.forms.join("+");
+  if (clinical.allNo) return "Sem forma positiva";
 
-  // Se todos são "2" (Não), caso sem forma clínica positiva
-  const allNo = [tf, tt, ti, ts, co].filter((v) => v !== null);
-  if (allNo.length > 0 && allNo.every((v) => v === "2")) return "Sem forma positiva";
-
-  return null; // campos não encontrados — fallback para CLASSI_FIN no chamador
+  return null; // campos nao encontrados: fallback para CLASSI_FIN no chamador
 }
 
 // Para TRACONET, encaminhamento cirúrgico é campo ENCAMINHA (1=Sim, 2=Não, 9=Ignorado)
@@ -168,11 +186,9 @@ export function normalizeSinanTracomaRow(row: RawRow, bank: SinanTracomaBank): N
   const date = normalizeDate(getValue(row, fieldCandidates.date));
   const ano = toNumberOrNull(getValue(row, fieldCandidates.ano)) ?? (date ? Number(date.slice(0, 4)) : null);
 
-  // classificacao: para TRACONET, tenta primeiro CLASSI_FIN; se vazio, deriva dos FORMA_* campos
-  let classificacao = toStringOrNull(getValue(row, fieldCandidates.classificacao));
-  if (!classificacao && bank === "traconet") {
-    classificacao = deriveTraconetClassificacao(row);
-  }
+  // classificacao: no TRACONET as flags FORMA_TF/TI/TS/TT/CO sao a fonte clinica principal.
+  const derivedClassificacao = bank === "traconet" ? deriveTraconetClassificacao(row) : null;
+  let classificacao = derivedClassificacao ?? toStringOrNull(getValue(row, fieldCandidates.classificacao));
 
   // conclusao: para TRACONET, inclui o encaminhamento cirúrgico se disponível
   let conclusao = toStringOrNull(getValue(row, fieldCandidates.conclusao));
@@ -469,13 +485,23 @@ export interface SinanAuditResult {
     risco: "alto" | "medio" | "baixo";
   }>;
   fieldCompleteness: Record<string, { total: number; filled: number; pct: number }>;
+  casosComFormaClinica: number;
+  casosSemFormaPositiva: number;
+  formaClinicaResumo: Array<{ forma: string; count: number }>;
   semGraduacao: number;
   semTratamento: number;
   semConclusao: number;
   tfSemTratamento: number;
   ttSemCircurgia: number;
+  ttSemTs: number;
   anoImpossivel: number;
   semFormaClinicaDetalhe: Array<{
+    municipio: string;
+    municipioNome: string;
+    gve: string;
+    count: number;
+  }>;
+  ttSemTsDetalhe: Array<{
     municipio: string;
     municipioNome: string;
     gve: string;
@@ -576,12 +602,7 @@ function isValidAuditYear(row: Record<string, unknown>, currentYear: number) {
 }
 
 function isPositiveTraconetCase(row: Record<string, unknown>) {
-  const label = normalizeBankLabel(row.classificacao);
-  if (["TF", "TI", "TS", "TT", "CO", "TF+TT"].includes(label)) return true;
-  if (label.includes("+")) {
-    return label.split("+").some((item) => ["TF", "TI", "TS", "TT", "CO"].includes(item));
-  }
-  return false;
+  return clinicalFormsFromValue(row.classificacao).length > 0;
 }
 
 function sumConsolidatedMetric(rows: Array<Record<string, unknown>>, candidates: string[]) {
@@ -624,24 +645,34 @@ function sumConsolidatedExamined(rows: Array<Record<string, unknown>>) {
 }
 
 function normalizeBankLabel(v: unknown): string {
+  const forms = clinicalFormsFromValue(v);
+  if (forms.length > 0) return forms.join("+");
   const s = String(v ?? "").toLowerCase().trim();
-  // Valores derivados dos campos FORMA_* (ex: "TF", "TT", "TF+TT", "TF+TI")
-  if (s === "tf") return "TF";
-  if (s === "tt") return "TT";
-  if (s.includes("tf") && s.includes("tt")) return "TF+TT";
-  if (s.includes("tf")) return "TF";
-  if (s.includes("tt") || s.includes("triqui")) return "TT";
-  if (s.includes("ti") || s.includes("inflamatorio")) return "TI";
-  if (s.includes("ts") || s.includes("cicatricial")) return "TS";
-  if (s.includes("co") || s.includes("opacificacao") || s.includes("opacificação")) return "CO";
-  if (s.includes("folicular")) return "TF";
-  // Valores CLASSI_FIN numéricos (quando não mapeado por FORMA_*)
-  if (s === "1") return "TF";
-  if (s === "2") return "TT";
-  if (s === "3") return "TI";
-  if (s === "4" || s.includes("nao tracoma") || s.includes("não tracoma")) return "Nao tracoma";
+  if (s === "4" || s.includes("nao tracoma") || s.includes("n?o tracoma")) return "Nao tracoma";
   if (s === "5" || s.includes("inconclusivo")) return "Inconclusivo";
   return s || "Nao preenchido";
+}
+
+function clinicalFormsFromValue(value: unknown): ClinicalForm[] {
+  const raw = String(value ?? "").trim();
+  if (!raw) return [];
+  const s = raw.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (s === "1") return ["TF"];
+  if (s === "2") return ["TT"];
+  if (s === "3") return ["TI"];
+  if (s === "4" || s.includes("NAO TRACOMA") || s.includes("SEM FORMA POSITIVA") || s.includes("INCONCLUSIVO")) return [];
+
+  const found = new Set<ClinicalForm>();
+  for (const form of CLINICAL_FORMS) {
+    const re = new RegExp(`(^|[^A-Z])${form}([^A-Z]|$)`);
+    if (re.test(s)) found.add(form);
+  }
+  if (/FOLICULAR/.test(s)) found.add("TF");
+  if (/INFLAMATOR/.test(s)) found.add("TI");
+  if (/CICATRIC/.test(s)) found.add("TS");
+  if (/TRIQUI/.test(s)) found.add("TT");
+  if (/OPACIFIC|OPACIDADE|CORNE/.test(s)) found.add("CO");
+  return CLINICAL_FORMS.filter((form) => found.has(form));
 }
 
 export async function auditarSinanTracoma(opts?: {
@@ -942,45 +973,55 @@ export async function auditarSinanTracoma(opts?: {
     fieldCompleteness[f] = { total: baseRows.length, filled, pct: baseRows.length ? Math.round((filled / baseRows.length) * 100) : 0 };
   }
 
-  // ── Sem forma clínica: detalhe por município ──────────────────────────────
-  const semFormaMap = new Map<string, number>();
-  for (const r of traconetRows) {
-    if (!isBlank(r.classificacao)) continue;
-    const mun = String(r.municipio ?? "?").trim();
-    semFormaMap.set(mun, (semFormaMap.get(mun) ?? 0) + 1);
+  // Clinical quality checks: only individual cases (TRACONET).
+  function municipioDetailRows(rows: Array<Record<string, unknown>>) {
+    const map = new Map<string, number>();
+    for (const r of rows) {
+      const mun = String(r.municipio ?? "?").trim();
+      map.set(mun, (map.get(mun) ?? 0) + 1);
+    }
+    return Array.from(map.entries())
+      .map(([municipio, count]) => ({
+        municipio,
+        municipioNome: nomeMunicipio(municipio),
+        gve: gvePorCodigo(municipio) ?? gvePorMunicipio.get(normMunicipio(municipio)) ?? "Nao informado",
+        count
+      }))
+      .sort((a, b) => b.count - a.count);
   }
-  const semFormaClinicaDetalhe = Array.from(semFormaMap.entries())
-    .map(([municipio, count]) => ({
-      municipio,
-      municipioNome: nomeMunicipio(municipio),
-      gve: gvePorCodigo(municipio) ?? gvePorMunicipio.get(normMunicipio(municipio)) ?? "Não informado",
-      count
-    }))
-    .sort((a, b) => b.count - a.count);
 
-  // ── Checks clínicos: aplicar SOMENTE nos casos individuais (TRACONET) ─────
-  const semGraduacao  = traconetRows.filter((r) => isBlank(r.classificacao)).length;
+  const clinicalFormsByRow = new Map<string, ClinicalForm[]>();
+  for (const r of traconetRows) clinicalFormsByRow.set(String(r.row_key ?? ""), clinicalFormsFromValue(r.classificacao));
+  const formsOf = (r: Record<string, unknown>) => clinicalFormsByRow.get(String(r.row_key ?? "")) ?? clinicalFormsFromValue(r.classificacao);
+
+  const casosComFormaClinica = traconetRows.filter((r) => formsOf(r).length > 0).length;
+  const semFormaPositivaRows = traconetRows.filter((r) => formsOf(r).length === 0);
+  const casosSemFormaPositiva = semFormaPositivaRows.length;
+  const semGraduacao = casosSemFormaPositiva;
+  const semFormaClinicaDetalhe = municipioDetailRows(semFormaPositivaRows);
+
+  const formaClinicaResumo = CLINICAL_FORMS.map((forma) => ({
+    forma,
+    count: traconetRows.filter((r) => formsOf(r).includes(forma)).length
+  })).filter((item) => item.count > 0);
+
   const semTratamento = traconetRows.filter((r) => isBlank(r.tratamento)).length;
-  const semConclusao  = traconetRows.filter((r) => isBlank(r.conclusao)).length;
+  const semConclusao = traconetRows.filter((r) => isBlank(r.conclusao)).length;
 
-  const tfRows = traconetRows.filter((r) => {
-    const cls = normalizeBankLabel(r.classificacao);
-    return cls === "TF" || cls === "TF+TT";
-  });
-  const ttRows = traconetRows.filter((r) => {
-    const cls = normalizeBankLabel(r.classificacao);
-    return cls === "TT" || cls === "TF+TT";
-  });
+  const tfRows = traconetRows.filter((r) => formsOf(r).includes("TF"));
+  const ttRows = traconetRows.filter((r) => formsOf(r).includes("TT"));
+  const ttSemTsRows = ttRows.filter((r) => !formsOf(r).includes("TS"));
 
   const tfSemTratamento = tfRows.filter((r) => isBlank(r.tratamento)).length;
-  const ttSemCircurgia  = ttRows.filter((r) => {
+  const ttSemCircurgia = ttRows.filter((r) => {
     const trat = String(r.tratamento ?? "").toLowerCase();
     const conc = String(r.conclusao ?? "").toLowerCase();
-    // conclusao já pode conter "Encaminhamento cirurgia: Sim" se ENCAMINHA=1
     if (conc.includes("encaminhamento cirurgia: sim")) return false;
-    if (conc.includes("encaminhamento cirurgia: não") || conc.includes("encaminhamento cirurgia: nao")) return true;
+    if (conc.includes("encaminhamento cirurgia: nao") || conc.includes("encaminhamento cirurgia: n?o")) return true;
     return !trat.includes("cirurg") && !trat.includes("epila") && !conc.includes("cirurg");
   }).length;
+  const ttSemTs = ttSemTsRows.length;
+  const ttSemTsDetalhe = municipioDetailRows(ttSemTsRows);
 
   const anoImpossivel = traconetInvalidYearRows.length + nottraconetInvalidYearRows.length;
 
@@ -1011,11 +1052,12 @@ export async function auditarSinanTracoma(opts?: {
   if (missingNotificationId > 0) {
     rec.push(`${missingNotificationId} caso(s) individual(is) do TRACONET sem identificador de notificacao mapeado. Isso limita a deteccao de duplicidades.`);
   }
-  if (semGraduacao > 0) {
-    const pct = traconetRows.length ? Math.round((semGraduacao / traconetRows.length) * 100) : 0;
-    rec.push(`${semGraduacao} caso(s) individual(is) (${pct}%) sem graduacao TF/TI/TS/TT/CO preenchida. Impede calculo de prevalencia e definicao de conduta.`);
+  if (casosSemFormaPositiva > 0) {
+    const pct = traconetRows.length ? Math.round((casosSemFormaPositiva / traconetRows.length) * 100) : 0;
+    rec.push(`${casosSemFormaPositiva} caso(s) individual(is) (${pct}%) sem TF/TI/TS/TT/CO positivo. Caso de tracoma sem nenhuma forma clinica compativel deve ser revisado na fonte; se todas as formas forem negativas, nao deveria permanecer como caso notificado de tracoma.`);
   }
-  if (tfSemTratamento > 0) rec.push(`${tfSemTratamento} caso(s) TRACONET classificado(s) como TF sem tratamento registrado. TF ativo exige azitromicina — verificar se foi prescrita e registrada.`);
+  if (ttSemTs > 0) rec.push(`${ttSemTs} caso(s) TRACONET com TT sem TS associado. Pela regra de qualidade adotada, TT isolado deve ser revisado como possivel erro de classificacao/digitacao clinica.`);
+    if (tfSemTratamento > 0) rec.push(`${tfSemTratamento} caso(s) TRACONET classificado(s) como TF sem tratamento registrado. TF ativo exige azitromicina — verificar se foi prescrita e registrada.`);
   if (ttSemCircurgia > 0)  rec.push(`${ttSemCircurgia} caso(s) TRACONET com TT confirmado sem encaminhamento para cirurgia/epilation. TT requer referencia oftalmologica — risco de progressao para cegueira.`);
   if (semConclusao > 0)    rec.push(`${semConclusao} caso(s) individual(is) sem conclusao/encerramento preenchido.`);
   if (anoImpossivel > 0)   rec.push(`${anoImpossivel} registro(s) com ano impossivel (< 1975 ou > ${currentYear}) foram retirados das tabelas comparativas e devem ser corrigidos na fonte.`);
@@ -1097,13 +1139,18 @@ export async function auditarSinanTracoma(opts?: {
     divergencesByYear,
     divergencesByGve,
     fieldCompleteness,
+    casosComFormaClinica,
+    casosSemFormaPositiva,
+    formaClinicaResumo,
     semGraduacao,
     semTratamento,
     semConclusao,
     tfSemTratamento,
     ttSemCircurgia,
+    ttSemTs,
     anoImpossivel,
     semFormaClinicaDetalhe,
+    ttSemTsDetalhe,
     consolidatedPositiveField,
     consolidatedRowsWithoutPositiveField,
     duplicateNotificationIds,
