@@ -34,6 +34,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { AlertsPanel } from "@/components/dashboard/alerts-panel";
 import { RateMap, type RateMapRow } from "@/components/epidemiology/rate-map";
 import { StateMap } from "@/components/epidemiology/sp-state-map";
+import { ChoroplethMap } from "@/components/epidemiology/choropleth-map";
 import spStateFeature from "@/sp_state_feature.json";
 import type { CevespKpis } from "@/services/cevesp-kpis";
 
@@ -269,6 +270,30 @@ export function DashboardView() {
     if (counts.alto > 0) return "#dc2626";
     if (counts.medio > 0) return "#f59e0b";
     if (counts.atencao > 0) return "#84cc16";
+    return "#14b8a6";
+  };
+
+  const buildValueMap = (rows: RateMapRow[], valueKey: keyof RateMapRow) => {
+    const map: Record<string, number> = {};
+    rows.forEach((row) => {
+      const name = row.municipio || row.gve || "";
+      if (name) {
+        map[name] = (row[valueKey] as number) || 0;
+      }
+    });
+    return map;
+  };
+
+  const cevespMunicipiValueMap = buildValueMap(cevespRates.data?.byMunicipality ?? [], "incidencia100k");
+  const cevespGveValueMap = buildValueMap(cevespRates.data?.byGve ?? [], "incidencia100k");
+  const sinanMunicipiValueMap = buildValueMap(sinanRates.data?.byMunicipality ?? [], "prevalencia");
+  const sinanGveValueMap = buildValueMap(sinanRates.data?.byGve ?? [], "prevalencia");
+
+  const valueColorScheme = (value: number | null) => {
+    if (value === null || value === undefined) return "#94a3b8";
+    if (value >= 50) return "#dc2626";
+    if (value >= 20) return "#f59e0b";
+    if (value >= 5) return "#84cc16";
     return "#14b8a6";
   };
 
@@ -602,7 +627,21 @@ export function DashboardView() {
                           </p>
                         </CardContent>
                       </Card>
-                      <RateMap
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle>Mapa por {cevespMapView === "municipio" ? "município" : "GVE"}</CardTitle>
+                          <CardDescription>Coroplético com dados CEVESP</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <ChoroplethMap
+                            dataUrl={`/api/geo/shapefiles?type=${cevespMapView}`}
+                            valueMap={cevespMapView === "municipio" ? cevespMunicipiValueMap : cevespGveValueMap}
+                            colorScheme={valueColorScheme}
+                          />
+                        </CardContent>
+                      </Card>
+                    </div>
+                    <RateMap
                       title={`CEVESP SP - ${cevespMapView === "municipio" ? "Municípios" : "GVE"}`}
                       description="Incidência de conjuntivite por 100 mil habitantes"
                       rows={cevespMapRows}
@@ -621,7 +660,6 @@ export function DashboardView() {
                             ]
                       }
                     />
-                    </div>
                   </>
                 )}
               </CardContent>
@@ -831,7 +869,21 @@ export function DashboardView() {
                           </p>
                         </CardContent>
                       </Card>
-                      <RateMap
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle>Mapa por {sinanMapView === "municipio" ? "município" : "GVE"}</CardTitle>
+                          <CardDescription>Coroplético com dados Tracoma</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <ChoroplethMap
+                            dataUrl={`/api/geo/shapefiles?type=${sinanMapView}`}
+                            valueMap={sinanMapView === "municipio" ? sinanMunicipiValueMap : sinanGveValueMap}
+                            colorScheme={valueColorScheme}
+                          />
+                        </CardContent>
+                      </Card>
+                    </div>
+                    <RateMap
                       title={`SINAN Tracoma SP - ${sinanMapView === "municipio" ? "Municípios" : "GVE"}`}
                       description="Prevalência de tracoma entre examinados"
                       rows={sinanMapRows}
@@ -850,7 +902,6 @@ export function DashboardView() {
                             ]
                       }
                     />
-                    </div>
                   </>
                 )}
               </CardContent>
