@@ -13,6 +13,10 @@ export async function loadShapefileAsGeoJSON(
     const shpPath = resolve(SHAPES_DIR, subfolder, filename);
     const dbfPath = resolve(SHAPES_DIR, subfolder, filename.replace(".shp", ".dbf"));
 
+    console.log(`[shapefiles] Loading ${subfolder}/${filename}`);
+    console.log(`[shapefiles] SHP path: ${shpPath}`);
+    console.log(`[shapefiles] DBF path: ${dbfPath}`);
+
     const source = await shapefile.open(shpPath, dbfPath);
     const features: any[] = [];
 
@@ -24,12 +28,15 @@ export async function loadShapefileAsGeoJSON(
       result = await source.read();
     }
 
+    console.log(`[shapefiles] Loaded ${features.length} features from ${subfolder}/${filename}`);
+
     return {
       type: "FeatureCollection",
       features
     };
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
+    console.error(`[shapefiles] Error loading ${subfolder}/${filename}:`, msg);
     throw new Error(`Failed to load shapefile ${subfolder}/${filename}: ${msg}`);
   }
 }

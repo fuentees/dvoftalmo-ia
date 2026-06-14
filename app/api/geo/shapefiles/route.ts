@@ -9,19 +9,29 @@ export async function GET(request: Request) {
   const type = searchParams.get("type") || "gve";
 
   try {
-    if (type === "municipios") {
+    console.log(`[geo/shapefiles] Loading shapefile type: ${type}`);
+    
+    if (type === "municipio") {
       if (!municipiosCache) {
+        console.log("[geo/shapefiles] Fetching municipios shapefile...");
         municipiosCache = await loadMunicipisShapefile();
+        console.log(`[geo/shapefiles] Loaded ${municipiosCache.features?.length || 0} municipios`);
       }
       return NextResponse.json(municipiosCache);
     } else {
       if (!gveCache) {
+        console.log("[geo/shapefiles] Fetching GVE shapefile...");
         gveCache = await loadGVEShapefile();
+        console.log(`[geo/shapefiles] Loaded ${gveCache.features?.length || 0} GVEs`);
       }
       return NextResponse.json(gveCache);
     }
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    console.error(`[geo/shapefiles] Error loading shapefile type ${type}:`, msg);
+    if (error instanceof Error) {
+      console.error("[geo/shapefiles] Stack:", error.stack);
+    }
+    return NextResponse.json({ error: msg, type }, { status: 500 });
   }
 }
