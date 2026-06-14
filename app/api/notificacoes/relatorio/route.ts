@@ -10,7 +10,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    const data = await readNotificationRows(5000);
+    const data = await readNotificationRows();
     return NextResponse.json(summarizeNotificationRows(data.rows, data.total));
   } catch (error) {
     return NextResponse.json(

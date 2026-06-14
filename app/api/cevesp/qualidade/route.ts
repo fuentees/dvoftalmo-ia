@@ -10,7 +10,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
 
   try {
-    const records = await findInvalidRecords(500);
+    const records = await findInvalidRecords();
 
     const byType: Record<string, number> = {};
     const gveMap: Record<string, number> = {};
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json() as { recordIds?: string[] };
 
   try {
-    const records = await findInvalidRecords(500);
+    const records = await findInvalidRecords();
     const tableName = getNotificationTableName();
 
     const targets = body.recordIds?.length

@@ -186,7 +186,7 @@ function buildInterpretation(indicators: any, alerts: any[]) {
   const outbreakRate = indicators.notifications > 0 ? (indicators.outbreakNotifications / indicators.notifications) * 100 : 0;
 
   return [
-    `Foram analisadas ${indicators.sampledRows} notificacoes, correspondendo a ${indicators.totalCases} casos registrados na amostra avaliada.`,
+    `Foram analisadas ${indicators.sampledRows} notificacoes, correspondendo a ${indicators.totalCases} casos registrados na base avaliada.`,
     topMunicipality
       ? `O municipio com maior concentracao de casos foi ${topMunicipality.name}, com ${topMunicipality.total} casos, devendo ser observado quanto a agregacao espacial e possivel transmissao em instituicoes coletivas.`
       : "Nao foi possivel identificar municipio predominante nos dados analisados.",
@@ -199,7 +199,7 @@ function buildInterpretation(indicators: any, alerts: any[]) {
     `A proporcao de notificacoes classificadas como surto foi de ${outbreakRate.toFixed(1)}%, parametro importante para monitoramento de agregados e resposta oportuna.`,
     alerts.length > 0
       ? "Os alertas identificados apontam situacoes que merecem investigacao epidemiologica, especialmente quanto a recorrencia de surtos, baixa coleta laboratorial e ausencia de medidas educativas."
-      : "Nao foram identificados alertas automaticos relevantes na amostra, sem prejuizo da avaliacao tecnica local."
+      : "Nao foram identificados alertas automaticos relevantes na base avaliada, sem prejuizo da avaliacao tecnica local."
   ];
 }
 

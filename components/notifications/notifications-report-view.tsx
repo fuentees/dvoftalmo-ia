@@ -362,7 +362,7 @@ export function NotificationsReportView() {
         {tab === "situacao" && report.data && (
           <div className="space-y-6">
             <div className="grid gap-4 md:grid-cols-4">
-              <MetricCard label="Casos analisados" value={totalCases} detail={`${num(report.data.sampledRows)} notificações na amostra`} />
+              <MetricCard label="Casos analisados" value={totalCases} detail={`${num(report.data.sampledRows)} notificações avaliadas`} />
               <MetricCard label="Notificações com surto" value={report.data.indicators.outbreakNotifications} detail={`${outbreakRate} das notificações`} tone={report.data.indicators.outbreakNotifications > 0 ? "amber" : "green"} />
               <MetricCard label="Coletas biológicas" value={report.data.indicators.biologicalCollectionTotal} detail={`${num(report.data.indicators.biologicalCollectionNotifications)} notificações com coleta`} />
               <MetricCard label="Problemas de qualidade" value={quality.data?.total ?? 0} detail="Registros que precisam revisão" tone={(quality.data?.total ?? 0) > 0 ? "amber" : "green"} />
@@ -396,7 +396,7 @@ export function NotificationsReportView() {
                       <p className="text-xs text-muted-foreground">{alert.description}</p>
                     </div>
                   )) : (
-                    <p className="text-sm text-muted-foreground">Nenhum alerta automático relevante na amostra analisada.</p>
+                    <p className="text-sm text-muted-foreground">Nenhum alerta automático relevante na base avaliada.</p>
                   )}
                 </CardContent>
               </Card>

@@ -35,28 +35,37 @@ export function isNotificationConnectionError(error: unknown) {
   return /ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EHOSTUNREACH|fetch failed|connect/i.test(msg);
 }
 
-async function readNotificationRowsFromCache(limit = 5000) {
+async function readNotificationRowsFromCache(limit?: number) {
   const supabase = createAdminClient();
   const { count, error: countError } = await supabase
     .from("cevesp_notificacoes")
     .select("id", { count: "exact", head: true });
   if (countError) throw new Error(`Erro ao consultar cache CEVESP: ${countError.message}`);
 
-  const { data, error } = await supabase
-    .from("cevesp_notificacoes")
-    .select("*")
-    .limit(limit);
-  if (error) throw new Error(`Erro ao ler cache CEVESP: ${error.message}`);
+  const pageSize = 1000;
+  const maxRows = limit ?? count ?? 0;
+  const rows: Array<Record<string, unknown>> = [];
+
+  for (let from = 0; from < maxRows; from += pageSize) {
+    const to = Math.min(from + pageSize - 1, maxRows - 1);
+    const { data, error } = await supabase
+      .from("cevesp_notificacoes")
+      .select("*")
+      .range(from, to);
+    if (error) throw new Error(`Erro ao ler cache CEVESP: ${error.message}`);
+    rows.push(...((data ?? []) as Array<Record<string, unknown>>));
+    if (!data || data.length < pageSize) break;
+  }
 
   return {
-    total: count ?? data?.length ?? 0,
-    limit,
-    rows: (data ?? []) as Array<Record<string, unknown>>,
+    total: count ?? rows.length,
+    limit: limit ?? null,
+    rows,
     source: "cache" as const
   };
 }
 
-export async function readNotificationRows(limit = 5000) {
+export async function readNotificationRows(limit?: number) {
   let table: string;
   let connection: Awaited<ReturnType<typeof createNotificationConnection>>;
   try {
@@ -71,7 +80,9 @@ export async function readNotificationRows(limit = 5000) {
 
   try {
     const [countRows] = await connection.query(`select count(*) as total from ${table}`);
-    const [rows] = await connection.query(`select * from ${table} limit ?`, [limit]);
+    const [rows] = limit
+      ? await connection.query(`select * from ${table} limit ?`, [limit])
+      : await connection.query(`select * from ${table}`);
     const total = Array.isArray(countRows) ? Number((countRows[0] as any)?.total ?? 0) : 0;
 
     return {
