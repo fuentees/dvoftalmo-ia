@@ -52,6 +52,7 @@ const consolidatedPositiveFieldCandidates = [
 
 const consolidatedMetricCandidates = {
   examinados: [
+    "NU_CASOEXA", "CASOEXA", "CASOS_EXAMINADOS", "CASOS_EXAM", "NU_CASOS_EXAM",
     "NU_EXAMINA", "NU_EXAMIN", "NU_EXAM", "EXAMINA", "EXAMINAD", "EXAMINADO", "EXAMINADOS",
     "N_EXAMINA", "N_EXAMIN", "N_EXAM", "QT_EXAMINA", "QT_EXAMIN", "QT_EXAM",
     "QTD_EXAMINA", "QTD_EXAMIN", "QTD_EXAM", "TOTAL_EXAMINA", "TOTAL_EXAMIN", "TOTAL_EXAM",

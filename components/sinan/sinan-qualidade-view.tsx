@@ -858,7 +858,7 @@ END;`}</pre>
           )}
 
           {/* ── KPIs ─────────────────────────────────────────────────────────── */}
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <KpiCard
               label="Casos individuais (TRACONET)"
               value={data.totalTraconet}
@@ -870,6 +870,13 @@ END;`}</pre>
               value={data.totalNottraconet}
               sub={`${(data.totalNottraconetRows ?? 0).toLocaleString("pt-BR")} linhas no consolidado`}
               icon={<MapPin className="h-4 w-4" />}
+            />
+            <KpiCard
+              label="Examinados (NOTTRACONET)"
+              value={data.consolidatedMetrics?.examinados?.value ?? 0}
+              sub={data.consolidatedMetrics?.examinados?.field ? `Campo: ${data.consolidatedMetrics.examinados.field}` : "Campo nao reconhecido"}
+              tone={(data.consolidatedMetrics?.examinados?.value ?? 0) > 0 ? "green" : "amber"}
+              icon={<ClipboardList className="h-4 w-4" />}
             />
             <KpiCard
               label="Divergências de alto risco"
