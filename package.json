@@ -13,7 +13,8 @@
     "sync-cevesp": "tsx scripts/sync-cevesp.ts",
     "sync-export": "tsx scripts/sync-cevesp.ts --export",
     "sync-export-full": "tsx scripts/sync-cevesp.ts --export --full",
-    "sync-import": "tsx scripts/sync-cevesp.ts --import"
+    "sync-import": "tsx scripts/sync-cevesp.ts --import",
+    "sync-ibge-population": "tsx scripts/sync-ibge-population.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.0",
