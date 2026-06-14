@@ -254,7 +254,7 @@ function applyQuestionHints(question: string, analysis: CevespAnalysis): CevespA
   if (/\bfeminino\b|\bmulheres?\b|\bsexo fem/.test(lower)) next.metric = "sexo_feminino";
   if (/\bexcluidos?\b|registros excluidos/.test(lower)) next.metric = "registros_excluidos";
 
-  if (/\bseparad[oa]s?\s+por\s+ano\b|\bpor\s+ano\b|\bano a ano\b|\banual\b|\banualmente\b|\bevolucao anual\b|\bcomparar anos?\b/.test(lower)) next.time_grain = "year";
+  if (/\bseparad[oa]s?\s+por\s+ano\b|\bpor\s+ano\b|\be\s+ano\b|\bano a ano\b|\banual\b|\banualmente\b|\bevolucao anual\b|\bcomparar anos?\b/.test(lower)) next.time_grain = "year";
   if (/\bseparad[oa]s?\s+por\s+mes\b|\bpor\s+mes\b|\bmensal\b|\bmensalmente\b|\bmes a mes\b|\bevolucao mensal\b|\bsazonal/.test(lower)) next.time_grain = "month";
   if (/\bpor\s+(se|s\.e\.|semana\s+epi|semana epidemiologica|semanas?)\b|\bsemanal\b|\bsemanalmente\b|\bpor semana epidemiologica\b|\bevolucao semanal\b/.test(lower)) next.time_grain = "week";
   if (/\bpor\s+dia\b|\bdiari[ao]\b|\bdia a dia\b/.test(lower)) next.time_grain = "day";
@@ -320,6 +320,15 @@ function applyQuestionHints(question: string, analysis: CevespAnalysis): CevespA
   }
   if (/\bpor\s+uvis\b|\buvis\b/.test(lower) && !next.filters.some((filter) => filter.field === "uvis")) next.dimensions.push("uvis");
   if (/\bpor\s+unidade\b|\bunidades notificadoras?\b|\bpor\s+cnes\b/.test(lower) && !next.filters.some((filter) => filter.field === "unidade")) next.dimensions.push("unidade");
+  if (
+    next.time_grain === "none" &&
+    next.date_range.type === "relative_years" &&
+    next.dimensions.length > 0 &&
+    /\b(tabela|planilha|quadro|serie|evolucao|comparar|comparativo|ano|anos)\b/.test(lower) &&
+    !/\b(top|ranking|maiores|menores|principais)\b/.test(lower)
+  ) {
+    next.time_grain = "year";
+  }
   if (/\bpor\s+sexo\b|\bdistribuicao por sexo\b|\bsexo\b/.test(lower) && !/masculino|feminino|homens?|mulheres?/.test(lower)) {
     next.metric = "total_casos";
   }
@@ -582,7 +591,7 @@ export async function runCevespAnalysis(question: string) {
     return runMonthlyCasesByGveReport(question, analysis, table);
   }
 
-  if (analysis.time_grain === "week" && ["relative_years", "all"].includes(analysis.date_range.type)) {
+  if (analysis.time_grain === "week" && analysis.dimensions.length === 0 && ["relative_years", "all"].includes(analysis.date_range.type)) {
     return runWeeklyCasesByYearReport(question, analysis, table);
   }
 
@@ -624,6 +633,8 @@ export async function runCevespAnalysis(question: string) {
     const dimensionLabels = selectedDimensions.map((dimension) => dimension.label);
     const transformed = analysis.time_grain === "month"
       ? pivotYearColumns(rawRows, "Mes", "Ano", dimensionLabels)
+      : analysis.time_grain === "year" && dimensionLabels.length > 0
+        ? pivotDimensionByYear(rawRows, dimensionLabels)
       : withTotalRow(Object.keys(rawRows[0] ?? {}), rawRows);
     return {
       question,
@@ -1187,6 +1198,55 @@ function pivotYearColumns(
 
   return {
     columns: ["Mes", ...dimensionFields, ...years, "Total"],
+    rows: [...dataRows, totalRow]
+  };
+}
+
+function pivotDimensionByYear(
+  rows: Array<Record<string, unknown>>,
+  dimensionFields: string[]
+) {
+  const years = Array.from(
+    new Set(
+      rows
+        .map((row) => Number(row.Ano))
+        .filter((year) => Number.isInteger(year) && year > 1900)
+        .map(String)
+    )
+  ).sort();
+  const grouped = new Map<string, Record<string, unknown>>();
+
+  for (const row of rows) {
+    const year = Number(row.Ano);
+    if (!Number.isInteger(year) || year <= 1900) continue;
+    const dimensionValues = dimensionFields.map((field) => String(row[field] ?? "Nao informado"));
+    const key = dimensionValues.join("||") || "Total";
+
+    if (!grouped.has(key)) {
+      const base: Record<string, unknown> = {};
+      for (const field of dimensionFields) base[field] = row[field] ?? "Nao informado";
+      for (const year of years) base[year] = 0;
+      base.Total = 0;
+      grouped.set(key, base);
+    }
+
+    const current = grouped.get(key)!;
+    current[String(year)] = Number(current[String(year)] ?? 0) + Number(row.valor ?? 0);
+    current.Total = Number(current.Total ?? 0) + Number(row.valor ?? 0);
+  }
+
+  const dataRows = Array.from(grouped.values())
+    .sort((a, b) => Number(b.Total ?? 0) - Number(a.Total ?? 0));
+
+  const totalRow: Record<string, unknown> = {};
+  for (const field of dimensionFields) totalRow[field] = "Total";
+  for (const year of years) {
+    totalRow[year] = dataRows.reduce((sum, row) => sum + Number(row[year] ?? 0), 0);
+  }
+  totalRow.Total = dataRows.reduce((sum, row) => sum + Number(row.Total ?? 0), 0);
+
+  return {
+    columns: [...dimensionFields, ...years, "Total"],
     rows: [...dataRows, totalRow]
   };
 }

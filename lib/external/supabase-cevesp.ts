@@ -74,9 +74,25 @@ function mapDimension(dim: string): string {
   const map: Record<string, string> = {
     gve: "gve", drs: "drs", municipio: "municipio", uvis: "uvis",
     semana_epidemiologica: "se", ano_cadastro: "ano", mes_cadastro: "mes",
+    unidade: "unidade", cnes: "cnes",
     subgrupo_ve: "gve" // fallback
   };
   return map[dim] ?? "gve";
+}
+
+function dimensionLabel(dim: string): string {
+  const labels: Record<string, string> = {
+    gve: "GVE",
+    drs: "DRS",
+    municipio: "Municipio",
+    uvis: "UVIS",
+    unidade: "Unidade notificadora",
+    cnes: "CNES",
+    se: "Semana Epidemiologica",
+    ano: "Ano",
+    mes: "Mes"
+  };
+  return labels[dim] ?? dim;
 }
 
 export async function runCevespAnalysisCached(
@@ -116,6 +132,49 @@ export async function runCevespAnalysisCached(
   }
   if (analysis.metric === "total_casos" && analysis.time_grain === "month" && analysis.dimensions.includes("gve")) {
     return runCachedMonthlyCasesByGve(question, analysis);
+  }
+
+  {
+    const cacheRows = await fetchCacheRows(
+      analysis,
+      '"ANO","Mes","SemEpidemio","DtNotificacao","TotalCaso","Surto","NuSurto","NuColetaMaterialBio","NuAcaoEducativa","NuTreinamento","AfastamentoProfSintomatico","NuEncamimento","MunicipioNotificacao","GVE_NOME","DRS_NOME","UVIS","Unid_notificacao","nCNES"'
+    );
+    const generic = buildCachedGenericResult(cacheRows, analysis);
+
+    if (generic.rows.length > 0) {
+      const metricLabels: Record<string, string> = {
+        total_casos: "Total de casos", notificacoes: "Notificacoes", surtos: "Surtos",
+        numero_surtos: "Numero de surtos", coletas: "Coletas biologicas",
+        acoes_educativas: "Acoes educativas", treinamentos: "Treinamentos",
+        afastamentos: "Afastamentos", encaminhamentos: "Encaminhamentos",
+        municipios_notificadores: "Municipios notificadores",
+        unidades_notificadoras: "Unidades notificadoras"
+      };
+      const dataRows = generic.rows.filter((row) => !Object.values(row).some((value) => String(value).toLowerCase() === "total"));
+      const totalRow = generic.rows.find((row) => Object.values(row).some((value) => String(value).toLowerCase() === "total"));
+      const total = Number(totalRow?.Total ?? dataRows.reduce((sum, row) => sum + Number(row.Total ?? row.Valor ?? row.valor ?? 0), 0));
+      const labelColumns = generic.columns.filter((column) => !["Valor", "Total"].includes(column) && !/^\d{4}$/.test(column));
+      const top3 = dataRows.slice(0, 3)
+        .map((row) => `${labelColumns.map((column) => row[column]).filter(Boolean).join(" / ") || "Total"}: ${row.Total ?? row.Valor ?? row.valor ?? 0}`)
+        .join(", ");
+
+      return {
+        question,
+        analysis,
+        metricLabel: metricLabels[analysis.metric] ?? analysis.metric,
+        timeLabel: buildCacheUnderstanding(analysis).period,
+        columns: generic.columns,
+        rows: generic.rows,
+        fromCache: true as const,
+        understanding: buildCacheUnderstanding(analysis),
+        interpretation: [
+          "Dados do cache Supabase importado do CEVESP.",
+          `Total de ${metricLabels[analysis.metric] ?? "registros"}: ${total.toLocaleString("pt-BR")}.`,
+          top3 ? `Destaques: ${top3}.` : "Nao houve destaque numerico para os criterios informados.",
+          "A tabela foi estruturada conforme a pergunta: dimensoes nas linhas, periodo nas colunas quando aplicavel, e total consolidado ao final."
+        ]
+      };
+    }
   }
 
   // Primeiro filtro GVE/DRS dos filtros da análise
@@ -255,7 +314,9 @@ function dimensionValue(row: Record<string, unknown>, dimension: string) {
   if (dimension === "se") return String(row.SemEpidemio ?? "0");
   if (dimension === "ano") return String(row.ANO ?? "0");
   if (dimension === "mes") return String(row.Mes ?? "0");
+  if (dimension === "dia") return String(row.DtNotificacao ?? "Sem data").split("T")[0];
   if (dimension === "unidade") return String(row.Unid_notificacao ?? "Sem unidade");
+  if (dimension === "cnes") return String(row.nCNES ?? "Sem CNES");
   return String(row.GVE_NOME ?? "Sem GVE");
 }
 
@@ -296,6 +357,82 @@ function aggregateCacheRows(rows: Array<Record<string, unknown>>, metric: string
     .map(([label, valor]) => ({ label, valor }))
     .sort((a, b) => b.valor - a.valor)
     .slice(0, limit);
+}
+
+function buildCachedGenericResult(rows: Array<Record<string, unknown>>, analysis: CevespAnalysisInput) {
+  const dimensions = (analysis.dimensions.length > 0 ? analysis.dimensions.map(mapDimension) : [])
+    .filter((value, index, array) => array.indexOf(value) === index);
+  const limit = Math.min(analysis.limit ?? 100, 500);
+
+  if (analysis.time_grain === "year" && dimensions.length > 0) {
+    const years = Array.from(new Set(rows.map((row) => Number(row.ANO)).filter((year) => Number.isInteger(year) && year > 1900).map(String))).sort();
+    const groups = new Map<string, Record<string, unknown>>();
+    for (const row of rows) {
+      const year = Number(row.ANO);
+      if (!Number.isInteger(year) || year <= 1900) continue;
+      const keyValues = dimensions.map((dimension) => dimensionValue(row, dimension));
+      const key = keyValues.join("||");
+      if (!groups.has(key)) {
+        const base: Record<string, unknown> = {};
+        dimensions.forEach((dimension, index) => { base[dimensionLabel(dimension)] = keyValues[index]; });
+        for (const year of years) base[year] = 0;
+        base.Total = 0;
+        groups.set(key, base);
+      }
+      const current = groups.get(key)!;
+      current[String(year)] = Number(current[String(year)] ?? 0) + metricValue(row, analysis.metric);
+      current.Total = Number(current.Total ?? 0) + metricValue(row, analysis.metric);
+    }
+    const dataRows = Array.from(groups.values()).sort((a, b) => Number(b.Total ?? 0) - Number(a.Total ?? 0)).slice(0, limit);
+    const totalRow: Record<string, unknown> = {};
+    for (const dimension of dimensions) totalRow[dimensionLabel(dimension)] = "Total";
+    for (const year of years) totalRow[year] = dataRows.reduce((sum, row) => sum + Number(row[year] ?? 0), 0);
+    totalRow.Total = dataRows.reduce((sum, row) => sum + Number(row.Total ?? 0), 0);
+    return { columns: [...dimensions.map(dimensionLabel), ...years, "Total"], rows: [...dataRows, totalRow] };
+  }
+
+  if (analysis.time_grain === "month") {
+    const years = Array.from(new Set(rows.map((row) => Number(row.ANO)).filter((year) => Number.isInteger(year) && year > 1900).map(String))).sort();
+    const groups = new Map<string, Record<string, unknown>>();
+    for (const row of rows) {
+      const month = Number(row.Mes);
+      const year = Number(row.ANO);
+      if (!Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(year) || year <= 1900) continue;
+      const keyValues = dimensions.map((dimension) => dimensionValue(row, dimension));
+      const key = [month, ...keyValues].join("||");
+      if (!groups.has(key)) {
+        const base: Record<string, unknown> = { Mes: monthName(month) };
+        dimensions.forEach((dimension, index) => { base[dimensionLabel(dimension)] = keyValues[index]; });
+        for (const year of years) base[year] = 0;
+        base.Total = 0;
+        groups.set(key, base);
+      }
+      const current = groups.get(key)!;
+      current[String(year)] = Number(current[String(year)] ?? 0) + metricValue(row, analysis.metric);
+      current.Total = Number(current.Total ?? 0) + metricValue(row, analysis.metric);
+    }
+    const dataRows = Array.from(groups.entries())
+      .sort(([keyA, rowA], [keyB, rowB]) => Number(keyA.split("||")[0]) - Number(keyB.split("||")[0]) || Number(rowB.Total ?? 0) - Number(rowA.Total ?? 0))
+      .map(([, value]) => value)
+      .slice(0, limit);
+    const totalRow: Record<string, unknown> = { Mes: "Total" };
+    for (const dimension of dimensions) totalRow[dimensionLabel(dimension)] = "Todos";
+    for (const year of years) totalRow[year] = dataRows.reduce((sum, row) => sum + Number(row[year] ?? 0), 0);
+    totalRow.Total = dataRows.reduce((sum, row) => sum + Number(row.Total ?? 0), 0);
+    return { columns: ["Mes", ...dimensions.map(dimensionLabel), ...years, "Total"], rows: [...dataRows, totalRow] };
+  }
+
+  const primaryDimension = dimensions[0] ?? (
+    analysis.time_grain === "week" ? "se" :
+    analysis.time_grain === "year" ? "ano" :
+    analysis.time_grain === "day" ? "dia" :
+    "gve"
+  );
+  const aggregated = aggregateCacheRows(rows, analysis.metric, primaryDimension, limit);
+  const label = dimensionLabel(primaryDimension);
+  const mappedRows = aggregated.map((row) => ({ [label]: row.label, Valor: row.valor }));
+  const total = mappedRows.reduce((sum, row) => sum + Number(row.Valor ?? 0), 0);
+  return { columns: [label, "Valor"], rows: [...mappedRows, { [label]: "Total", Valor: total }] };
 }
 
 function monthName(value: unknown) {

@@ -134,6 +134,28 @@ const cases = [
       end: "2024-02-29",
       dimension: "municipio"
     }
+  },
+  {
+    name: "planilha basica municipio por ano",
+    question: "gere uma planilha basica de casos por municipio e ano dos ultimos 5 anos",
+    expected: {
+      metric: "total_casos",
+      time_grain: "year",
+      dateType: "relative_years",
+      amount: 5,
+      dimension: "municipio"
+    }
+  },
+  {
+    name: "casos por gve de quatro anos",
+    question: "casos por gve dos ultimos 4 anos em tabela",
+    expected: {
+      metric: "total_casos",
+      time_grain: "year",
+      dateType: "relative_years",
+      amount: 4,
+      dimension: "gve"
+    }
   }
 ];
 
