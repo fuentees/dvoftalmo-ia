@@ -54,6 +54,7 @@
     "zod": "^3.25.56"
   },
   "devDependencies": {
+    "@types/geojson": "^7946.0.16",
     "@types/node": "^22.15.30",
     "@types/pdf-parse": "^1.1.4",
     "@types/react": "^19.0.12",
