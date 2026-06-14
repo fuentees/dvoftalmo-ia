@@ -523,6 +523,14 @@ function rawObject(row: Record<string, unknown>): Record<string, unknown> {
   return row.raw && typeof row.raw === "object" ? row.raw as Record<string, unknown> : {};
 }
 
+function clinicalFormsFromAuditRow(row: Record<string, unknown>): ClinicalForm[] {
+  if (row.source_bank === "traconet") {
+    const clinical = deriveTraconetClinicalForms(rawObject(row));
+    if (clinical.fieldsSeen) return clinical.forms;
+  }
+  return clinicalFormsFromValue(row.classificacao);
+}
+
 function getRawValue(row: Record<string, unknown>, candidates: string[]) {
   const raw = rawObject(row);
   const keys = Object.keys(raw);
@@ -602,7 +610,7 @@ function isValidAuditYear(row: Record<string, unknown>, currentYear: number) {
 }
 
 function isPositiveTraconetCase(row: Record<string, unknown>) {
-  return clinicalFormsFromValue(row.classificacao).length > 0;
+  return clinicalFormsFromAuditRow(row).length > 0;
 }
 
 function sumConsolidatedMetric(rows: Array<Record<string, unknown>>, candidates: string[]) {
@@ -991,8 +999,8 @@ export async function auditarSinanTracoma(opts?: {
   }
 
   const clinicalFormsByRow = new Map<string, ClinicalForm[]>();
-  for (const r of traconetRows) clinicalFormsByRow.set(String(r.row_key ?? ""), clinicalFormsFromValue(r.classificacao));
-  const formsOf = (r: Record<string, unknown>) => clinicalFormsByRow.get(String(r.row_key ?? "")) ?? clinicalFormsFromValue(r.classificacao);
+  for (const r of traconetRows) clinicalFormsByRow.set(String(r.row_key ?? ""), clinicalFormsFromAuditRow(r));
+  const formsOf = (r: Record<string, unknown>) => clinicalFormsByRow.get(String(r.row_key ?? "")) ?? clinicalFormsFromAuditRow(r);
 
   const casosComFormaClinica = traconetRows.filter((r) => formsOf(r).length > 0).length;
   const semFormaPositivaRows = traconetRows.filter((r) => formsOf(r).length === 0);

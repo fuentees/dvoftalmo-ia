@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle, CheckCircle2, ClipboardList,
   Database, RefreshCw, XCircle, Activity,
-  MapPin, Stethoscope, BarChart2
+  MapPin, Stethoscope, BarChart2, Download, Target
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
@@ -129,6 +129,235 @@ function KpiCard({
 }
 
 // ── Aba: Divergências ─────────────────────────────────────────────────────────
+
+type ManagementRow = {
+  key: string;
+  municipio: string;
+  municipioNome: string;
+  gve: string;
+  score: number;
+  criticos: number;
+  alertas: number;
+  divergencia: number;
+  acao: string;
+};
+
+function addManagementRow(map: Map<string, ManagementRow>, base: Partial<ManagementRow> & { municipio: string }, update: Partial<ManagementRow>) {
+  const key = `${base.municipio}|${base.gve ?? ""}`;
+  const row = map.get(key) ?? {
+    key,
+    municipio: base.municipio,
+    municipioNome: base.municipioNome ?? base.municipio,
+    gve: base.gve ?? "",
+    score: 0,
+    criticos: 0,
+    alertas: 0,
+    divergencia: 0,
+    acao: ""
+  };
+  row.score += update.score ?? 0;
+  row.criticos += update.criticos ?? 0;
+  row.alertas += update.alertas ?? 0;
+  row.divergencia += update.divergencia ?? 0;
+  if (update.acao && (!row.acao || (update.score ?? 0) >= row.score / 2)) row.acao = update.acao;
+  map.set(key, row);
+}
+
+function buildManagementRows(data: SinanAuditResult): ManagementRow[] {
+  const map = new Map<string, ManagementRow>();
+
+  for (const item of data.semFormaClinicaDetalhe ?? []) {
+    addManagementRow(map, item, {
+      score: item.count * 8,
+      criticos: item.count,
+      acao: "Corrigir casos sem TF/TI/TS/TT/CO antes de interpretar prevalencia."
+    });
+  }
+
+  for (const item of data.ttSemTsDetalhe ?? []) {
+    addManagementRow(map, item, {
+      score: item.count * 10,
+      criticos: item.count,
+      acao: "Revisar TT sem TS: possivel erro de classificacao clinica."
+    });
+  }
+
+  for (const item of data.crossBankDivergences ?? []) {
+    const peso = item.risco === "alto" ? 5 : item.risco === "medio" ? 2 : 1;
+    addManagementRow(map, item, {
+      score: Math.abs(item.diff) * peso,
+      alertas: item.risco === "alto" ? 1 : 0,
+      divergencia: item.diff,
+      acao: item.diff > 0
+        ? "Consolidado maior que individual: procurar subregistro no TRACONET."
+        : "Individual maior que consolidado: revisar duplicidade ou ausencia no consolidado."
+    });
+  }
+
+  for (const item of data.duplicateNotificationIds ?? []) {
+    addManagementRow(map, {
+      municipio: item.municipio,
+      municipioNome: item.municipio,
+      gve: ""
+    }, {
+      score: item.count * 6,
+      criticos: item.count,
+      acao: "Verificar NU_NOTIFIC duplicado."
+    });
+  }
+
+  return Array.from(map.values())
+    .filter((row) => row.score > 0)
+    .sort((a, b) => b.score - a.score || b.criticos - a.criticos)
+    .slice(0, 20);
+}
+
+function buildCorrectionCsv(data: SinanAuditResult) {
+  const rows = [["tipo", "prioridade", "municipio", "gve", "ano", "quantidade", "detalhe"]];
+
+  for (const item of data.semFormaClinicaDetalhe ?? []) rows.push(["Sem forma positiva", "Critico", item.municipioNome, item.gve, "", String(item.count), "Sem TF/TI/TS/TT/CO positivo"]);
+  for (const item of data.ttSemTsDetalhe ?? []) rows.push(["TT sem TS", "Critico", item.municipioNome, item.gve, "", String(item.count), "TT isolado deve ser revisado"]);
+  for (const item of data.crossBankDivergences ?? []) rows.push(["Divergencia bancos", item.risco, item.municipioNome, item.gve, String(item.ano), String(item.diff), "NOTTRACONET - TRACONET"]);
+  for (const item of data.duplicateNotificationIds ?? []) rows.push(["NU_NOTIFIC duplicado", "Critico", item.municipio, "", String(item.ano || ""), String(item.count), item.id]);
+
+  return rows.map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(";")).join("\n");
+}
+
+function downloadCorrections(data: SinanAuditResult) {
+  const csv = buildCorrectionCsv(data);
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `sinan-tracoma-correcoes-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function GestaoTab({ data }: { data: SinanAuditResult }) {
+  const priorities = buildManagementRows(data);
+  const examinados = data.consolidatedMetrics?.examinados?.value ?? 0;
+  const positivos = data.consolidatedMetrics?.positivos?.value ?? data.totalNottraconet ?? 0;
+  const tratamentoRegistrado = Math.max(data.totalTraconet - data.semTratamento, 0);
+  const encerrados = Math.max(data.totalTraconet - data.semConclusao, 0);
+  const funnel = [
+    { label: "Examinados", value: examinados, tone: "neutral" },
+    { label: "Positivos consolidados", value: positivos, tone: "neutral" },
+    { label: "Casos individuais", value: data.totalTraconet, tone: "neutral" },
+    { label: "Forma clinica valida", value: data.casosComFormaClinica ?? data.totalTraconetPositive ?? 0, tone: "green" },
+    { label: "Tratamento registrado", value: tratamentoRegistrado, tone: "amber" },
+    { label: "Encerrados", value: encerrados, tone: "green" }
+  ];
+  const maxFunnel = Math.max(...funnel.map((item) => item.value), 1);
+  const criticos =
+    (data.casosSemFormaPositiva ?? data.semGraduacao ?? 0) +
+    (data.ttSemTs ?? 0) +
+    (data.duplicateNotificationIds?.length ?? 0);
+  const altoRisco = (data.crossBankDivergences ?? []).filter((item) => item.risco === "alto").length;
+  const thCls = "px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground";
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold">Sala de situacao - Tracoma</h2>
+          <p className="text-xs text-muted-foreground">
+            Priorizacao territorial para corrigir base, fechar casos e alinhar TRACONET com NOTTRACONET.
+          </p>
+        </div>
+        <Button size="sm" variant="outline" onClick={() => downloadCorrections(data)}>
+          <Download className="mr-2 h-4 w-4" />
+          Exportar correcoes
+        </Button>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-4">
+        <KpiCard label="Pendencias criticas" value={criticos.toLocaleString("pt-BR")} sub="Forma, TT sem TS e duplicidades" tone={criticos > 0 ? "red" : "green"} icon={<AlertTriangle className="h-4 w-4" />} />
+        <KpiCard label="Municipios priorizados" value={priorities.length.toLocaleString("pt-BR")} sub="Com algum alerta territorial" tone={priorities.length > 0 ? "amber" : "green"} icon={<Target className="h-4 w-4" />} />
+        <KpiCard label="Divergencias alto risco" value={altoRisco.toLocaleString("pt-BR")} sub="Municipio/ano com diferenca elevada" tone={altoRisco > 0 ? "red" : "green"} icon={<Activity className="h-4 w-4" />} />
+        <KpiCard label="Conclusao pendente" value={data.semConclusao.toLocaleString("pt-BR")} sub="Casos sem encerramento" tone={data.semConclusao > 0 ? "amber" : "green"} icon={<ClipboardList className="h-4 w-4" />} />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Fila de prioridade por territorio</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Escore combina volume de erro clinico, TT sem TS, duplicidade e divergencia entre bancos.
+            </p>
+          </CardHeader>
+          <CardContent className="overflow-x-auto p-0">
+            {priorities.length ? (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/30">
+                    <th className={thCls}>Prioridade</th>
+                    <th className={thCls}>Municipio</th>
+                    <th className={thCls}>GVE</th>
+                    <th className={`${thCls} text-right`}>Criticos</th>
+                    <th className={`${thCls} text-right`}>Divergencia</th>
+                    <th className={thCls}>Acao indicada</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {priorities.map((row, index) => (
+                    <tr key={row.key} className="border-b last:border-0 hover:bg-muted/20">
+                      <td className="px-4 py-2.5">
+                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+                          {index + 1}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 font-medium">
+                        {row.municipioNome !== row.municipio ? row.municipioNome : row.municipio}
+                        {row.municipioNome !== row.municipio && (
+                          <span className="ml-1 text-[10px] text-muted-foreground">({row.municipio})</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-xs text-muted-foreground">{row.gve || "-"}</td>
+                      <td className="px-4 py-2.5 text-right font-semibold tabular-nums text-red-700">{row.criticos.toLocaleString("pt-BR")}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">{row.divergencia.toLocaleString("pt-BR")}</td>
+                      <td className="px-4 py-2.5 text-xs text-muted-foreground">{row.acao}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div className="flex h-28 items-center justify-center text-sm text-muted-foreground">
+                <CheckCircle2 className="mr-2 h-4 w-4 text-green-500" />
+                Nenhuma prioridade critica detectada para os filtros atuais.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Linha do cuidado</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Visao de fluxo: examinar, confirmar, registrar forma, tratar e encerrar.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {funnel.map((item) => {
+              const color = item.tone === "green" ? "bg-green-500" : item.tone === "amber" ? "bg-amber-400" : "bg-primary";
+              return (
+                <div key={item.label}>
+                  <div className="mb-1 flex justify-between gap-3 text-xs">
+                    <span className="text-muted-foreground">{item.label}</span>
+                    <span className="font-semibold tabular-nums">{item.value.toLocaleString("pt-BR")}</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-muted">
+                    <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.max(3, Math.round((item.value / maxFunnel) * 100))}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
 
 type DivTab = "ano" | "gve" | "municipio";
 
@@ -812,7 +1041,7 @@ function CompletudeTecnicoTab({ data }: { data: SinanAuditResult }) {
 
 // ── Componente principal ──────────────────────────────────────────────────────
 
-type PageTab = "divergencias" | "qualidade" | "completude" | "taxas";
+type PageTab = "gestao" | "divergencias" | "qualidade" | "completude" | "taxas";
 
 export function SinanQualidadeView() {
   const [municipio, setMunicipio] = useState("");
@@ -820,7 +1049,7 @@ export function SinanQualidadeView() {
   const [yearStart, setYearStart] = useState("");
   const [yearEnd,   setYearEnd]   = useState("");
   const [filters,   setFilters]   = useState<Record<string, string>>({});
-  const [pageTab,   setPageTab]   = useState<PageTab>("divergencias");
+  const [pageTab,   setPageTab]   = useState<PageTab>("gestao");
   const gveOptions = useMemo(() => listarGvesSp(), []);
   const municipioOptions = useMemo(() => listarMunicipiosPorGve(gve), [gve]);
 
@@ -868,6 +1097,7 @@ export function SinanQualidadeView() {
   const alertasCount =
     (data?.tfSemTratamento ?? 0) +
     (data?.ttSemCircurgia ?? 0) +
+    (data?.ttSemTs ?? 0) +
     (data?.semConclusao ?? 0) +
     (data?.duplicateNotificationIds?.length ?? 0) +
     (clinicalMappingMissing ? 0 : data?.semGraduacao ?? 0);
@@ -877,6 +1107,7 @@ export function SinanQualidadeView() {
     .map((r) => ({ ano: String(r.ano), individuais: r.traconet, positivos: r.nottraconet }));
 
   const pageTabs: { id: PageTab; label: string; icon: React.ReactNode; badge?: number }[] = [
+    { id: "gestao",       label: "Gestao", icon: <Target className="h-4 w-4" />, badge: data ? buildManagementRows(data).length : undefined },
     { id: "divergencias", label: "Divergências",    icon: <Activity className="h-4 w-4" />,   badge: data?.crossBankDivergences.length },
     { id: "qualidade",    label: "Qualidade Clínica", icon: <Stethoscope className="h-4 w-4" />, badge: alertasCount + (data?.semGraduacao ?? 0) },
     { id: "completude",   label: "Completude & Técnico", icon: <BarChart2 className="h-4 w-4" /> },
@@ -1155,6 +1386,7 @@ END;`}</pre>
               ))}
             </div>
             <div className="p-5">
+              {pageTab === "gestao" && <GestaoTab data={data} />}
               {pageTab === "divergencias" && <DivergenciasTab data={data} />}
               {pageTab === "qualidade"    && <QualidadeClinicaTab data={data} clinicalMappingMissing={clinicalMappingMissing} />}
               {pageTab === "completude"   && <CompletudeTecnicoTab data={data} />}
