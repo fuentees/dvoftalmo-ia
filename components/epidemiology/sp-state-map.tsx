@@ -39,15 +39,23 @@ function buildPaths(geoJson: GeoShape) {
   const features = extractFeatures(geoJson);
   const rings = features.flatMap((feature) => getRings(feature.geometry));
 
-  const allPoints = rings.flatMap((ring) => ring.map(([lng, lat]) => ({ lng, lat })));
-  if (allPoints.length === 0) {
-    return [];
+  let pointCount = 0;
+  let minLng = Infinity;
+  let maxLng = -Infinity;
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+
+  for (const ring of rings) {
+    for (const [lng, lat] of ring) {
+      pointCount += 1;
+      if (lng < minLng) minLng = lng;
+      if (lng > maxLng) maxLng = lng;
+      if (lat < minLat) minLat = lat;
+      if (lat > maxLat) maxLat = lat;
+    }
   }
 
-  const minLng = Math.min(...allPoints.map((point) => point.lng));
-  const maxLng = Math.max(...allPoints.map((point) => point.lng));
-  const minLat = Math.min(...allPoints.map((point) => point.lat));
-  const maxLat = Math.max(...allPoints.map((point) => point.lat));
+  if (pointCount === 0) return [];
 
   const scaleX = (SVG_WIDTH - 2 * MARGIN) / (maxLng - minLng);
   const scaleY = (SVG_HEIGHT - 2 * MARGIN) / (maxLat - minLat);

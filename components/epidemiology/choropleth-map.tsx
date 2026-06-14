@@ -32,16 +32,25 @@ function buildPaths(features: Feature<Geometry, any>[]) {
     properties: feature.properties
   }));
 
-  const allPoints = rings.flatMap((r) =>
-    r.rings.flatMap((ring) => ring.map(([lng, lat]) => ({ lng, lat })))
-  );
+  let pointCount = 0;
+  let minLng = Infinity;
+  let maxLng = -Infinity;
+  let minLat = Infinity;
+  let maxLat = -Infinity;
 
-  if (allPoints.length === 0) return [];
+  for (const item of rings) {
+    for (const ring of item.rings) {
+      for (const [lng, lat] of ring) {
+        pointCount += 1;
+        if (lng < minLng) minLng = lng;
+        if (lng > maxLng) maxLng = lng;
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+      }
+    }
+  }
 
-  const minLng = Math.min(...allPoints.map((p) => p.lng));
-  const maxLng = Math.max(...allPoints.map((p) => p.lng));
-  const minLat = Math.min(...allPoints.map((p) => p.lat));
-  const maxLat = Math.max(...allPoints.map((p) => p.lat));
+  if (pointCount === 0) return [];
 
   const scaleX = (SVG_WIDTH - 2 * MARGIN) / (maxLng - minLng);
   const scaleY = (SVG_HEIGHT - 2 * MARGIN) / (maxLat - minLat);
