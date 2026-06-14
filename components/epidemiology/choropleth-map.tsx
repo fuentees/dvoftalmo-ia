@@ -83,13 +83,28 @@ export function ChoroplethMap({
     const fetchData = async () => {
       try {
         setLoading(true);
+        console.log(`[ChoroplethMap] Fetching from ${dataUrl}`);
         const response = await fetch(dataUrl);
-        if (!response.ok) throw new Error(`Failed to fetch: ${response.statusText}`);
+        
+        if (!response.ok) {
+          let errorDetail = response.statusText;
+          try {
+            const errorJson = await response.json();
+            errorDetail = errorJson.error || errorJson.message || errorDetail;
+          } catch {
+            // Se não conseguir fazer parse JSON, usa statusText
+          }
+          throw new Error(`API error (${response.status}): ${errorDetail}`);
+        }
+        
         const data = await response.json();
+        console.log(`[ChoroplethMap] Loaded ${data.features?.length || 0} features`);
         setGeoData(data);
         setError(null);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Unknown error");
+        const errMsg = err instanceof Error ? err.message : "Unknown error";
+        console.error(`[ChoroplethMap] Error:`, errMsg);
+        setError(errMsg);
       } finally {
         setLoading(false);
       }
@@ -111,7 +126,8 @@ export function ChoroplethMap({
     return (
       <div className={`flex flex-col items-center justify-center rounded-lg border border-dashed p-8 text-amber-600 ${className}`}>
         <AlertTriangle className="h-5 w-5" />
-        <p className="mt-2 text-sm">{error || "Não foi possível carregar o mapa"}</p>
+        <p className="mt-2 text-sm font-medium">{error || "Não foi possível carregar o mapa"}</p>
+        {dataUrl && <p className="mt-1 text-xs text-amber-500 break-all">{dataUrl}</p>}
       </div>
     );
   }
