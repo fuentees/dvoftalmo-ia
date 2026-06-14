@@ -32,6 +32,8 @@ export async function GET(request: Request) {
     if (error instanceof Error) {
       console.error("[geo/shapefiles] Stack:", error.stack);
     }
-    return NextResponse.json({ error: msg, type }, { status: 500 });
+    const payload: any = { error: msg, type };
+    if (error instanceof Error && error.stack) payload.stack = error.stack;
+    return NextResponse.json(payload, { status: 500 });
   }
 }
