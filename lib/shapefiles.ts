@@ -23,15 +23,18 @@ export async function loadShapefileAsGeoJSON(
     const dbfUrl = pathToFileURL(dbfPath).href;
     console.log(`[shapefiles] Attempting open using file URLs: ${shpUrl}, ${dbfUrl}`);
 
+    const attemptErrors: any[] = [];
     let source: any = null;
     try {
       source = await shapefile.open(shpUrl, dbfUrl);
     } catch (firstErr) {
       console.warn(`[shapefiles] Failed opening with file URLs: ${String(firstErr)}. Trying local paths...`);
+      attemptErrors.push({ step: "fileUrl", message: String(firstErr), stack: firstErr && (firstErr as Error).stack });
       try {
         source = await shapefile.open(shpPath, dbfPath);
       } catch (secondErr) {
         console.warn(`[shapefiles] Failed opening with local paths: ${String(secondErr)}. Trying shapefile.read fallback...`);
+        attemptErrors.push({ step: "localPath", message: String(secondErr), stack: secondErr && (secondErr as Error).stack });
         try {
           // shapefile.read returns a FeatureCollection directly
           const fc = await (shapefile as any).read(shpPath);
@@ -41,7 +44,8 @@ export async function loadShapefileAsGeoJSON(
           }
         } catch (readErr) {
           console.error(`[shapefiles] shapefile.read fallback failed: ${String(readErr)}`);
-          throw readErr;
+          attemptErrors.push({ step: "shapefile.read", message: String(readErr), stack: readErr && (readErr as Error).stack });
+          // continue to next fallback
         }
         // As a last resort, read the .shp and .dbf files into memory and try opening from ArrayBuffers
         try {
@@ -53,10 +57,12 @@ export async function loadShapefileAsGeoJSON(
           source = await shapefile.open(shpArray as any, dbfArray as any);
         } catch (memErr) {
           console.error(`[shapefiles] In-memory ArrayBuffer fallback failed: ${String(memErr)}`);
-          throw memErr;
+          attemptErrors.push({ step: "inMemory", message: String(memErr), stack: memErr && (memErr as Error).stack });
+          // if all fallbacks failed, throw consolidated error
+          throw new Error(JSON.stringify({ message: "All shapefile open attempts failed", attempts: attemptErrors }));
         }
-        // If we reach here without a source or fc, rethrow secondErr
-        throw secondErr;
+        // If we reach here without a source or fc, throw consolidated error
+        throw new Error(JSON.stringify({ message: "Local path and read fallbacks failed", attempts: attemptErrors }));
       }
     }
     const features: any[] = [];
