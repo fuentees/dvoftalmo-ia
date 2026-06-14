@@ -155,7 +155,7 @@ export async function buildCevespRates() {
     methodology: "casos CEVESP (TotalCaso) / populacao municipal IBGE x 100.000",
     byMunicipality: municipalityRows,
     byGve: gveRows,
-    mapRows: municipalityRows.slice(0, 120)
+    mapRows: municipalityRows
   };
 }
 
@@ -233,6 +233,6 @@ export async function buildSinanTracomaRates() {
     methodology: "prevalencia = positivos / examinados x 100; taxa de deteccao = positivos / populacao x 100.000; cobertura = examinados / populacao x 100",
     byMunicipality: municipalityRows,
     byGve: gveRows,
-    mapRows: municipalityRows.slice(0, 120)
+    mapRows: municipalityRows
   };
 }

@@ -32,6 +32,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertsPanel } from "@/components/dashboard/alerts-panel";
+import { RateMap, type RateMapRow } from "@/components/epidemiology/rate-map";
 import type { CevespKpis } from "@/services/cevesp-kpis";
 
 type Tab = "geral" | "conjuntivites" | "tracoma";
@@ -63,22 +64,50 @@ interface SinanSnapshot {
   duplicateNotificationIds?: Array<unknown>;
 }
 
+type RateAnalysis = {
+  missingPopulation?: boolean;
+  message?: string;
+  analysisYear?: number;
+  populationYear?: number | null;
+  metric?: string;
+  methodology?: string;
+  byMunicipality?: RateMapRow[];
+  byGve?: RateMapRow[];
+  mapRows?: RateMapRow[];
+};
+
 const tabs: Array<{ id: Tab; label: string; icon: React.ReactNode }> = [
   { id: "geral", label: "Geral", icon: <Activity className="h-4 w-4" /> },
   { id: "conjuntivites", label: "Conjuntivites", icon: <Eye className="h-4 w-4" /> },
   { id: "tracoma", label: "Tracoma", icon: <Stethoscope className="h-4 w-4" /> }
 ];
 
-const missingSignals = [
-  "Mapa por município/GVE",
-  "Taxas com população",
-  "Oportunidade da notificação",
-  "Plano de ação por alerta"
-];
-
 function formatValue(value: number | undefined) {
   if (value === undefined) return "-";
   return value.toLocaleString("pt-BR");
+}
+
+function riskSummary(rows?: RateMapRow[]) {
+  const summary = { baixo: 0, atencao: 0, medio: 0, alto: 0, indefinido: 0 };
+  rows?.forEach((row) => {
+    switch (row.riskColor) {
+      case "#14b8a6":
+        summary.baixo += 1;
+        break;
+      case "#84cc16":
+        summary.atencao += 1;
+        break;
+      case "#f59e0b":
+        summary.medio += 1;
+        break;
+      case "#dc2626":
+        summary.alto += 1;
+        break;
+      default:
+        summary.indefinido += 1;
+    }
+  });
+  return summary;
 }
 
 function DeltaBadge({ delta }: { delta: number | null }) {
@@ -172,6 +201,8 @@ function EmptyState({ title, detail }: { title: string; detail: string }) {
 
 export function DashboardView() {
   const [tab, setTab] = useState<Tab>("geral");
+  const [cevespMapView, setCevespMapView] = useState<"municipio" | "gve">("municipio");
+  const [sinanMapView, setSinanMapView] = useState<"municipio" | "gve">("municipio");
 
   const kpis = useQuery<CevespKpis>({
     queryKey: ["cevesp-kpis"],
@@ -196,6 +227,46 @@ export function DashboardView() {
     retry: false,
     staleTime: 5 * 60 * 1000
   });
+
+  const cevespRates = useQuery<RateAnalysis>({
+    queryKey: ["cevesp-rates"],
+    queryFn: async () => {
+      const response = await fetch("/api/cevesp/taxas");
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Erro ao buscar taxas CEVESP");
+      return data;
+    },
+    retry: false,
+    staleTime: 5 * 60 * 1000
+  });
+
+  const sinanRates = useQuery<RateAnalysis>({
+    queryKey: ["sinan-rates"],
+    queryFn: async () => {
+      const response = await fetch("/api/sinan/taxas");
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Erro ao buscar taxas SINAN");
+      return data;
+    },
+    retry: false,
+    staleTime: 5 * 60 * 1000
+  });
+
+  const cevespMapLoaded = !!cevespRates.data?.mapRows?.length && !cevespRates.data.missingPopulation;
+  const sinanMapLoaded = !!sinanRates.data?.mapRows?.length && !sinanRates.data.missingPopulation;
+
+  const missingSignals = [
+    ...(cevespRates.isError || (!cevespMapLoaded && !cevespRates.isLoading) ? ["Mapa por município/GVE (CEVESP)"] : []),
+    ...(sinanRates.isError || (!sinanMapLoaded && !sinanRates.isLoading) ? ["Mapa por município/GVE (Tracoma)"] : []),
+    ...(kpis.isError ? ["Taxas com população"] : []),
+    ...(sinan.isError ? ["Oportunidade da notificação"] : []),
+    ...(cevespRates.isLoading || sinanRates.isLoading ? ["Carregando mapas de SP"] : [])
+  ];
+
+  const cevespMapRows = cevespMapView === "municipio" ? cevespRates.data?.byMunicipality ?? [] : cevespRates.data?.byGve ?? [];
+  const sinanMapRows = sinanMapView === "municipio" ? sinanRates.data?.byMunicipality ?? [] : sinanRates.data?.byGve ?? [];
+  const cevespRiskCounts = riskSummary(cevespMapRows);
+  const sinanRiskCounts = riskSummary(sinanMapRows);
 
   const weekData = kpis.data
     ? [
@@ -239,10 +310,12 @@ export function DashboardView() {
               onClick={() => {
                 kpis.refetch();
                 sinan.refetch();
+                cevespRates.refetch();
+                sinanRates.refetch();
               }}
-              disabled={kpis.isFetching || sinan.isFetching}
+              disabled={kpis.isFetching || sinan.isFetching || cevespRates.isFetching || sinanRates.isFetching}
             >
-              <RefreshCw className={`h-4 w-4 ${kpis.isFetching || sinan.isFetching ? "animate-spin" : ""}`} />
+              <RefreshCw className={`h-4 w-4 ${kpis.isFetching || sinan.isFetching || cevespRates.isFetching || sinanRates.isFetching ? "animate-spin" : ""}`} />
               Atualizar
             </Button>
             <Button size="sm" asChild>
@@ -335,14 +408,18 @@ export function DashboardView() {
 
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle>Fila do gestor</CardTitle>
-                  <CardDescription>Ações de hoje</CardDescription>
+                  <CardTitle>Mapa de SP</CardTitle>
+                  <CardDescription>Disponibilidade dos mapas municipais e GVE</CardDescription>
                 </CardHeader>
-                <CardContent className="grid gap-2 sm:grid-cols-2">
-                  <ActionButton href="/alertas" label="Validar alertas" />
-                  <ActionButton href="/sinan-qualidade" label="Auditar SINAN" />
-                  <ActionButton href="/cevesp-qualidade" label="Qualidade CEVESP" />
-                  <ActionButton href="/boletins" label="Gerar boletim" />
+                <CardContent className="space-y-2">
+                  <div className="rounded-md border p-3">
+                    <p className="text-sm text-muted-foreground">CEVESP</p>
+                    <p className="text-base font-semibold">{cevespRates.isLoading ? "Carregando..." : cevespMapLoaded ? "Disponível" : "Indisponível"}</p>
+                  </div>
+                  <div className="rounded-md border p-3">
+                    <p className="text-sm text-muted-foreground">SINAN Tracoma</p>
+                    <p className="text-base font-semibold">{sinanRates.isLoading ? "Carregando..." : sinanMapLoaded ? "Disponível" : "Indisponível"}</p>
+                  </div>
                 </CardContent>
               </Card>
 
@@ -351,12 +428,16 @@ export function DashboardView() {
                   <CardTitle>Sinais ausentes</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2">
-                  {missingSignals.map((signal) => (
-                    <div key={signal} className="flex items-center gap-2 text-sm">
-                      <CheckCircle2 className="h-4 w-4 text-amber-600" />
-                      <span>{signal}</span>
-                    </div>
-                  ))}
+                  {missingSignals.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">Todos os principais indicadores estão disponíveis.</div>
+                  ) : (
+                    missingSignals.map((signal) => (
+                      <div key={signal} className="flex items-center gap-2 text-sm">
+                        <CheckCircle2 className="h-4 w-4 text-amber-600" />
+                        <span>{signal}</span>
+                      </div>
+                    ))
+                  )}
                 </CardContent>
               </Card>
             </div>
@@ -446,6 +527,68 @@ export function DashboardView() {
                 <ActionButton href="/notificacoes" label="Consultar banco" />
                 <ActionButton href="/cevesp-qualidade" label="Revisar qualidade" />
                 <ActionButton href="/correcoes" label="Tratar correções" />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <CardTitle>Mapa operacional SP</CardTitle>
+                    <CardDescription>CEVESP - taxas por município e GVE</CardDescription>
+                  </div>
+                  <div className="inline-flex rounded-md border bg-background p-1">
+                    {(["municipio", "gve"] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => setCevespMapView(mode)}
+                        className={`rounded px-3 py-1 text-xs font-semibold transition ${cevespMapView === mode ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
+                      >
+                        {mode === "municipio" ? "Município" : "GVE"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {cevespRates.isLoading ? (
+                  <EmptyState title="Carregando mapa CEVESP" detail="Aguarde a atualização dos dados." />
+                ) : cevespRates.isError || !cevespRates.data?.mapRows?.length ? (
+                  <EmptyState title="Mapa CEVESP indisponível" detail="Não foi possível carregar o mapa de SP." />
+                ) : (
+                  <>
+                    <div className="mb-3 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+                      <span>{cevespMapView === "municipio" ? `${cevespRates.data.byMunicipality?.length ?? 0} municípios` : `${cevespRates.data.byGve?.length ?? 0} GVE`}</span>
+                      <span className="text-[11px] uppercase tracking-[0.16em]">População IBGE {cevespRates.data.populationYear ?? "-"}</span>
+                      <span className="inline-flex items-center gap-2 rounded-full border px-2 py-1 text-xs">
+                        <span className="h-2.5 w-2.5 rounded-sm bg-[#dc2626]" />{cevespRiskCounts.alto}
+                        <span className="h-2.5 w-2.5 rounded-sm bg-[#f59e0b]" />{cevespRiskCounts.medio}
+                        <span className="h-2.5 w-2.5 rounded-sm bg-[#84cc16]" />{cevespRiskCounts.atencao}
+                        <span className="h-2.5 w-2.5 rounded-sm bg-[#14b8a6]" />{cevespRiskCounts.baixo}
+                      </span>
+                    </div>
+                    <RateMap
+                      title={`CEVESP SP - ${cevespMapView === "municipio" ? "Municípios" : "GVE"}`}
+                      description="Incidência de conjuntivite por 100 mil habitantes"
+                      rows={cevespMapRows}
+                      valueKey="incidencia100k"
+                      valueLabel="incidência/100k"
+                      tableColumns={
+                        cevespMapView === "municipio"
+                          ? [
+                              { key: "municipio", label: "Município" },
+                              { key: "gve", label: "GVE" },
+                              { key: "incidencia100k", label: "Incidência/100k", decimals: 1 }
+                            ]
+                          : [
+                              { key: "gve", label: "GVE" },
+                              { key: "incidencia100k", label: "Incidência/100k", decimals: 1 }
+                            ]
+                      }
+                    />
+                  </>
+                )}
               </CardContent>
             </Card>
           </>
@@ -597,6 +740,68 @@ export function DashboardView() {
                 </CardContent>
               </Card>
             </div>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <CardTitle>Mapa operacional SP</CardTitle>
+                    <CardDescription>SINAN Tracoma - prevalência por município e GVE</CardDescription>
+                  </div>
+                  <div className="inline-flex rounded-md border bg-background p-1">
+                    {(["municipio", "gve"] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => setSinanMapView(mode)}
+                        className={`rounded px-3 py-1 text-xs font-semibold transition ${sinanMapView === mode ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
+                      >
+                        {mode === "municipio" ? "Município" : "GVE"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {sinanRates.isLoading ? (
+                  <EmptyState title="Carregando mapa Tracoma" detail="Aguarde a atualização dos dados." />
+                ) : sinanRates.isError || !sinanRates.data?.mapRows?.length ? (
+                  <EmptyState title="Mapa Tracoma indisponível" detail="Não foi possível carregar o mapa de SP." />
+                ) : (
+                  <>
+                    <div className="mb-3 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+                      <span>{sinanMapView === "municipio" ? `${sinanRates.data.byMunicipality?.length ?? 0} municípios` : `${sinanRates.data.byGve?.length ?? 0} GVE`}</span>
+                      <span className="text-[11px] uppercase tracking-[0.16em]">População IBGE {sinanRates.data.populationYear ?? "-"}</span>
+                      <span className="inline-flex items-center gap-2 rounded-full border px-2 py-1 text-xs">
+                        <span className="h-2.5 w-2.5 rounded-sm bg-[#dc2626]" />{sinanRiskCounts.alto}
+                        <span className="h-2.5 w-2.5 rounded-sm bg-[#f59e0b]" />{sinanRiskCounts.medio}
+                        <span className="h-2.5 w-2.5 rounded-sm bg-[#84cc16]" />{sinanRiskCounts.atencao}
+                        <span className="h-2.5 w-2.5 rounded-sm bg-[#14b8a6]" />{sinanRiskCounts.baixo}
+                      </span>
+                    </div>
+                    <RateMap
+                      title={`SINAN Tracoma SP - ${sinanMapView === "municipio" ? "Municípios" : "GVE"}`}
+                      description="Prevalência de tracoma entre examinados"
+                      rows={sinanMapRows}
+                      valueKey="prevalencia"
+                      valueLabel="prevalência %"
+                      tableColumns={
+                        sinanMapView === "municipio"
+                          ? [
+                              { key: "municipio", label: "Município" },
+                              { key: "gve", label: "GVE" },
+                              { key: "prevalencia", label: "Prevalência %", decimals: 1 }
+                            ]
+                          : [
+                              { key: "gve", label: "GVE" },
+                              { key: "prevalencia", label: "Prevalência %", decimals: 1 }
+                            ]
+                      }
+                    />
+                  </>
+                )}
+              </CardContent>
+            </Card>
           </>
         )}
 
