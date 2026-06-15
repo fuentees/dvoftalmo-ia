@@ -656,7 +656,8 @@ function normalizeBankLabel(v: unknown): string {
   const forms = clinicalFormsFromValue(v);
   if (forms.length > 0) return forms.join("+");
   const s = String(v ?? "").toLowerCase().trim();
-  if (s === "4" || s.includes("nao tracoma") || s.includes("n?o tracoma")) return "Nao tracoma";
+  const normalized = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (s === "4" || normalized.includes("nao tracoma")) return "Nao tracoma";
   if (s === "5" || s.includes("inconclusivo")) return "Inconclusivo";
   return s || "Nao preenchido";
 }
@@ -977,7 +978,11 @@ export async function auditarSinanTracoma(opts?: {
   const fieldCompleteness: SinanAuditResult["fieldCompleteness"] = {};
   const baseRows = traconetRows.length > 0 ? traconetRows : nottraconetRows; // fallback se só houver um banco
   for (const f of fieldsTraconet) {
-    const filled = baseRows.filter((r) => !isBlank(r[f])).length;
+    const filled = baseRows.filter((r) => (
+      f === "classificacao"
+        ? clinicalFormsFromAuditRow(r).length > 0 || !isBlank(r[f])
+        : !isBlank(r[f])
+    )).length;
     fieldCompleteness[f] = { total: baseRows.length, filled, pct: baseRows.length ? Math.round((filled / baseRows.length) * 100) : 0 };
   }
 
@@ -998,9 +1003,7 @@ export async function auditarSinanTracoma(opts?: {
       .sort((a, b) => b.count - a.count);
   }
 
-  const clinicalFormsByRow = new Map<string, ClinicalForm[]>();
-  for (const r of traconetRows) clinicalFormsByRow.set(String(r.row_key ?? ""), clinicalFormsFromAuditRow(r));
-  const formsOf = (r: Record<string, unknown>) => clinicalFormsByRow.get(String(r.row_key ?? "")) ?? clinicalFormsFromAuditRow(r);
+  const formsOf = (r: Record<string, unknown>) => clinicalFormsFromAuditRow(r);
 
   const casosComFormaClinica = traconetRows.filter((r) => formsOf(r).length > 0).length;
   const semFormaPositivaRows = traconetRows.filter((r) => formsOf(r).length === 0);
@@ -1025,7 +1028,8 @@ export async function auditarSinanTracoma(opts?: {
     const trat = String(r.tratamento ?? "").toLowerCase();
     const conc = String(r.conclusao ?? "").toLowerCase();
     if (conc.includes("encaminhamento cirurgia: sim")) return false;
-    if (conc.includes("encaminhamento cirurgia: nao") || conc.includes("encaminhamento cirurgia: n?o")) return true;
+    const concNorm = conc.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    if (concNorm.includes("encaminhamento cirurgia: nao")) return true;
     return !trat.includes("cirurg") && !trat.includes("epila") && !conc.includes("cirurg");
   }).length;
   const ttSemTs = ttSemTsRows.length;
@@ -1096,7 +1100,11 @@ export async function auditarSinanTracoma(opts?: {
     const munic = [...new Set(bankRows.map((r) => String(r.municipio ?? "")).filter(Boolean))].slice(0, 5) as string[];
     const anos  = [...new Set(bankRows.map((r) => resolveAuditYear(r)).filter((a): a is number => a != null && Number.isFinite(a) && a > 0))].sort((a: number, b: number) => a - b).slice(0, 5) as number[];
     const normalizedCols = ["agravo","municipio","gve","classificacao","tratamento","conclusao"];
-    const preenchidos = normalizedCols.filter((f) => bankRows.some((r) => !isBlank(r[f])));
+    const preenchidos = normalizedCols.filter((f) => bankRows.some((r) => (
+      f === "classificacao"
+        ? clinicalFormsFromAuditRow(r).length > 0 || !isBlank(r[f])
+        : !isBlank(r[f])
+    )));
     const numericUsage = new Map<string, { exemplo: number; score: number; count: number }>();
     for (const row of bankRows.slice(0, 200)) {
       for (const [campo, valor] of Object.entries(rawObject(row))) {
