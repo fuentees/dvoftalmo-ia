@@ -63,17 +63,75 @@ async function loadPopulation() {
     const rows = await fetchAll("ibge_municipio_populacao", "codigo_ibge, municipio, uf, ano, populacao");
     const typed = rows as unknown as PopulationRow[];
     const latestYear = Math.max(...typed.map((row) => Number(row.ano)).filter(Number.isFinite), 0);
-    const latestRows = typed.filter((row) => Number(row.ano) === latestYear);
-    const byCode = new Map(latestRows.map((row) => [String(row.codigo_ibge).slice(0, 6), row]));
-    const byName = new Map(latestRows.map((row) => [normalizeText(row.municipio), row]));
-    return { latestYear, rows: latestRows, byCode, byName };
+    const years = Array.from(new Set(typed.map((row) => Number(row.ano)).filter(Number.isFinite))).sort((a, b) => a - b);
+    const byCodeYear = new Map<string, PopulationRow>();
+    const byNameYear = new Map<string, PopulationRow>();
+    const byCode = new Map<string, PopulationRow[]>();
+    const byName = new Map<string, PopulationRow[]>();
+
+    for (const row of typed) {
+      const year = Number(row.ano);
+      const code = String(row.codigo_ibge).replace(/\D/g, "").slice(0, 6);
+      const name = normalizeText(row.municipio);
+      byCodeYear.set(`${code}:${year}`, row);
+      byNameYear.set(`${name}:${year}`, row);
+      byCode.set(code, [...(byCode.get(code) ?? []), row]);
+      byName.set(name, [...(byName.get(name) ?? []), row]);
+    }
+
+    for (const list of [...byCode.values(), ...byName.values()]) {
+      list.sort((a, b) => Number(a.ano) - Number(b.ano));
+    }
+
+    return { latestYear, years, rows: typed, byCode, byName, byCodeYear, byNameYear };
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     if (msg.includes("ibge_municipio_populacao") || msg.includes("schema cache") || msg.includes("PGRST")) {
-      return { latestYear: null, rows: [], byCode: new Map<string, PopulationRow>(), byName: new Map<string, PopulationRow>(), missing: true };
+      return {
+        latestYear: null,
+        years: [],
+        rows: [],
+        byCode: new Map<string, PopulationRow[]>(),
+        byName: new Map<string, PopulationRow[]>(),
+        byCodeYear: new Map<string, PopulationRow>(),
+        byNameYear: new Map<string, PopulationRow>(),
+        missing: true
+      };
     }
     throw error;
   }
+}
+
+type PopulationIndex = Awaited<ReturnType<typeof loadPopulation>>;
+
+function closestPopulation(rows: PopulationRow[] | undefined, year: number) {
+  if (!rows?.length) return null;
+  const exact = rows.find((row) => Number(row.ano) === year);
+  if (exact) return exact;
+  const previous = [...rows].reverse().find((row) => Number(row.ano) <= year);
+  if (previous) return previous;
+  return rows[0] ?? null;
+}
+
+function getPopulationForYear(
+  population: PopulationIndex,
+  params: { codigoIbge?: string | null; municipio?: string | null; year: number }
+) {
+  const code = String(params.codigoIbge ?? "").replace(/\D/g, "").slice(0, 6);
+  const name = normalizeText(params.municipio);
+  const exact = code
+    ? population.byCodeYear.get(`${code}:${params.year}`)
+    : population.byNameYear.get(`${name}:${params.year}`);
+  const fallback = code
+    ? closestPopulation(population.byCode.get(code), params.year)
+    : closestPopulation(population.byName.get(name), params.year);
+  const row = exact ?? fallback ?? null;
+  return {
+    row,
+    value: Number(row?.populacao ?? 0),
+    sourceYear: row ? Number(row.ano) : null,
+    exact: Boolean(exact)
+  };
 }
 
 function riskColor(value: number | null, thresholds: [number, number, number]) {
@@ -114,10 +172,12 @@ export async function buildCevespRates() {
   }
 
   const municipalityRows = Array.from(byMunicipality.values()).map((row) => {
-    const pop = row.codigoIbge
-      ? population.byCode.get(row.codigoIbge)
-      : population.byName.get(normalizeText(row.municipio));
-    const populacao = Number(pop?.populacao ?? 0);
+    const pop = getPopulationForYear(population, {
+      codigoIbge: row.codigoIbge,
+      municipio: row.municipio,
+      year: analysisYear
+    });
+    const populacao = pop.value;
     const incidencia100k = incidencePer100k(row.casos, populacao);
     return {
       municipio: row.municipio,
@@ -126,6 +186,8 @@ export async function buildCevespRates() {
       ano: analysisYear,
       casos: row.casos,
       populacao,
+      populationYear: pop.sourceYear,
+      populationFallback: !pop.exact,
       incidencia100k,
       riskColor: riskColor(incidencia100k, [10, 50, 100])
     };
@@ -151,6 +213,7 @@ export async function buildCevespRates() {
     missingPopulation: false,
     analysisYear,
     populationYear: population.latestYear,
+    populationYears: population.years,
     metric: "Incidencia de conjuntivite por 100 mil habitantes",
     methodology: "casos CEVESP (TotalCaso) / populacao municipal IBGE x 100.000",
     byMunicipality: municipalityRows,
@@ -192,32 +255,71 @@ export async function buildSinanTracomaRates(options?: {
     return (gvePorCodigo(code) ?? "Nao informado") === selectedGve;
   });
 
-  const byMunicipality = new Map<string, { codigoIbge: string; municipio: string; gve: string; examinados: number; positivos: number }>();
+  const byMunicipalityYear = new Map<string, { codigoIbge: string; municipio: string; gve: string; ano: number; examinados: number; positivos: number }>();
   for (const row of currentRows) {
     const code = String(row.municipio ?? rawValue(row, ["ID_MUNICIP", "CO_MUNICIP"]) ?? "").replace(/\D/g, "").slice(0, 6);
     if (!code) continue;
-    const current = byMunicipality.get(code) ?? {
+    const ano = Number(row.ano);
+    if (!Number.isInteger(ano) || ano <= 1900) continue;
+    const key = `${code}:${ano}`;
+    const current = byMunicipalityYear.get(key) ?? {
       codigoIbge: code,
       municipio: nomeMunicipio(code),
       gve: gvePorCodigo(code) ?? "Nao informado",
+      ano,
       examinados: 0,
       positivos: 0
     };
     current.examinados += toNumber(rawValue(row, ["NU_CASOEXA", "NU_EXAMINA", "EXAMINADOS"]));
     current.positivos += toNumber(rawValue(row, ["NU_CASOPOS", "NU_CAS_POS", "POSITIVOS"]));
-    byMunicipality.set(code, current);
+    byMunicipalityYear.set(key, current);
+  }
+
+  const byMunicipality = new Map<string, {
+    codigoIbge: string;
+    municipio: string;
+    gve: string;
+    anos: number[];
+    examinados: number;
+    positivos: number;
+    populacao: number;
+    populationFallback: boolean;
+  }>();
+
+  for (const row of byMunicipalityYear.values()) {
+    const pop = getPopulationForYear(population, { codigoIbge: row.codigoIbge, year: row.ano });
+    const current = byMunicipality.get(row.codigoIbge) ?? {
+      codigoIbge: row.codigoIbge,
+      municipio: row.municipio,
+      gve: row.gve,
+      anos: [],
+      examinados: 0,
+      positivos: 0,
+      populacao: 0,
+      populationFallback: false
+    };
+    current.anos.push(row.ano);
+    current.examinados += row.examinados;
+    current.positivos += row.positivos;
+    current.populacao += pop.value;
+    current.populationFallback = current.populationFallback || !pop.exact;
+    byMunicipality.set(row.codigoIbge, current);
   }
 
   const municipalityRows = Array.from(byMunicipality.values()).map((row) => {
-    const pop = population.byCode.get(row.codigoIbge);
-    const populacao = Number(pop?.populacao ?? 0);
     const prevalencia = prevalencePercent(row.positivos, row.examinados);
-    const taxaDeteccao100k = incidencePer100k(row.positivos, populacao);
-    const coberturaExame = examCoveragePercent(row.examinados, populacao);
+    const taxaDeteccao100k = incidencePer100k(row.positivos, row.populacao);
+    const coberturaExame = examCoveragePercent(row.examinados, row.populacao);
     return {
-      ...row,
+      codigoIbge: row.codigoIbge,
+      municipio: row.municipio,
+      gve: row.gve,
       ano: analysisYear,
-      populacao,
+      anos: Array.from(new Set(row.anos)).sort((a, b) => a - b),
+      examinados: row.examinados,
+      positivos: row.positivos,
+      populacao: row.populacao,
+      populationFallback: row.populationFallback,
       prevalencia,
       taxaDeteccao100k,
       coberturaExame,
@@ -249,6 +351,7 @@ export async function buildSinanTracomaRates(options?: {
     periodStart: minYear || null,
     periodEnd: maxYear || null,
     populationYear: population.latestYear,
+    populationYears: population.years,
     metric: "Prevalencia entre examinados, taxa de deteccao e cobertura de exame",
     methodology: "prevalencia = positivos / examinados x 100; taxa de deteccao = positivos / populacao x 100.000; cobertura = examinados / populacao x 100",
     byMunicipality: municipalityRows,

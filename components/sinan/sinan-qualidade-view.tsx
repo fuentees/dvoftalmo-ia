@@ -28,6 +28,7 @@ type SinanRatesData = {
   periodStart?: number | null;
   periodEnd?: number | null;
   populationYear?: number | null;
+  populationYears?: number[];
   byMunicipality?: RateMapRow[];
   byGve?: RateMapRow[];
   mapRows?: RateMapRow[];
@@ -1271,6 +1272,7 @@ export function SinanQualidadeView() {
   const [yearEnd,   setYearEnd]   = useState("");
   const [filters,   setFilters]   = useState<Record<string, string>>({});
   const [pageTab,   setPageTab]   = useState<PageTab>("gestao");
+  const [taxaMapView, setTaxaMapView] = useState<"municipio" | "gve">("municipio");
   const gveOptions = useMemo(() => listarGvesSp(), []);
   const municipioOptions = useMemo(() => listarMunicipiosPorGve(gve), [gve]);
 
@@ -1590,34 +1592,70 @@ END;`}</pre>
                   )}
                   {rates.data && (
                     <>
+                      <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-sm font-semibold">Mapa de taxas do tracoma</p>
+                          <p className="text-xs text-muted-foreground">
+                            O mapa por municipio usa o shapefile municipal de SP; o mapa por GVE consolida os municipios do grupo.
+                          </p>
+                        </div>
+                        <div className="inline-flex w-fit rounded-md border bg-background p-1">
+                          {(["municipio", "gve"] as const).map((mode) => (
+                            <button
+                              key={mode}
+                              type="button"
+                              onClick={() => setTaxaMapView(mode)}
+                              className={`rounded px-3 py-1 text-xs font-semibold transition ${
+                                taxaMapView === mode ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+                              }`}
+                            >
+                              {mode === "municipio" ? "Municipio" : "GVE"}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                       <RateMap
-                        title={`Mapa operacional de prevalencia por GVE${
+                        title={`Mapa operacional de prevalencia por ${taxaMapView === "municipio" ? "municipio" : "GVE"}${
                           rates.data.periodStart && rates.data.periodEnd
                             ? ` - ${rates.data.periodStart === rates.data.periodEnd ? rates.data.periodStart : `${rates.data.periodStart} a ${rates.data.periodEnd}`}`
                             : ""
                         }`}
-                        description={`Prevalencia entre examinados, taxa de deteccao e cobertura. Populacao IBGE ${rates.data.populationYear ?? "-"}.`}
-                        rows={rates.data.byGve ?? []}
+                        description={`Prevalencia entre examinados, taxa de deteccao e cobertura. Populacao IBGE: ${(rates.data.populationYears ?? []).join(", ") || rates.data.populationYear || "-"}.`}
+                        rows={taxaMapView === "municipio" ? rates.data.byMunicipality ?? [] : rates.data.byGve ?? []}
                         valueKey="prevalencia"
                         valueLabel="%"
                         missingPopulation={rates.data.missingPopulation}
                         message={rates.data.message}
-                        tableColumns={[
-                          { key: "gve", label: "GVE" },
-                          { key: "examinados", label: "Examinados" },
-                          { key: "positivos", label: "Positivos" },
-                          { key: "prevalencia", label: "Prevalencia %", decimals: 2 },
-                          { key: "taxaDeteccao100k", label: "Deteccao/100 mil", decimals: 2 },
-                          { key: "coberturaExame", label: "Cobertura %", decimals: 2 },
-                          { key: "populacao", label: "Populacao" }
-                        ]}
+                        tableColumns={
+                          taxaMapView === "municipio"
+                            ? [
+                                { key: "municipio", label: "Municipio" },
+                                { key: "gve", label: "GVE" },
+                                { key: "examinados", label: "Examinados" },
+                                { key: "positivos", label: "Positivos" },
+                                { key: "prevalencia", label: "Prevalencia %", decimals: 2 },
+                                { key: "taxaDeteccao100k", label: "Deteccao/100 mil", decimals: 2 },
+                                { key: "coberturaExame", label: "Cobertura %", decimals: 2 },
+                                { key: "populacao", label: "Populacao acumulada" }
+                              ]
+                            : [
+                                { key: "gve", label: "GVE" },
+                                { key: "examinados", label: "Examinados" },
+                                { key: "positivos", label: "Positivos" },
+                                { key: "prevalencia", label: "Prevalencia %", decimals: 2 },
+                                { key: "taxaDeteccao100k", label: "Deteccao/100 mil", decimals: 2 },
+                                { key: "coberturaExame", label: "Cobertura %", decimals: 2 },
+                                { key: "populacao", label: "Populacao acumulada" }
+                              ]
+                        }
                       />
-                      {(rates.data.byGve?.length ?? 0) > 0 && (
+                      {((taxaMapView === "municipio" ? rates.data.byMunicipality?.length : rates.data.byGve?.length) ?? 0) > 0 && (
                         <div className="overflow-x-auto rounded-md border">
-                          <table className="w-full min-w-[760px] text-sm">
+                          <table className="w-full min-w-[860px] text-sm">
                             <thead>
                               <tr className="border-b bg-muted/40 text-left">
-                                <th className="px-3 py-2">GVE</th>
+                                <th className="px-3 py-2">{taxaMapView === "municipio" ? "Municipio" : "GVE"}</th>
+                                {taxaMapView === "municipio" && <th className="px-3 py-2">GVE</th>}
                                 <th className="px-3 py-2 text-right">Examinados</th>
                                 <th className="px-3 py-2 text-right">Positivos</th>
                                 <th className="px-3 py-2 text-right">Prevalencia %</th>
@@ -1626,9 +1664,10 @@ END;`}</pre>
                               </tr>
                             </thead>
                             <tbody>
-                              {(rates.data.byGve ?? []).map((row) => (
-                                <tr key={row.gve} className="border-b last:border-0">
-                                  <td className="px-3 py-2 font-medium">{row.gve}</td>
+                              {(taxaMapView === "municipio" ? rates.data.byMunicipality ?? [] : rates.data.byGve ?? []).map((row) => (
+                                <tr key={taxaMapView === "municipio" ? `${row.codigoIbge}-${row.municipio}` : row.gve} className="border-b last:border-0">
+                                  <td className="px-3 py-2 font-medium">{taxaMapView === "municipio" ? row.municipio : row.gve}</td>
+                                  {taxaMapView === "municipio" && <td className="px-3 py-2 text-xs text-muted-foreground">{row.gve}</td>}
                                   <td className="px-3 py-2 text-right tabular-nums">{Number(row.examinados ?? 0).toLocaleString("pt-BR")}</td>
                                   <td className="px-3 py-2 text-right tabular-nums">{Number(row.positivos ?? 0).toLocaleString("pt-BR")}</td>
                                   <td className="px-3 py-2 text-right tabular-nums">{Number(row.prevalencia ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}</td>

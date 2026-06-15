@@ -1,12 +1,13 @@
 import { Database } from "lucide-react";
 import { CevespSyncCard } from "@/components/settings/cevesp-sync-card";
+import { IbgePopulationCard } from "@/components/settings/ibge-population-card";
 import { SinanTracomaSyncCard } from "@/components/settings/sinan-tracoma-sync-card";
 
 export const metadata = { title: "Sincronização de Dados" };
 
 export default function SincronizacaoPage() {
   return (
-    <div className="mx-auto max-w-3xl space-y-6 p-6">
+    <div className="mx-auto max-w-6xl space-y-6 p-6">
       <div className="flex items-center gap-3">
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
           <Database className="h-5 w-5 text-primary" />
@@ -25,9 +26,10 @@ export default function SincronizacaoPage() {
         dentro da rede e depois importe aqui de qualquer lugar.
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-6 lg:grid-cols-3">
         <CevespSyncCard />
         <SinanTracomaSyncCard />
+        <IbgePopulationCard />
       </div>
     </div>
   );

@@ -76,3 +76,23 @@ export async function syncIbgePopulation(ufCode = "35", year = new Date().getFul
     sourceUrl: ibgePopulationSidraUrl(ufCode, year)
   };
 }
+
+export async function syncIbgePopulationRange(ufCode = "35", yearStart: number, yearEnd: number) {
+  const start = Math.min(yearStart, yearEnd);
+  const end = Math.max(yearStart, yearEnd);
+  const years = Array.from({ length: end - start + 1 }, (_, index) => start + index);
+  const results = [];
+
+  for (const year of years) {
+    results.push(await syncIbgePopulation(ufCode, year));
+  }
+
+  return {
+    ufCode,
+    yearStart: start,
+    yearEnd: end,
+    years,
+    upserted: results.reduce((sum, item) => sum + Number(item.upserted ?? 0), 0),
+    results
+  };
+}
