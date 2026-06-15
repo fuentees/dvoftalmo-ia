@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Check, ClipboardCheck, X } from "lucide-react";
+import { AlertTriangle, Check, ClipboardCheck, Copy, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -96,6 +96,36 @@ export function CorrectionQueueView() {
   });
 
   const visibleItems = items.data ?? [];
+  const fieldSummary = Object.entries(
+    visibleItems.reduce<Record<string, number>>((acc, item) => {
+      acc[item.field_name] = (acc[item.field_name] ?? 0) + 1;
+      return acc;
+    }, {})
+  ).sort((a, b) => b[1] - a[1]);
+
+  async function copyCorrectionText(item: CorrectionItem) {
+    const text = [
+      "Prezados(as),",
+      "",
+      "Solicitamos verificar e corrigir o registro abaixo na base CEVESP:",
+      `- Registro: ${item.record_id}`,
+      `- Tabela: ${item.table_name}`,
+      `- Campo: ${item.field_name}`,
+      `- Valor atual: ${item.old_value || "-"}`,
+      `- Valor sugerido: ${item.new_value || "-"}`,
+      `- Motivo: ${item.reason}`,
+      "",
+      "Após a correção, favor informar para atualização do acompanhamento de qualidade dos dados.",
+      "",
+      "Atenciosamente,"
+    ].join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast("Texto de cobranca copiado.", "success");
+    } catch {
+      showToast("Nao foi possivel copiar automaticamente neste navegador.", "error");
+    }
+  }
 
   return (
     <div className="flex flex-col">
@@ -149,6 +179,16 @@ export function CorrectionQueueView() {
           ))}
         </div>
 
+        {fieldSummary.length > 0 && (
+          <div className="flex flex-wrap gap-2 text-xs">
+            {fieldSummary.slice(0, 6).map(([field, count]) => (
+              <span key={field} className="rounded-full border bg-card px-2.5 py-1 text-muted-foreground">
+                {field}: <strong className="text-foreground">{count.toLocaleString("pt-BR")}</strong>
+              </span>
+            ))}
+          </div>
+        )}
+
         {items.isLoading && <p className="text-sm text-muted-foreground">Carregando...</p>}
 
         {!items.isLoading && visibleItems.length === 0 && (
@@ -191,7 +231,7 @@ export function CorrectionQueueView() {
                 </div>
 
                 {item.status === "pending" && (
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <Button
                       size="sm"
                       onClick={() => review.mutate({ id: item.id, action: "approve" })}
@@ -208,6 +248,14 @@ export function CorrectionQueueView() {
                     >
                       <X className="h-3.5 w-3.5" />
                       Rejeitar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => void copyCorrectionText(item)}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                      Copiar cobranca
                     </Button>
                   </div>
                 )}

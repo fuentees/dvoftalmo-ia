@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { syncIbgePopulation } from "@/services/ibge-population";
+import { syncIbgePopulation, syncIbgePopulationRange } from "@/services/ibge-population";
 
 function readArg(name: string, fallback: string) {
   const prefixed = process.argv.find((arg) => arg.startsWith(`${name}=`));
@@ -8,8 +8,12 @@ function readArg(name: string, fallback: string) {
 
 async function main() {
   const year = Number(readArg("--year", String(new Date().getFullYear() - 1)));
+  const startArg = process.argv.find((arg) => arg.startsWith("--start="));
+  const endArg = process.argv.find((arg) => arg.startsWith("--end="));
   const ufCode = readArg("--uf", "35");
-  const result = await syncIbgePopulation(ufCode, year);
+  const result = startArg && endArg
+    ? await syncIbgePopulationRange(ufCode, Number(readArg("--start", String(year))), Number(readArg("--end", String(year))))
+    : await syncIbgePopulation(ufCode, year);
   console.log(JSON.stringify(result, null, 2));
 }
 

@@ -1273,6 +1273,7 @@ export function SinanQualidadeView() {
   const [filters,   setFilters]   = useState<Record<string, string>>({});
   const [pageTab,   setPageTab]   = useState<PageTab>("gestao");
   const [taxaMapView, setTaxaMapView] = useState<"municipio" | "gve">("municipio");
+  const [taxaMetric, setTaxaMetric] = useState<"prevalencia" | "taxaDeteccao100k" | "coberturaExame">("prevalencia");
   const gveOptions = useMemo(() => listarGvesSp(), []);
   const municipioOptions = useMemo(() => listarMunicipiosPorGve(gve), [gve]);
 
@@ -1613,17 +1614,32 @@ END;`}</pre>
                             </button>
                           ))}
                         </div>
+                        <select
+                          value={taxaMetric}
+                          onChange={(event) => setTaxaMetric(event.target.value as typeof taxaMetric)}
+                          className="h-8 rounded-md border bg-background px-2 text-xs font-medium"
+                        >
+                          <option value="prevalencia">Prevalencia %</option>
+                          <option value="taxaDeteccao100k">Taxa de deteccao/100 mil</option>
+                          <option value="coberturaExame">Cobertura de exame %</option>
+                        </select>
                       </div>
                       <RateMap
-                        title={`Mapa operacional de prevalencia por ${taxaMapView === "municipio" ? "municipio" : "GVE"}${
+                        title={`Mapa operacional de ${
+                          taxaMetric === "prevalencia"
+                            ? "prevalencia"
+                            : taxaMetric === "taxaDeteccao100k"
+                              ? "taxa de deteccao"
+                              : "cobertura de exame"
+                        } por ${taxaMapView === "municipio" ? "municipio" : "GVE"}${
                           rates.data.periodStart && rates.data.periodEnd
                             ? ` - ${rates.data.periodStart === rates.data.periodEnd ? rates.data.periodStart : `${rates.data.periodStart} a ${rates.data.periodEnd}`}`
                             : ""
                         }`}
                         description={`Prevalencia entre examinados, taxa de deteccao e cobertura. Populacao IBGE: ${(rates.data.populationYears ?? []).join(", ") || rates.data.populationYear || "-"}.`}
                         rows={taxaMapView === "municipio" ? rates.data.byMunicipality ?? [] : rates.data.byGve ?? []}
-                        valueKey="prevalencia"
-                        valueLabel="%"
+                        valueKey={taxaMetric}
+                        valueLabel={taxaMetric === "taxaDeteccao100k" ? "por 100 mil hab." : "%"}
                         missingPopulation={rates.data.missingPopulation}
                         message={rates.data.message}
                         tableColumns={

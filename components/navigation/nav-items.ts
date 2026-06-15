@@ -66,6 +66,12 @@ export const navigationGroups = [
         icon: Database
       },
       {
+        href: "/qualidade-dados",
+        label: "Qualidade dos Dados",
+        description: "CEVESP e SINAN em uma central",
+        icon: ShieldAlert
+      },
+      {
         href: "/correcoes",
         label: "Fila de Correções",
         description: "Revisar e aplicar ajustes",
@@ -131,4 +137,3 @@ export const navigationGroups = [
     ]
   }
 ];
-

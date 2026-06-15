@@ -23,13 +23,13 @@ export function detectRequiredAgents(message: string): AgentKind[] {
   const lower = message.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
   const agents: AgentKind[] = [];
 
-  if (/tracoma|sinan|traconet|nottraconet|nottraconect|agravo|tf\b|tt\b|trichiasis|foliculo|azitromicina|redcap|prevalencia|eliminacao|oms|opas|levantamento/.test(lower)) {
+  if (/tracoma|sinan|traconet|nottraconet|nottraconect|agravo|tf\b|tt\b|trichiasis|foliculo|azitromicina|redcap|prevalencia|taxa de deteccao|cobertura|eliminacao|oms|opas|levantamento/.test(lower)) {
     agents.push("tracoma");
   }
-  if (/cevesp|conjuntivite|notificac|surto|gve|drs|uvis|se\s*\d|semana epidemio|boletim|canal endemico/.test(lower)) {
+  if (/cevesp|conjuntivite|notificac|surto|gve|drs|uvis|se\s*\d|semana epidemio|incidencia|taxa|boletim|canal endemico/.test(lower)) {
     agents.push("epidemiologico");
   }
-  if (/planilha|csv|excel|xlsx|tabela|estatistic|media|mediana|desvio|frequencia|grafico|dado/.test(lower)) {
+  if (/planilha|csv|excel|xlsx|tabela|ranking|estatistic|media|mediana|desvio|frequencia|grafico|mapa|dado|qualidade|inconsist|correc/.test(lower)) {
     agents.push("dados");
   }
   if (/oficio|despacho|memorando|justificativa|sei\b|portaria|comunicado|solicitacao/.test(lower)) {

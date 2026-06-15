@@ -85,7 +85,7 @@ const tabs: Array<{ id: Tab; label: string; icon: React.ReactNode }> = [
 const quickActions = [
   { href: "/sincronizacao", label: "Importar bases", detail: "CEVESP, TRACONET e consolidado", icon: Database },
   { href: "/notificacoes", label: "Consultar CEVESP", detail: "Tabelas, canal e boletim", icon: Eye },
-  { href: "/sinan-qualidade", label: "Auditar SINAN", detail: "Qualidade, casos e divergencias", icon: Stethoscope },
+  { href: "/qualidade-dados", label: "Qualidade dos dados", detail: "CEVESP e SINAN em uma central", icon: ShieldAlert },
   { href: "/chat", label: "Perguntar ao agente", detail: "Analise em texto, tabela ou relatorio", icon: BarChart2 }
 ];
 
@@ -458,8 +458,8 @@ export function DashboardView() {
                 description="Use Conjuntivites para consulta/canal/boletim CEVESP; use Tracoma para auditoria SINAN e qualidade clínica."
                 href="/notificacoes"
                 label="Abrir Conjuntivites"
-                secondaryHref="/sinan-qualidade"
-                secondaryLabel="Abrir Tracoma"
+                secondaryHref="/qualidade-dados"
+                secondaryLabel="Abrir Qualidade"
                 icon={<Eye className="h-4 w-4" />}
               />
               <WorkPathCard

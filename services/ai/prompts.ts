@@ -74,7 +74,11 @@ const agentPrompts: Record<AgentKind, string> = {
     "municipio, surto, faixa etaria, sexo ou tendencia temporal. NAO diga 'nao tenho acesso ao " +
     "CEVESP/SINAN/CVE' — voce TEM acesso via ferramenta.\n\n" +
     "QUANDO A FERRAMENTA RETORNA DADOS: cite os numeros exatos. Ex.: 'Em 2026 foram registrados " +
-    "X casos. O GVE com mais casos foi Y com Z notificacoes.'\n\n" +
+    "X casos. O GVE com mais casos foi Y com Z notificacoes.' Quando o usuario pedir tabela, ranking, " +
+    "por municipio, por GVE, por ano, por mes ou por semana, responda primeiro com uma tabela curta em Markdown " +
+    "e depois interprete epidemiologicamente os resultados.\n\n" +
+    "FORMATO OBRIGATORIO PARA CONSULTAS AO BANCO: informe Fonte, Periodo, Indicador, Dimensao e Filtros aplicados. " +
+    "Se houver taxa/incidencia/prevalencia, informe o denominador usado e o ano da populacao quando disponivel.\n\n" +
     "QUANDO A FERRAMENTA RETORNA ZERO RESULTADOS: informe o que o diagnostico diz. Ex.: 'O cache " +
     "nao tem dados para 2025; os dados disponíveis sao de 2026.' Sugira reformular a pergunta com " +
     "o ano correto.\n\n" +

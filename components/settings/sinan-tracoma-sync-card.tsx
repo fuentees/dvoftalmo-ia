@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Database, Upload } from "lucide-react";
+import { AlertTriangle, Database, FileSearch, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -23,6 +23,19 @@ interface SinanStatus {
   }>;
 }
 
+interface PreviewResult {
+  fileName: string;
+  totalRows: number;
+  columns: string[];
+  years: number[];
+  municipalityFields: string[];
+  suggestedBank: Bank;
+  traconetScore: number;
+  nottraconetScore: number;
+  warnings: string[];
+  sampleRows: Array<Record<string, unknown>>;
+}
+
 function parseCsv(text: string) {
   const lines = text.split(/\r?\n/).filter((line) => line.trim());
   if (lines.length < 2) return [];
@@ -39,6 +52,8 @@ export function SinanTracomaSyncCard() {
   const [bank, setBank] = useState<Bank>("traconet");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ type: "info" | "success" | "error"; text: string } | null>(null);
+  const [preview, setPreview] = useState<PreviewResult | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { void loadStatus(); }, []);
@@ -59,8 +74,38 @@ export function SinanTracomaSyncCard() {
     }
   }
 
+  async function previewFile(file: File) {
+    setBusy(true);
+    setPreview(null);
+    setPendingFile(null);
+    setMessage({ type: "info", text: `Validando ${file.name} antes da importacao...` });
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const response = await fetch("/api/admin/sinan-tracoma-preview", {
+        method: "POST",
+        body: form
+      });
+      const data = await readResponse(response) as PreviewResult & { error?: string };
+      if (!response.ok) throw new Error(data.error ?? "Erro ao validar arquivo.");
+      setPreview(data);
+      setPendingFile(file);
+      setBank(data.suggestedBank);
+      setMessage({
+        type: data.warnings?.length ? "info" : "success",
+        text: `Pre-validacao concluida. Sugestao: importar como ${data.suggestedBank.toUpperCase()}.`
+      });
+    } catch (error) {
+      setMessage({ type: "error", text: error instanceof Error ? error.message : "Erro ao validar arquivo." });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function importFile(file: File) {
     setBusy(true);
+    setPreview(null);
+    setPendingFile(null);
     setMessage({ type: "info", text: `Enviando ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)...` });
     try {
       if (file.name.toLowerCase().endsWith(".dbf")) {
@@ -177,14 +222,89 @@ export function SinanTracomaSyncCard() {
             className="hidden"
             onChange={(event) => {
               const file = event.target.files?.[0];
-              if (file) void importFile(file);
+              if (file) void previewFile(file);
             }}
           />
           <Button size="sm" variant="outline" className="h-8 text-xs" disabled={busy} onClick={() => fileRef.current?.click()}>
-            <Upload className="mr-1.5 h-3.5 w-3.5" />
-            {busy ? "Importando..." : "Importar DBF/JSON/CSV"}
+            <FileSearch className="mr-1.5 h-3.5 w-3.5" />
+            {busy ? "Processando..." : "Validar arquivo"}
           </Button>
         </div>
+        {preview && (
+          <div className="space-y-3 rounded-md border bg-background p-3 text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="font-medium">{preview.fileName}</div>
+                <div className="text-muted-foreground">
+                  {preview.totalRows.toLocaleString("pt-BR")} registros · {preview.columns.length} colunas
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <span className="rounded-full border px-2 py-0.5">
+                  TRACONET {preview.traconetScore}
+                </span>
+                <span className="rounded-full border px-2 py-0.5">
+                  NOTTRACONET {preview.nottraconetScore}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Info label="Banco sugerido" value={preview.suggestedBank.toUpperCase()} />
+              <Info label="Banco selecionado" value={bank.toUpperCase()} />
+              <Info label="Anos detectados" value={preview.years.join(", ") || "nao identificado"} />
+              <Info label="Campos municipio" value={preview.municipalityFields.join(", ") || "nao identificado"} />
+            </div>
+
+            {preview.warnings.length > 0 && (
+              <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-amber-900">
+                <div className="mb-1 flex items-center gap-1 font-medium">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  Atenção antes de importar
+                </div>
+                <ul className="list-disc space-y-1 pl-4">
+                  {preview.warnings.map((warning) => (
+                    <li key={warning}>{warning}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <details>
+              <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                Ver colunas reconhecidas
+              </summary>
+              <p className="mt-2 max-h-24 overflow-auto break-all font-mono text-[11px] text-muted-foreground">
+                {preview.columns.join(", ")}
+              </p>
+            </details>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                className="h-8 text-xs"
+                disabled={busy || !pendingFile}
+                onClick={() => pendingFile && void importFile(pendingFile)}
+              >
+                <Upload className="mr-1.5 h-3.5 w-3.5" />
+                Confirmar importacao como {bank.toUpperCase()}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 text-xs"
+                disabled={busy}
+                onClick={() => {
+                  setPreview(null);
+                  setPendingFile(null);
+                  if (fileRef.current) fileRef.current.value = "";
+                }}
+              >
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        )}
         {message && (
           <div className={`rounded-md border px-3 py-2 text-xs ${
             message.type === "success"
