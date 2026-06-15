@@ -306,12 +306,30 @@ function buildActionPlan(data: SinanAuditResult): ActionPlanRow[] {
 }
 
 function buildCorrectionCsv(data: SinanAuditResult) {
-  const rows = [["tipo", "prioridade", "municipio", "gve", "ano", "quantidade", "detalhe"]];
+  const rows = [["tipo", "prioridade", "banco", "nu_notific", "row_key", "municipio", "gve", "ano", "campo", "detalhe"]];
 
-  for (const item of data.semFormaClinicaDetalhe ?? []) rows.push(["Sem forma positiva", "Critico", item.municipioNome, item.gve, "", String(item.count), "Sem TF/TI/TS/TT/CO positivo"]);
-  for (const item of data.ttSemTsDetalhe ?? []) rows.push(["TT sem TS", "Critico", item.municipioNome, item.gve, "", String(item.count), "TT isolado deve ser revisado"]);
-  for (const item of data.crossBankDivergences ?? []) rows.push(["Divergencia bancos", item.risco, item.municipioNome, item.gve, String(item.ano), String(item.diff), "NOTTRACONET - TRACONET"]);
-  for (const item of data.duplicateNotificationIds ?? []) rows.push(["NU_NOTIFIC duplicado", "Critico", item.municipio, "", String(item.ano || ""), String(item.count), item.id]);
+  for (const item of data.correctionRecords ?? []) {
+    rows.push([
+      item.problem,
+      item.priority,
+      item.sourceBank.toUpperCase(),
+      item.notificationId ?? "",
+      item.rowKey ?? "",
+      item.municipioNome || item.municipio,
+      item.gve,
+      item.ano != null ? String(item.ano) : "",
+      item.field,
+      item.recommendation
+    ]);
+  }
+
+  if (rows.length > 1) {
+    return rows.map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(";")).join("\n");
+  }
+
+  rows[0] = ["tipo", "prioridade", "banco", "nu_notific", "row_key", "municipio", "gve", "ano", "campo", "detalhe"];
+  for (const item of data.crossBankDivergences ?? []) rows.push(["Divergencia bancos", item.risco, "TRACONET/NOTTRACONET", "", "", item.municipioNome, item.gve, String(item.ano), "NU_CASOPOS", `Diferenca ${item.diff}`]);
+  for (const item of data.duplicateNotificationIds ?? []) rows.push(["NU_NOTIFIC duplicado", "Critico", "TRACONET", item.id, "", item.municipio, "", String(item.ano || ""), "NU_NOTIFIC", `${item.count} repeticoes`]);
 
   return rows.map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(";")).join("\n");
 }
@@ -711,6 +729,7 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
   const ttSemTsDetalhe = data.ttSemTsDetalhe ?? [];
   const casosComForma = data.casosComFormaClinica ?? data.totalTraconetPositive ?? 0;
   const casosSemForma = data.casosSemFormaPositiva ?? data.semGraduacao ?? 0;
+  const correctionRecords = data.correctionRecords ?? [];
 
   type SFSubTab = "gve" | "municipio";
   const [sfTab, setSfTab] = useState<SFSubTab>("gve");
@@ -991,6 +1010,61 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
             );
           })}
         </div>
+        {correctionRecords.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Notificações para solicitar correção</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Lista operacional com NU_NOTIFIC quando o campo existe no DBF. Quando não existir, usar row_key como identificador técnico da linha importada.
+              </p>
+            </CardHeader>
+            <CardContent className="overflow-x-auto p-0">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/30">
+                    <th className={thCls}>Prioridade</th>
+                    <th className={thCls}>Problema</th>
+                    <th className={thCls}>NU_NOTIFIC / row_key</th>
+                    <th className={thCls}>Município</th>
+                    <th className={thCls}>GVE</th>
+                    <th className={`${thCls} text-right`}>Ano</th>
+                    <th className={thCls}>Campo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {correctionRecords.slice(0, 80).map((item, index) => (
+                    <tr key={`${item.problem}-${item.notificationId ?? item.rowKey ?? index}`} className="border-b last:border-0 hover:bg-muted/20">
+                      <td className="px-4 py-2.5">
+                        <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${
+                          item.priority === "Critica"
+                            ? "border-red-200 bg-red-50 text-red-700"
+                            : item.priority === "Alta"
+                              ? "border-amber-200 bg-amber-50 text-amber-700"
+                              : "border-sky-200 bg-sky-50 text-sky-700"
+                        }`}>
+                          {item.priority}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 font-medium">{item.problem}</td>
+                      <td className="max-w-[220px] truncate px-4 py-2.5 font-mono text-xs" title={item.notificationId ?? item.rowKey ?? ""}>
+                        {item.notificationId ?? item.rowKey ?? "Sem identificador"}
+                      </td>
+                      <td className="px-4 py-2.5">{item.municipioNome || item.municipio}</td>
+                      <td className="px-4 py-2.5 text-xs text-muted-foreground">{item.gve}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">{item.ano ?? "-"}</td>
+                      <td className="px-4 py-2.5 font-mono text-xs">{item.field}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {correctionRecords.length > 80 && (
+                <div className="border-t px-4 py-3 text-xs text-muted-foreground">
+                  Mostrando 80 de {correctionRecords.length.toLocaleString("pt-BR")} registros. Use "Exportar correções" para baixar a lista completa.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
         {ttSemTsDetalhe.length > 0 && (
           <Card>
             <CardHeader className="pb-2">

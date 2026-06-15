@@ -500,12 +500,16 @@ export interface SinanAuditResult {
     municipioNome: string;
     gve: string;
     count: number;
+    notificationIds: string[];
+    semIdentificador: number;
   }>;
   ttSemTsDetalhe: Array<{
     municipio: string;
     municipioNome: string;
     gve: string;
     count: number;
+    notificationIds: string[];
+    semIdentificador: number;
   }>;
   consolidatedPositiveField: string | null;
   consolidatedRowsWithoutPositiveField: number;
@@ -516,6 +520,19 @@ export interface SinanAuditResult {
     ano: number;
   }>;
   missingNotificationId: number;
+  correctionRecords: Array<{
+    problem: string;
+    priority: "Critica" | "Alta" | "Media";
+    sourceBank: SinanTracomaBank;
+    notificationId: string | null;
+    rowKey: string | null;
+    municipio: string;
+    municipioNome: string;
+    gve: string;
+    ano: number | null;
+    field: string;
+    recommendation: string;
+  }>;
   recommendations: string[];
 }
 
@@ -723,7 +740,7 @@ export async function auditarSinanTracoma(opts?: {
   // NOTTRACONET = consolidado/agregados (nº examinados e positivos por localidade)
   let tcQ = supabase
     .from("sinan_tracoma_rows")
-    .select("source_bank, agravo, ano, municipio, gve, drs, classificacao, criterio, evolucao, tratamento, conclusao, raw")
+    .select("row_key, source_bank, agravo, ano, municipio, gve, drs, classificacao, criterio, evolucao, tratamento, conclusao, raw")
     .eq("source_bank", "traconet");
   if (opts?.municipio) tcQ = tcQ.ilike("municipio", `%${opts.municipio}%`);
   if (opts?.yearStart) tcQ = tcQ.gte("ano", opts.yearStart);
@@ -731,7 +748,7 @@ export async function auditarSinanTracoma(opts?: {
 
   let ntcQ = supabase
     .from("sinan_tracoma_rows")
-    .select("source_bank, ano, municipio, gve, raw")
+    .select("row_key, source_bank, ano, municipio, gve, raw")
     .eq("source_bank", "nottraconet");
   if (opts?.municipio) ntcQ = ntcQ.ilike("municipio", `%${opts.municipio}%`);
   if (opts?.yearStart) ntcQ = ntcQ.gte("ano", opts.yearStart);
@@ -749,8 +766,8 @@ export async function auditarSinanTracoma(opts?: {
   let nottraconetRows = (ntcResult.data ?? []) as Array<Record<string, unknown>>;
 
   [traconetRows, nottraconetRows] = await Promise.all([
-    fetchAuditRows("traconet", "source_bank, agravo, ano, municipio, gve, drs, classificacao, criterio, evolucao, tratamento, conclusao, raw"),
-    fetchAuditRows("nottraconet", "source_bank, ano, municipio, gve, raw")
+    fetchAuditRows("traconet", "row_key, source_bank, agravo, ano, municipio, gve, drs, classificacao, criterio, evolucao, tratamento, conclusao, raw"),
+    fetchAuditRows("nottraconet", "row_key, source_bank, ano, municipio, gve, raw")
   ]);
 
   if (opts?.gve) {
@@ -855,6 +872,41 @@ export async function auditarSinanTracoma(opts?: {
     .map(([id, value]) => ({ id, ...value }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 50);
+  const duplicateIdSet = new Set(duplicateNotificationIds.map((item) => item.id));
+
+  function notificationIdOf(row: Record<string, unknown>): string | null {
+    const found = getRawValue(row, notificationIdCandidates);
+    const value = found ? String(found.value ?? "").trim() : "";
+    return value || null;
+  }
+
+  function rowKeyOf(row: Record<string, unknown>): string | null {
+    const value = String(row.row_key ?? "").trim();
+    return value || null;
+  }
+
+  function correctionRecord(
+    row: Record<string, unknown>,
+    problem: string,
+    priority: "Critica" | "Alta" | "Media",
+    field: string,
+    recommendation: string
+  ): SinanAuditResult["correctionRecords"][number] {
+    const municipio = String(row.municipio ?? "").trim();
+    return {
+      problem,
+      priority,
+      sourceBank: (row.source_bank === "nottraconet" ? "nottraconet" : "traconet"),
+      notificationId: notificationIdOf(row),
+      rowKey: rowKeyOf(row),
+      municipio,
+      municipioNome: nomeMunicipio(municipio),
+      gve: resolveGveBasic(row) || gvePorCodigo(municipio) || "Nao informado",
+      ano: resolveAuditYear(row),
+      field,
+      recommendation
+    };
+  }
 
   // ── Cross-bank comparison per municipio×ano ───────────────────────────────
   // Compara contagem de casos individuais (TRACONET) vs registros consolidados (NOTTRACONET)
@@ -988,17 +1040,24 @@ export async function auditarSinanTracoma(opts?: {
 
   // Clinical quality checks: only individual cases (TRACONET).
   function municipioDetailRows(rows: Array<Record<string, unknown>>) {
-    const map = new Map<string, number>();
+    const map = new Map<string, { count: number; ids: string[]; semIdentificador: number }>();
     for (const r of rows) {
       const mun = String(r.municipio ?? "?").trim();
-      map.set(mun, (map.get(mun) ?? 0) + 1);
+      const current = map.get(mun) ?? { count: 0, ids: [], semIdentificador: 0 };
+      current.count += 1;
+      const id = notificationIdOf(r);
+      if (id && current.ids.length < 8 && !current.ids.includes(id)) current.ids.push(id);
+      if (!id) current.semIdentificador += 1;
+      map.set(mun, current);
     }
     return Array.from(map.entries())
-      .map(([municipio, count]) => ({
+      .map(([municipio, detail]) => ({
         municipio,
         municipioNome: nomeMunicipio(municipio),
         gve: gvePorCodigo(municipio) ?? gvePorMunicipio.get(normMunicipio(municipio)) ?? "Nao informado",
-        count
+        count: detail.count,
+        notificationIds: detail.ids,
+        semIdentificador: detail.semIdentificador
       }))
       .sort((a, b) => b.count - a.count);
   }
@@ -1034,6 +1093,71 @@ export async function auditarSinanTracoma(opts?: {
   }).length;
   const ttSemTs = ttSemTsRows.length;
   const ttSemTsDetalhe = municipioDetailRows(ttSemTsRows);
+
+  const correctionRecords = [
+    ...semFormaPositivaRows.map((row) => correctionRecord(
+      row,
+      "Sem forma clinica positiva",
+      "Critica",
+      "FORMA_TF/FORMA_TI/FORMA_TS/FORMA_TT/FORMA_CO",
+      "Corrigir forma clinica ou remover da base de casos se todas as formas forem negativas."
+    )),
+    ...ttSemTsRows.map((row) => correctionRecord(
+      row,
+      "TT sem TS associado",
+      "Critica",
+      "FORMA_TT/FORMA_TS",
+      "Revisar classificacao clinica: TT isolado sugere erro ou preenchimento incompleto."
+    )),
+    ...tfRows.filter((r) => isBlank(r.tratamento)).map((row) => correctionRecord(
+      row,
+      "TF sem tratamento registrado",
+      "Alta",
+      "TRATAMENTO/DT_TRAT",
+      "Verificar e registrar tratamento indicado para TF ativo."
+    )),
+    ...ttRows.filter((r) => {
+      const trat = String(r.tratamento ?? "").toLowerCase();
+      const conc = String(r.conclusao ?? "").toLowerCase();
+      if (conc.includes("encaminhamento cirurgia: sim")) return false;
+      const concNorm = conc.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      if (concNorm.includes("encaminhamento cirurgia: nao")) return true;
+      return !trat.includes("cirurg") && !trat.includes("epila") && !conc.includes("cirurg");
+    }).map((row) => correctionRecord(
+      row,
+      "TT sem encaminhamento cirurgico",
+      "Alta",
+      "ENCAMINHA/TRATAMENTO",
+      "Confirmar encaminhamento para avaliacao oftalmologica/cirurgia e registrar conduta."
+    )),
+    ...traconetRows.filter((r) => isBlank(r.conclusao)).map((row) => correctionRecord(
+      row,
+      "Sem conclusao/encerramento",
+      "Media",
+      "CONCLUSAO/DT_CONCLUSAO",
+      "Regularizar encerramento da investigacao."
+    )),
+    ...traconetInvalidYearRows.map((row) => correctionRecord(
+      row,
+      "Ano impossivel ou futuro",
+      "Alta",
+      "DT_NOTIFIC/ANO",
+      "Corrigir data ou ano de notificacao/investigacao."
+    )),
+    ...traconetRows.filter((row) => {
+      const id = notificationIdOf(row);
+      return id ? duplicateIdSet.has(id) : false;
+    }).map((row) => correctionRecord(
+      row,
+      "NU_NOTIFIC duplicado",
+      "Critica",
+      "NU_NOTIFIC",
+      "Verificar duplicidade de importacao ou numero de notificacao repetido."
+    ))
+  ].sort((a, b) => {
+    const weight = { Critica: 3, Alta: 2, Media: 1 };
+    return weight[b.priority] - weight[a.priority] || String(a.municipioNome).localeCompare(String(b.municipioNome));
+  });
 
   const anoImpossivel = traconetInvalidYearRows.length + nottraconetInvalidYearRows.length;
 
@@ -1171,6 +1295,7 @@ export async function auditarSinanTracoma(opts?: {
     consolidatedRowsWithoutPositiveField,
     duplicateNotificationIds,
     missingNotificationId,
+    correctionRecords,
     recommendations: rec
   };
 }
