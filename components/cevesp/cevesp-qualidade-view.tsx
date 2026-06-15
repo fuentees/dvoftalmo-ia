@@ -6,7 +6,7 @@ import {
   AlertCircle, AlertTriangle, CheckCircle2, ClipboardCheck,
   MapPin, RefreshCw, Users, XCircle
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { InvalidRecord } from "@/services/cevesp-corrections";
@@ -75,6 +75,14 @@ function SummaryCard({ count, label, sev, detail }: {
       </div>
     </div>
   );
+}
+
+function normalizeSearch(value: string | null | undefined) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
 }
 
 function TabsBar({ tab, setTab, counts }: {
@@ -194,13 +202,74 @@ function PorGvePanel({ data }: { data: QualidadeData }) {
 }
 
 function PorMunicipioPanel({ data }: { data: QualidadeData }) {
+  const [gveFilter, setGveFilter] = useState("todos");
+  const [query, setQuery] = useState("");
+  const [showAll, setShowAll] = useState(false);
+
+  const gves = useMemo(
+    () => [...new Set(data.byMunicipio.map((item) => item.gve).filter(Boolean) as string[])].sort((a, b) => a.localeCompare(b, "pt-BR")),
+    [data.byMunicipio]
+  );
+  const filteredRows = useMemo(() => {
+    const q = normalizeSearch(query);
+    return data.byMunicipio.filter((item) => {
+      const matchGve = gveFilter === "todos" || item.gve === gveFilter;
+      const matchText = !q || normalizeSearch(`${item.municipio} ${item.gve ?? ""}`).includes(q);
+      return matchGve && matchText;
+    });
+  }, [data.byMunicipio, gveFilter, query]);
+  const visibleRows = showAll ? filteredRows : filteredRows.slice(0, 80);
+  const totalFiltered = filteredRows.reduce((sum, item) => sum + item.count, 0);
+
   if (!data.byMunicipio.length) {
     return <p className="py-6 text-center text-sm text-muted-foreground">Nenhum registro com município informado.</p>;
   }
   return (
     <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm">Problemas por Município</CardTitle>
+      <CardHeader className="space-y-3 pb-3">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <CardTitle className="text-sm">Problemas por Município</CardTitle>
+          <span className="text-xs text-muted-foreground">
+            {filteredRows.length.toLocaleString("pt-BR")} município(s), {totalFiltered.toLocaleString("pt-BR")} registro(s)
+          </span>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-[220px_1fr_auto]">
+          <select
+            value={gveFilter}
+            onChange={(event) => {
+              setGveFilter(event.target.value);
+              setShowAll(false);
+            }}
+            className="h-8 rounded-md border bg-background px-2 text-xs"
+          >
+            <option value="todos">Todos os GVEs</option>
+            {gves.map((gve) => (
+              <option key={gve} value={gve}>{gve}</option>
+            ))}
+          </select>
+          <input
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setShowAll(false);
+            }}
+            placeholder="Buscar município ou GVE"
+            className="h-8 rounded-md border bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs"
+            onClick={() => {
+              setGveFilter("todos");
+              setQuery("");
+              setShowAll(false);
+            }}
+          >
+            Limpar
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="p-0">
         <div className="overflow-x-auto">
@@ -213,7 +282,7 @@ function PorMunicipioPanel({ data }: { data: QualidadeData }) {
               </tr>
             </thead>
             <tbody>
-              {data.byMunicipio.map(({ municipio, gve, count }) => (
+              {visibleRows.map(({ municipio, gve, count }) => (
                 <tr key={municipio} className="border-b last:border-0 hover:bg-muted/20">
                   <td className="px-4 py-2 font-medium">{municipio}</td>
                   <td className="px-4 py-2 text-muted-foreground">{gve ?? "—"}</td>
@@ -225,6 +294,18 @@ function PorMunicipioPanel({ data }: { data: QualidadeData }) {
             </tbody>
           </table>
         </div>
+        {filteredRows.length === 0 && (
+          <p className="px-4 py-6 text-center text-sm text-muted-foreground">
+            Nenhum município encontrado para os filtros aplicados.
+          </p>
+        )}
+        {filteredRows.length > visibleRows.length && (
+          <div className="border-t p-3 text-center">
+            <Button variant="outline" size="sm" onClick={() => setShowAll(true)}>
+              Mostrar todos ({filteredRows.length.toLocaleString("pt-BR")})
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -234,6 +315,7 @@ export function CevespQualidadeView() {
   const qc = useQueryClient();
   const [tab, setTab]             = useState<CevespTab>("registros");
   const [filterType, setFilterType] = useState<string>("todos");
+  const [recordQuery, setRecordQuery] = useState("");
   const [selected, setSelected]   = useState<Set<string>>(new Set());
   const [proposeMsg, setProposeMsg] = useState<{ type: "ok" | "error"; text: string } | null>(null);
 
@@ -271,9 +353,21 @@ export function CevespQualidadeView() {
   });
 
   const records = data?.records ?? [];
-  const visible = filterType === "todos"
-    ? records
-    : records.filter((r) => r.issue.startsWith(filterType));
+  const visible = records.filter((record) => {
+    const matchType = filterType === "todos" || record.issue.startsWith(filterType);
+    const q = normalizeSearch(recordQuery);
+    const matchText = !q || normalizeSearch([
+      record.recordId,
+      record.dtNotificacao,
+      record.semEpidemio,
+      record.municipio,
+      record.gve,
+      record.issue,
+      record.suggestedField,
+      record.suggestedValue
+    ].join(" ")).includes(q);
+    return matchType && matchText;
+  });
 
   const types = data ? Object.keys(data.byType) : [];
 
@@ -392,6 +486,15 @@ export function CevespQualidadeView() {
                     <option key={t} value={t}>{t} ({byType[t]})</option>
                   ))}
                 </select>
+                <input
+                  value={recordQuery}
+                  onChange={(event) => {
+                    setRecordQuery(event.target.value);
+                    setSelected(new Set());
+                  }}
+                  placeholder="Buscar ID, município, GVE ou problema"
+                  className="h-8 min-w-[260px] rounded-md border bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
 
                 {selected.size > 0 ? (
                   <Button
@@ -420,6 +523,21 @@ export function CevespQualidadeView() {
                   {visible.length} exibido(s)
                   {selected.size > 0 && ` · ${selected.size} selecionado(s)`}
                 </span>
+                {(filterType !== "todos" || recordQuery) && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => {
+                      setFilterType("todos");
+                      setRecordQuery("");
+                      setSelected(new Set());
+                    }}
+                  >
+                    Limpar filtros
+                  </Button>
+                )}
               </div>
 
               {proposeMsg && (
