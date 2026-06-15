@@ -142,6 +142,15 @@ type ManagementRow = {
   acao: string;
 };
 
+type ActionPlanRow = {
+  prioridade: "Critica" | "Alta" | "Media";
+  problema: string;
+  volume: number;
+  onde: string;
+  acao: string;
+  tone: "red" | "amber" | "green";
+};
+
 function addManagementRow(map: Map<string, ManagementRow>, base: Partial<ManagementRow> & { municipio: string }, update: Partial<ManagementRow>) {
   const key = `${base.municipio}|${base.gve ?? ""}`;
   const row = map.get(key) ?? {
@@ -194,22 +203,105 @@ function buildManagementRows(data: SinanAuditResult): ManagementRow[] {
     });
   }
 
-  for (const item of data.duplicateNotificationIds ?? []) {
-    addManagementRow(map, {
-      municipio: item.municipio,
-      municipioNome: item.municipio,
-      gve: ""
-    }, {
-      score: item.count * 6,
-      criticos: item.count,
-      acao: "Verificar NU_NOTIFIC duplicado."
-    });
-  }
-
   return Array.from(map.values())
     .filter((row) => row.score > 0)
     .sort((a, b) => b.score - a.score || b.criticos - a.criticos)
     .slice(0, 20);
+}
+
+function buildActionPlan(data: SinanAuditResult): ActionPlanRow[] {
+  const rows: ActionPlanRow[] = [];
+  const semForma = data.casosSemFormaPositiva ?? data.semGraduacao ?? 0;
+  const ttSemTs = data.ttSemTs ?? 0;
+  const altoRisco = (data.crossBankDivergences ?? []).filter((item) => item.risco === "alto").length;
+  const duplicidades = data.duplicateNotificationIds?.length ?? 0;
+  const examinados = data.consolidatedMetrics?.examinados?.value ?? 0;
+
+  if (semForma > 0) rows.push({
+    prioridade: "Critica",
+    problema: "Casos individuais sem TF/TI/TS/TT/CO positivo",
+    volume: semForma,
+    onde: `${(data.semFormaClinicaDetalhe ?? []).length.toLocaleString("pt-BR")} municipios/GVE`,
+    acao: "Corrigir a forma clinica no TRACONET ou retirar da base de casos quando todas as formas forem negativas.",
+    tone: "red"
+  });
+
+  if (ttSemTs > 0) rows.push({
+    prioridade: "Critica",
+    problema: "TT sem TS associado",
+    volume: ttSemTs,
+    onde: `${(data.ttSemTsDetalhe ?? []).length.toLocaleString("pt-BR")} territorios`,
+    acao: "Revisar classificacao clinica, pois TT isolado sugere erro de digitacao ou classificacao incompleta.",
+    tone: "red"
+  });
+
+  if (altoRisco > 0) rows.push({
+    prioridade: "Alta",
+    problema: "Divergencia alta entre TRACONET e NOTTRACONET",
+    volume: altoRisco,
+    onde: "Municipio/ano",
+    acao: "Conciliar os dois bancos antes de publicar boletim, separando subregistro de duplicidade.",
+    tone: "amber"
+  });
+
+  if (data.tfSemTratamento > 0) rows.push({
+    prioridade: "Alta",
+    problema: "TF sem tratamento registrado",
+    volume: data.tfSemTratamento,
+    onde: "Casos ativos",
+    acao: "Verificar registro de tratamento/azitromicina e acionar municipio quando a conduta nao estiver documentada.",
+    tone: "amber"
+  });
+
+  if (data.ttSemCircurgia > 0) rows.push({
+    prioridade: "Alta",
+    problema: "TT sem encaminhamento cirurgico",
+    volume: data.ttSemCircurgia,
+    onde: "Casos cicatriciais",
+    acao: "Conferir encaminhamento para avaliacao oftalmologica/cirurgia e registrar a conduta.",
+    tone: "amber"
+  });
+
+  if (data.semConclusao > 0) rows.push({
+    prioridade: "Media",
+    problema: "Investigacoes sem conclusao/encerramento",
+    volume: data.semConclusao,
+    onde: "TRACONET",
+    acao: "Regularizar encerramento para nao distorcer indicadores e acompanhamento dos casos.",
+    tone: "amber"
+  });
+
+  if (duplicidades > 0) rows.push({
+    prioridade: "Critica",
+    problema: "NU_NOTIFIC duplicado",
+    volume: duplicidades,
+    onde: "Identificador de notificacao",
+    acao: "Remover duplicidade de importacao ou corrigir numeracao antes de consolidar indicadores.",
+    tone: "red"
+  });
+
+  if (examinados === 0 && (data.totalNottraconetRows ?? 0) > 0) rows.push({
+    prioridade: "Alta",
+    problema: "Total de examinados nao reconhecido no consolidado",
+    volume: data.totalNottraconetRows ?? 0,
+    onde: "NOTTRACONET",
+    acao: "Revisar campo de examinados do DBF; sem examinados nao ha prevalencia/cobertura confiavel.",
+    tone: "amber"
+  });
+
+  if (!rows.length) rows.push({
+    prioridade: "Media",
+    problema: "Sem pendencia critica detectada",
+    volume: 0,
+    onde: "Base filtrada",
+    acao: "Manter monitoramento periodico e validar indicadores antes do boletim.",
+    tone: "green"
+  });
+
+  return rows.sort((a, b) => {
+    const weight = { Critica: 3, Alta: 2, Media: 1 };
+    return weight[b.prioridade] - weight[a.prioridade] || b.volume - a.volume;
+  }).slice(0, 7);
 }
 
 function buildCorrectionCsv(data: SinanAuditResult) {
@@ -236,6 +328,7 @@ function downloadCorrections(data: SinanAuditResult) {
 
 function GestaoTab({ data }: { data: SinanAuditResult }) {
   const priorities = buildManagementRows(data);
+  const actionPlan = buildActionPlan(data);
   const examinados = data.consolidatedMetrics?.examinados?.value ?? 0;
   const positivos = data.consolidatedMetrics?.positivos?.value ?? data.totalNottraconet ?? 0;
   const tratamentoRegistrado = Math.max(data.totalTraconet - data.semTratamento, 0);
@@ -277,6 +370,54 @@ function GestaoTab({ data }: { data: SinanAuditResult }) {
         <KpiCard label="Divergencias alto risco" value={altoRisco.toLocaleString("pt-BR")} sub="Municipio/ano com diferenca elevada" tone={altoRisco > 0 ? "red" : "green"} icon={<Activity className="h-4 w-4" />} />
         <KpiCard label="Conclusao pendente" value={data.semConclusao.toLocaleString("pt-BR")} sub="Casos sem encerramento" tone={data.semConclusao > 0 ? "amber" : "green"} icon={<ClipboardList className="h-4 w-4" />} />
       </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Plano de acao operacional</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            O que deve ser corrigido primeiro para transformar a base em indicador confiavel.
+          </p>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/30">
+                  <th className={thCls}>Prioridade</th>
+                  <th className={thCls}>Problema</th>
+                  <th className={`${thCls} text-right`}>Volume</th>
+                  <th className={thCls}>Onde olhar</th>
+                  <th className={thCls}>Encaminhamento</th>
+                </tr>
+              </thead>
+              <tbody>
+                {actionPlan.map((row) => {
+                  const badge = row.tone === "red"
+                    ? "border-red-200 bg-red-50 text-red-700"
+                    : row.tone === "amber"
+                      ? "border-amber-200 bg-amber-50 text-amber-700"
+                      : "border-green-200 bg-green-50 text-green-700";
+                  return (
+                    <tr key={`${row.prioridade}-${row.problema}`} className="border-b last:border-0 hover:bg-muted/20">
+                      <td className="px-4 py-2.5">
+                        <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${badge}`}>
+                          {row.prioridade}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 font-medium">{row.problema}</td>
+                      <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
+                        {row.volume.toLocaleString("pt-BR")}
+                      </td>
+                      <td className="px-4 py-2.5 text-xs text-muted-foreground">{row.onde}</td>
+                      <td className="px-4 py-2.5 text-xs text-muted-foreground">{row.acao}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
         <Card>
@@ -1296,48 +1437,6 @@ END;`}</pre>
           </div>
 
           {/* ── Gráfico temporal ─────────────────────────────────────────────── */}
-          <Card className="border-amber-200">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Variável de examinados no NOTTRACONET</CardTitle>
-              <p className="text-xs text-muted-foreground">
-                Campo usado na Sala de Situação:{" "}
-                <code className="rounded bg-muted px-1 font-mono">
-                  {data.consolidatedMetrics?.examinados?.field ?? "não reconhecido"}
-                </code>
-                {" "}· Total calculado:{" "}
-                <span className="font-semibold text-foreground">
-                  {(data.consolidatedMetrics?.examinados?.value ?? 0).toLocaleString("pt-BR")}
-                </span>
-              </p>
-            </CardHeader>
-            <CardContent>
-              {(data.diagnostico?.nottraconet?.camposNumericos?.length ?? 0) > 0 ? (
-                <div className="overflow-x-auto rounded-md border">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b bg-muted/40 text-left">
-                        <th className="px-3 py-2">Campo numérico candidato</th>
-                        <th className="px-3 py-2 text-right">Exemplo</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.diagnostico.nottraconet.camposNumericos.slice(0, 12).map((item) => (
-                        <tr key={item.campo} className="border-b last:border-0">
-                          <td className="px-3 py-2 font-mono">{item.campo}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{item.exemplo.toLocaleString("pt-BR")}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Nenhum campo numérico preenchido foi encontrado no consolidado. Verifique se o NOTTRACONET foi importado como banco consolidado.
-                </p>
-              )}
-            </CardContent>
-          </Card>
-
           {yearChartData.length > 1 && (
             <Card>
               <CardHeader className="pb-2">
