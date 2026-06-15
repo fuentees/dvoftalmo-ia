@@ -448,7 +448,7 @@ async function executeTool(
         `Total NOTTRACONET/NTRACOMA (casos positivos consolidados): ${result.totalNottraconet}`,
         `Campo de positivos no consolidado: ${result.consolidatedPositiveField ?? "nao identificado"}`,
         `Linhas consolidadas sem positivo mapeado: ${result.consolidatedRowsWithoutPositiveField}`,
-        `IDs de notificacao duplicados no TRACONET: ${result.duplicateNotificationIds.length}`,
+        `Possiveis duplicidades do mesmo caso no TRACONET: ${result.duplicateNotificationIds.length} (chave: NU_NOTIFIC + iniciais + mae + nascimento + ano)`,
         `Casos individuais sem ID de notificacao: ${result.missingNotificationId}`
       ];
       if (result.crossBankDivergences.length > 0) {

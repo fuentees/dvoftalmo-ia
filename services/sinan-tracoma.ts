@@ -515,9 +515,13 @@ export interface SinanAuditResult {
   consolidatedRowsWithoutPositiveField: number;
   duplicateNotificationIds: Array<{
     id: string;
+    caseKey: string;
     count: number;
     municipio: string;
     ano: number;
+    iniciais: string;
+    nomeMae: string;
+    dataNascimento: string;
   }>;
   missingNotificationId: number;
   correctionRecords: Array<{
@@ -850,29 +854,107 @@ export async function auditarSinanTracoma(opts?: {
   ).sort((a, b) => a.ano - b.ano);
 
   const notificationIdCandidates = ["NU_NOTIFIC", "ID_NOTIFIC", "NUM_NOTIFIC", "NOTIFIC", "NU_NOTIF", "ID"];
-  const notificationIdMap = new Map<string, { count: number; municipio: string; ano: number }>();
+  const patientNameCandidates = ["NM_PACIENT", "NM_PACIENTE", "NOME_PAC", "NOME_PACIENTE", "PACIENTE", "NM_DOENTE", "NOME"];
+  const patientInitialsCandidates = ["INICIAIS", "INIC_PAC", "INICIAIS_PAC", "INICIAIS_NOME", "NM_INICIAIS"];
+  const motherNameCandidates = ["NM_MAE_PAC", "NM_MAE", "NOME_MAE", "MAE", "NM_MAE_PACIENTE", "NOME_DA_MAE"];
+  const birthDateCandidates = ["DT_NASC", "DT_NASCIMENTO", "DATA_NASC", "NASCIMENTO", "DT_NASCI"];
+  const caseIdentityMap = new Map<string, {
+    id: string;
+    count: number;
+    municipio: string;
+    ano: number;
+    iniciais: string;
+    nomeMae: string;
+    dataNascimento: string;
+  }>();
   let missingNotificationId = 0;
+  let missingCaseIdentity = 0;
+
+  function normalizeIdentityPart(value: unknown) {
+    return String(value ?? "")
+      .trim()
+      .toUpperCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/\s+/g, " ");
+  }
+
+  function initialsFromName(value: unknown) {
+    const normalized = normalizeIdentityPart(value);
+    if (!normalized) return "";
+    return normalized
+      .split(" ")
+      .filter((part) => part.length > 0 && !["DE", "DA", "DO", "DAS", "DOS", "E"].includes(part))
+      .map((part) => part[0])
+      .join("");
+  }
+
+  function personInitials(row: Record<string, unknown>) {
+    const explicit = getRawValue(row, patientInitialsCandidates);
+    const explicitValue = explicit ? normalizeIdentityPart(explicit.value).replace(/\s/g, "") : "";
+    if (explicitValue) return explicitValue;
+    const name = getRawValue(row, patientNameCandidates);
+    return name ? initialsFromName(name.value) : "";
+  }
+
+  function motherName(row: Record<string, unknown>) {
+    const found = getRawValue(row, motherNameCandidates);
+    return found ? normalizeIdentityPart(found.value) : "";
+  }
+
+  function birthDate(row: Record<string, unknown>) {
+    const found = getRawValue(row, birthDateCandidates);
+    const normalized = found ? normalizeDate(found.value) : null;
+    return normalized ?? normalizeIdentityPart(found?.value);
+  }
+
+  function caseDuplicateKey(row: Record<string, unknown>) {
+    const id = notificationIdOf(row);
+    const ano = resolveAuditYear(row);
+    const iniciais = personInitials(row);
+    const mae = motherName(row);
+    const nascimento = birthDate(row);
+    if (!id) return null;
+    if (!ano || !iniciais || !mae || !nascimento) return null;
+    return {
+      id,
+      ano,
+      iniciais,
+      nomeMae: mae,
+      dataNascimento: nascimento,
+      key: [id, iniciais, mae, nascimento, String(ano)].join("|")
+    };
+  }
+
   for (const row of traconetRows) {
-    const found = getRawValue(row, notificationIdCandidates);
-    const id = found ? String(found.value ?? "").trim() : "";
+    const id = notificationIdOf(row);
     if (!id) {
       missingNotificationId += 1;
       continue;
     }
-    const current = notificationIdMap.get(id) ?? {
+    const identity = caseDuplicateKey(row);
+    if (!identity) {
+      missingCaseIdentity += 1;
+      continue;
+    }
+    const current = caseIdentityMap.get(identity.key) ?? {
+      id: identity.id,
       count: 0,
       municipio: String(row.municipio ?? ""),
-      ano: resolveAuditYear(row) ?? 0
+      ano: identity.ano,
+      iniciais: identity.iniciais,
+      nomeMae: identity.nomeMae,
+      dataNascimento: identity.dataNascimento
     };
     current.count += 1;
-    notificationIdMap.set(id, current);
+    caseIdentityMap.set(identity.key, current);
   }
-  const duplicateNotificationIds = Array.from(notificationIdMap.entries())
+  const duplicateNotificationIds = Array.from(caseIdentityMap.entries())
     .filter(([, value]) => value.count > 1)
-    .map(([id, value]) => ({ id, ...value }))
+    .map(([caseKey, value]) => ({ caseKey, ...value }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 50);
-  const duplicateIdSet = new Set(duplicateNotificationIds.map((item) => item.id));
+  const duplicateCaseKeySet = new Set(duplicateNotificationIds.map((item) => item.caseKey));
 
   function notificationIdOf(row: Record<string, unknown>): string | null {
     const found = getRawValue(row, notificationIdCandidates);
@@ -1145,14 +1227,14 @@ export async function auditarSinanTracoma(opts?: {
       "Corrigir data ou ano de notificacao/investigacao."
     )),
     ...traconetRows.filter((row) => {
-      const id = notificationIdOf(row);
-      return id ? duplicateIdSet.has(id) : false;
+      const identity = caseDuplicateKey(row);
+      return identity ? duplicateCaseKeySet.has(identity.key) : false;
     }).map((row) => correctionRecord(
       row,
-      "NU_NOTIFIC duplicado",
+      "Possivel duplicidade do mesmo caso",
       "Critica",
-      "NU_NOTIFIC",
-      "Verificar duplicidade de importacao ou numero de notificacao repetido."
+      "NU_NOTIFIC + iniciais + nome da mae + data de nascimento + ano",
+      "Verificar se e duplicidade real do mesmo caso no mesmo ano. Mesmo NU_NOTIFIC em pessoa diferente ou ano diferente nao deve ser tratado como duplicidade."
     ))
   ].sort((a, b) => {
     const weight = { Critica: 3, Alta: 2, Media: 1 };
@@ -1182,11 +1264,14 @@ export async function auditarSinanTracoma(opts?: {
     rec.push(`Nenhuma forma clinica TF/TI/TS/TT/CO foi mapeada no TRACONET. A comparacao principal usa 1 linha TRACONET = 1 caso individual; a graduacao clinica permanece como alerta de completude.`);
   }
   if (duplicateNotificationIds.length > 0) {
-    const exemplos = duplicateNotificationIds.slice(0, 3).map((d) => `${d.id} (${d.count}x)`).join(", ");
-    rec.push(`${duplicateNotificationIds.length} identificador(es) de notificacao aparecem mais de uma vez no TRACONET. Verificar possiveis duplicidades. Exemplos: ${exemplos}.`);
+    const exemplos = duplicateNotificationIds.slice(0, 3).map((d) => `${d.id}/${d.iniciais}/${d.dataNascimento}/${d.ano} (${d.count}x)`).join(", ");
+    rec.push(`${duplicateNotificationIds.length} chave(s) de possivel duplicidade no TRACONET usando NU_NOTIFIC + iniciais + nome da mae + data de nascimento + ano. Mesmo NU_NOTIFIC em outro paciente ou outro ano nao foi tratado como duplicidade. Exemplos: ${exemplos}.`);
   }
   if (missingNotificationId > 0) {
     rec.push(`${missingNotificationId} caso(s) individual(is) do TRACONET sem identificador de notificacao mapeado. Isso limita a deteccao de duplicidades.`);
+  }
+  if (missingCaseIdentity > 0) {
+    rec.push(`${missingCaseIdentity} caso(s) individual(is) possuem NU_NOTIFIC, mas faltam iniciais/nome da mae/data de nascimento/ano para compor a chave de duplicidade.`);
   }
   if (casosSemFormaPositiva > 0) {
     const pct = traconetRows.length ? Math.round((casosSemFormaPositiva / traconetRows.length) * 100) : 0;

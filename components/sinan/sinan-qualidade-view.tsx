@@ -274,10 +274,10 @@ function buildActionPlan(data: SinanAuditResult): ActionPlanRow[] {
 
   if (duplicidades > 0) rows.push({
     prioridade: "Critica",
-    problema: "NU_NOTIFIC duplicado",
+    problema: "Possivel duplicidade do mesmo caso",
     volume: duplicidades,
-    onde: "Identificador de notificacao",
-    acao: "Remover duplicidade de importacao ou corrigir numeracao antes de consolidar indicadores.",
+    onde: "NU_NOTIFIC + pessoa + ano",
+    acao: "Confirmar se e o mesmo paciente no mesmo ano; anos diferentes podem representar reinfeccao.",
     tone: "red"
   });
 
@@ -329,7 +329,7 @@ function buildCorrectionCsv(data: SinanAuditResult) {
 
   rows[0] = ["tipo", "prioridade", "banco", "nu_notific", "row_key", "municipio", "gve", "ano", "campo", "detalhe"];
   for (const item of data.crossBankDivergences ?? []) rows.push(["Divergencia bancos", item.risco, "TRACONET/NOTTRACONET", "", "", item.municipioNome, item.gve, String(item.ano), "NU_CASOPOS", `Diferenca ${item.diff}`]);
-  for (const item of data.duplicateNotificationIds ?? []) rows.push(["NU_NOTIFIC duplicado", "Critico", "TRACONET", item.id, "", item.municipio, "", String(item.ano || ""), "NU_NOTIFIC", `${item.count} repeticoes`]);
+  for (const item of data.duplicateNotificationIds ?? []) rows.push(["Possivel duplicidade do mesmo caso", "Critico", "TRACONET", item.id, item.caseKey ?? "", item.municipio, "", String(item.ano || ""), "NU_NOTIFIC + iniciais + mae + nascimento + ano", `${item.count} repeticoes`]);
 
   return rows.map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(";")).join("\n");
 }
@@ -768,8 +768,8 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
     {
       count: data.duplicateNotificationIds?.length ?? 0,
       tone: (data.duplicateNotificationIds?.length ?? 0) > 0 ? "red" : "green",
-      label: "NU_NOTIFIC duplicado",
-      detail: "O mesmo identificador de notificação aparece em mais de uma linha. Pode indicar duplicidade de importação."
+      label: "Possivel duplicidade do mesmo caso",
+      detail: "Detecta repeticao apenas quando coincidem NU_NOTIFIC, iniciais, nome da mae, data de nascimento e ano."
     }
   ];
 
@@ -1194,23 +1194,26 @@ function CompletudeTecnicoTab({ data }: { data: SinanAuditResult }) {
         </CardContent>
       </Card>
 
-      {/* IDs duplicados — só exibe se houver */}
+      {/* Possíveis duplicidades — só exibe se houver */}
       {(data.duplicateNotificationIds?.length ?? 0) > 0 && (
         <Card className="border-red-200">
           <CardHeader className="pb-3">
             <CardTitle className="text-base text-red-700">
-              NU_NOTIFIC Duplicado — {data.duplicateNotificationIds.length.toLocaleString("pt-BR")} ocorrências
+              Possíveis duplicidades do mesmo caso — {data.duplicateNotificationIds.length.toLocaleString("pt-BR")} chaves
             </CardTitle>
             <p className="text-xs text-muted-foreground">
-              O mesmo identificador de notificação aparece em mais de uma linha do TRACONET.
-              Pode indicar importação duplicada ou inconsistência na numeração.
+              A duplicidade só é apontada quando coincidem NU_NOTIFIC, iniciais do caso, nome da mãe,
+              data de nascimento e ano. O mesmo NU_NOTIFIC em pessoas diferentes ou em anos diferentes
+              não é tratado como duplicidade.
             </p>
           </CardHeader>
           <CardContent className="overflow-x-auto p-0">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/30">
-                  <th className={thCls}>ID notificação</th>
+                  <th className={thCls}>NU_NOTIFIC</th>
+                  <th className={thCls}>Iniciais</th>
+                  <th className={thCls}>Nascimento</th>
                   <th className={thCls}>Município</th>
                   <th className={`${thCls} text-right`}>Ano</th>
                   <th className={`${thCls} text-right`}>Repetições</th>
@@ -1218,8 +1221,10 @@ function CompletudeTecnicoTab({ data }: { data: SinanAuditResult }) {
               </thead>
               <tbody>
                 {data.duplicateNotificationIds.slice(0, 30).map((item) => (
-                  <tr key={item.id} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
+                  <tr key={item.caseKey ?? item.id} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
                     <td className="px-4 py-2.5 font-mono text-xs">{item.id}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs">{item.iniciais || "-"}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs">{item.dataNascimento || "-"}</td>
                     <td className="px-4 py-2.5">{item.municipio}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums">{item.ano || "—"}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-red-700">{item.count}</td>
