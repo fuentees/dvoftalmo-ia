@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Bell, CheckCircle, AlertTriangle, AlertCircle, Info } from "lucide-react";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertCircle, AlertTriangle, CheckCircle, Info } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 
 interface EpiAlert {
   id: string;
@@ -18,98 +21,133 @@ interface EpiAlert {
 }
 
 const severityConfig = {
-  high:   { label: "Alta",   icon: AlertCircle,   cls: "text-red-600 bg-red-50 border-red-200" },
-  medium: { label: "Média",  icon: AlertTriangle, cls: "text-amber-600 bg-amber-50 border-amber-200" },
-  low:    { label: "Baixa",  icon: Info,          cls: "text-blue-600 bg-blue-50 border-blue-200" }
+  high: { label: "Alta", icon: AlertCircle, cls: "border-red-200 bg-red-50 text-red-700" },
+  medium: { label: "Media", icon: AlertTriangle, cls: "border-amber-200 bg-amber-50 text-amber-700" },
+  low: { label: "Baixa", icon: Info, cls: "border-blue-200 bg-blue-50 text-blue-700" }
 };
 
 export function AlertsView() {
   const qc = useQueryClient();
-  const [filter, setFilter] = useState<"all" | "pending">("pending");
+  const [filter, setFilter] = useState<"pending" | "high" | "all">("pending");
 
   const { data: alerts = [], isLoading } = useQuery<EpiAlert[]>({
     queryKey: ["alerts"],
-    queryFn:  () => fetch("/api/alertas").then(r => r.json())
+    queryFn: () => fetch("/api/alertas").then((r) => r.json())
   });
 
   const ack = useMutation({
-    mutationFn: (id: string) => fetch("/api/alertas", {
-      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id })
-    }).then(r => r.json()),
+    mutationFn: (id: string) =>
+      fetch("/api/alertas", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id })
+      }).then((r) => r.json()),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["alerts"] })
   });
 
-  const visible = filter === "pending" ? alerts.filter(a => !a.acknowledged) : alerts;
-  const pending = alerts.filter(a => !a.acknowledged).length;
+  const pending = alerts.filter((alert) => !alert.acknowledged).length;
+  const high = alerts.filter((alert) => alert.severity === "high" && !alert.acknowledged).length;
+  const visible = useMemo(() => {
+    if (filter === "pending") return alerts.filter((alert) => !alert.acknowledged);
+    if (filter === "high") return alerts.filter((alert) => alert.severity === "high");
+    return alerts;
+  }, [alerts, filter]);
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Bell className="w-6 h-6 text-teal-600" />
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Alertas Epidemiológicos</h1>
-          {pending > 0 && (
-            <span className="bg-red-500 text-white text-xs font-bold rounded-full px-2 py-0.5">{pending}</span>
-          )}
-        </div>
-        <div className="flex gap-2">
-          {(["pending", "all"] as const).map(f => (
-            <button key={f} onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-                ${filter === f ? "bg-teal-600 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"}`}>
-              {f === "pending" ? "Pendentes" : "Todos"}
-            </button>
-          ))}
+    <div className="flex flex-col">
+      <div className="border-b bg-card px-6 py-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <Badge className="border-primary/30 bg-primary/10 text-primary">Resposta</Badge>
+              {pending > 0 && <Badge className="border-red-200 bg-red-50 text-red-700">{pending} pendentes</Badge>}
+            </div>
+            <h1 className="text-xl font-semibold tracking-tight">Alertas epidemiologicos</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Eventos que merecem verificacao local, investigacao de surto ou reforco das medidas de controle.
+            </p>
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-center text-xs sm:min-w-[330px]">
+            <div className="rounded-md border bg-background px-3 py-2">
+              <p className="text-muted-foreground">Pendentes</p>
+              <p className="text-lg font-semibold tabular-nums">{pending}</p>
+            </div>
+            <div className="rounded-md border bg-background px-3 py-2">
+              <p className="text-muted-foreground">Alta</p>
+              <p className="text-lg font-semibold tabular-nums text-red-600">{high}</p>
+            </div>
+            <div className="rounded-md border bg-background px-3 py-2">
+              <p className="text-muted-foreground">Total</p>
+              <p className="text-lg font-semibold tabular-nums">{alerts.length}</p>
+            </div>
+          </div>
         </div>
       </div>
 
-      {isLoading && (
-        <div className="text-center py-12 text-gray-500">Carregando alertas...</div>
-      )}
-
-      {!isLoading && visible.length === 0 && (
-        <div className="text-center py-16">
-          <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-3" />
-          <p className="text-gray-500 dark:text-gray-400">
-            {filter === "pending" ? "Nenhum alerta pendente." : "Nenhum alerta registrado."}
-          </p>
+      <div className="space-y-4 p-6">
+        <div className="flex flex-wrap gap-2 rounded-md border bg-card p-1">
+          {[
+            { id: "pending", label: "Pendentes" },
+            { id: "high", label: "Alta prioridade" },
+            { id: "all", label: "Todos" }
+          ].map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setFilter(item.id as typeof filter)}
+              className={`h-9 rounded px-3 text-sm font-medium transition-colors ${
+                filter === item.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
         </div>
-      )}
 
-      <div className="space-y-3">
-        {visible.map(alert => {
-          const cfg = severityConfig[alert.severity];
-          const Icon = cfg.icon;
-          return (
-            <div key={alert.id}
-              className={`rounded-xl border p-4 flex items-start gap-4 transition-opacity ${alert.acknowledged ? "opacity-50" : ""} ${cfg.cls}`}>
-              <Icon className="w-5 h-5 mt-0.5 shrink-0" />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-semibold text-sm">{alert.gve}</span>
-                  <span className="text-xs opacity-70">SE {alert.se}/{alert.ano}</span>
-                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${cfg.cls}`}>
-                    {cfg.label}
-                  </span>
-                </div>
-                <p className="text-sm mt-1">
-                  <strong>{alert.cases}</strong> casos registrados (média móvel: {alert.moving_avg.toFixed(1)}) —
-                  aumento de <strong>{alert.pct_increase.toFixed(0)}%</strong>
-                </p>
-                <p className="text-xs mt-1 opacity-60">
-                  {new Date(alert.created_at).toLocaleString("pt-BR")}
-                </p>
-              </div>
-              {!alert.acknowledged && (
-                <button onClick={() => ack.mutate(alert.id)}
-                  disabled={ack.isPending}
-                  className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-white/70 hover:bg-white border border-current font-medium transition-colors">
-                  Reconhecer
-                </button>
-              )}
-            </div>
-          );
-        })}
+        {isLoading && <div className="rounded-md border bg-card p-8 text-center text-sm text-muted-foreground">Carregando alertas...</div>}
+
+        {!isLoading && visible.length === 0 && (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-14 text-center text-sm text-muted-foreground">
+              <CheckCircle className="mb-3 h-10 w-10 text-teal-600" />
+              {filter === "pending" ? "Nenhum alerta pendente." : "Nenhum alerta registrado neste filtro."}
+            </CardContent>
+          </Card>
+        )}
+
+        <div className="grid gap-3">
+          {visible.map((alert) => {
+            const cfg = severityConfig[alert.severity];
+            const Icon = cfg.icon;
+            return (
+              <Card key={alert.id} className={alert.acknowledged ? "opacity-60" : ""}>
+                <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start">
+                  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md border ${cfg.cls}`}>
+                    <Icon className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-semibold">{alert.gve}</p>
+                      <Badge className={cfg.cls}>{cfg.label}</Badge>
+                      <span className="text-xs text-muted-foreground">SE {alert.se}/{alert.ano}</span>
+                    </div>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      <strong className="text-foreground">{alert.cases}</strong> casos registrados; media movel de{" "}
+                      <strong className="text-foreground">{alert.moving_avg.toFixed(1)}</strong> e aumento de{" "}
+                      <strong className="text-foreground">{alert.pct_increase.toFixed(0)}%</strong>.
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">{new Date(alert.created_at).toLocaleString("pt-BR")}</p>
+                  </div>
+                  {!alert.acknowledged && (
+                    <Button variant="outline" size="sm" onClick={() => ack.mutate(alert.id)} disabled={ack.isPending}>
+                      Reconhecer
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

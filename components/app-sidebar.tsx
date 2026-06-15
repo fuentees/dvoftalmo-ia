@@ -2,77 +2,16 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import {
-  BarChart3,
-  Bell,
-  Bot,
-  Brain,
-  CheckSquare,
-  ChevronRight,
-  ClipboardList,
-  Database,
-  FileText,
-  GraduationCap,
-  LayoutDashboard,
-  Library,
-  LogOut,
-  Moon,
-  Newspaper,
-  Settings,
-  ShieldAlert,
-  Sun,
-  User
-} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { BarChart3, ChevronRight, LogOut, Moon, Sun, User } from "lucide-react";
+import { navigationGroups } from "@/components/navigation/nav-items";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
-
-const groups = [
-  {
-    label: "Gestão epidemiológica",
-    items: [
-      { href: "/dashboard", label: "Sala de Situação", icon: LayoutDashboard },
-      { href: "/alertas", label: "Alertas e Resposta", icon: Bell },
-      { href: "/boletins", label: "Boletins", icon: Newspaper }
-    ]
-  },
-  {
-    label: "Análises por agravo",
-    items: [
-      { href: "/notificacoes", label: "Conjuntivites - CEVESP", icon: BarChart3 },
-      { href: "/sinan-qualidade", label: "Tracoma - SINAN", icon: ShieldAlert }
-    ]
-  },
-  {
-    label: "Inteligência",
-    items: [
-      { href: "/chat", label: "Chat Epidemiológico", icon: Bot },
-      { href: "/agentes", label: "Agentes", icon: GraduationCap },
-      { href: "/base-conhecimento", label: "Base de Conhecimento", icon: Brain }
-    ]
-  },
-  {
-    label: "Documentos",
-    items: [
-      { href: "/documentos", label: "Documentos", icon: Library },
-      { href: "/templates", label: "Templates", icon: FileText }
-    ]
-  },
-  {
-    label: "Sistema",
-    items: [
-      { href: "/correcoes", label: "Fila de Correções", icon: CheckSquare },
-      { href: "/auditoria", label: "Auditoria", icon: ClipboardList },
-      { href: "/sincronizacao", label: "Sincronização", icon: Database },
-      { href: "/configuracoes", label: "Configurações de IA", icon: Settings }
-    ]
-  }
-];
 
 export function AppSidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const [dark, setDark] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [userName, setUserName] = useState("");
@@ -90,7 +29,7 @@ export function AppSidebar() {
         );
       }
     });
-  }, []);
+  }, [supabase]);
 
   function toggleTheme() {
     const isDark = document.documentElement.classList.toggle("dark");
@@ -105,7 +44,7 @@ export function AppSidebar() {
   }
 
   return (
-    <aside className="flex h-screen w-64 shrink-0 flex-col border-r bg-card">
+    <aside className="flex h-screen w-72 shrink-0 flex-col border-r bg-card">
       <div className="flex h-14 items-center gap-3 border-b px-4">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
           <BarChart3 className="h-4 w-4 text-primary-foreground" />
@@ -117,7 +56,7 @@ export function AppSidebar() {
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-3">
-        {groups.map((group) => (
+        {navigationGroups.map((group) => (
           <div key={group.label} className="mb-4">
             <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
               {group.label}
@@ -125,21 +64,26 @@ export function AppSidebar() {
             <div className="space-y-0.5">
               {group.items.map((item) => {
                 const Icon = item.icon;
-                const active = pathname.startsWith(item.href);
+                const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
                     className={cn(
-                      "group flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors",
+                      "group flex min-h-10 items-start gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors",
                       active
                         ? "bg-primary/10 font-medium text-primary"
                         : "text-muted-foreground hover:bg-muted hover:text-foreground"
                     )}
                   >
-                    <Icon className={cn("h-4 w-4 shrink-0", active ? "text-primary" : "")} />
-                    <span className="truncate">{item.label}</span>
-                    {active && <ChevronRight className="ml-auto h-3.5 w-3.5 shrink-0 opacity-50" />}
+                    <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", active ? "text-primary" : "")} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{item.label}</span>
+                      <span className={cn("block truncate text-[10px] font-normal", active ? "text-primary/70" : "text-muted-foreground/70")}>
+                        {item.description}
+                      </span>
+                    </span>
+                    {active && <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-50" />}
                   </Link>
                 );
               })}

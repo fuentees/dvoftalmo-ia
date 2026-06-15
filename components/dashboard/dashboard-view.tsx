@@ -77,9 +77,16 @@ type RateAnalysis = {
 };
 
 const tabs: Array<{ id: Tab; label: string; icon: React.ReactNode }> = [
-  { id: "geral", label: "Geral", icon: <Activity className="h-4 w-4" /> },
-  { id: "conjuntivites", label: "Conjuntivites", icon: <Eye className="h-4 w-4" /> },
-  { id: "tracoma", label: "Tracoma", icon: <Stethoscope className="h-4 w-4" /> }
+  { id: "geral", label: "Visao geral", icon: <Activity className="h-4 w-4" /> },
+  { id: "conjuntivites", label: "CEVESP", icon: <Eye className="h-4 w-4" /> },
+  { id: "tracoma", label: "SINAN Tracoma", icon: <Stethoscope className="h-4 w-4" /> }
+];
+
+const quickActions = [
+  { href: "/sincronizacao", label: "Importar bases", detail: "CEVESP, TRACONET e consolidado", icon: Database },
+  { href: "/notificacoes", label: "Consultar CEVESP", detail: "Tabelas, canal e boletim", icon: Eye },
+  { href: "/sinan-qualidade", label: "Auditar SINAN", detail: "Qualidade, casos e divergencias", icon: Stethoscope },
+  { href: "/chat", label: "Perguntar ao agente", detail: "Analise em texto, tabela ou relatorio", icon: BarChart2 }
 ];
 
 function formatValue(value: number | undefined) {
@@ -398,6 +405,28 @@ export function DashboardView() {
               {item.label}
             </button>
           ))}
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          {quickActions.map((action) => {
+            const Icon = action.icon;
+            return (
+              <Link
+                key={action.href}
+                href={action.href}
+                className="group flex min-h-20 items-center gap-3 rounded-md border bg-card p-3 transition-colors hover:border-primary/40 hover:bg-primary/5"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                  <Icon className="h-4 w-4" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold">{action.label}</span>
+                  <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">{action.detail}</span>
+                </span>
+                <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
+              </Link>
+            );
+          })}
         </div>
 
         {(kpis.isError || sinan.isError) && (
