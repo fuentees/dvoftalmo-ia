@@ -45,6 +45,15 @@ function priorityClass(priority: QualityAction["priority"]) {
   return "border-sky-200 bg-sky-50 text-sky-700";
 }
 
+function normalizePriority(value: string): QualityAction["priority"] {
+  if (value === "Critica") return "Critica";
+  if (value === "Media") return "Media";
+  const normalized = normalizeText(value);
+  if (normalized === "critica" || normalized === "critico") return "Critica";
+  if (normalized === "alta" || normalized === "alto") return "Alta";
+  return "Media";
+}
+
 function normalizeText(value: string) {
   return value
     .toLowerCase()
@@ -92,7 +101,7 @@ function buildActions(cevesp?: CevespQuality, sinan?: SinanAuditResult): Quality
     actions.push({
       agravo: "CEVESP",
       priority: critical > 0 ? "Critica" : "Alta",
-      problem: "Inconsistencias em notificacoes CEVESP",
+      problem: "Inconsistências em notificações CEVESP",
       where: cevesp.byGve[0]?.gve ?? cevesp.byMunicipio[0]?.municipio ?? "base completa",
       count: cevesp.total,
       href: "/cevesp-qualidade"
@@ -105,7 +114,7 @@ function buildActions(cevesp?: CevespQuality, sinan?: SinanAuditResult): Quality
       actions.push({
         agravo: "SINAN",
         priority: "Critica",
-        problem: "Inconsistencias clinicas do tracoma",
+        problem: "Inconsistências clínicas do tracoma",
         where: "TRACONET",
         count: critical,
         href: "/sinan-qualidade"
@@ -117,7 +126,7 @@ function buildActions(cevesp?: CevespQuality, sinan?: SinanAuditResult): Quality
       actions.push({
         agravo: "SINAN",
         priority: "Alta",
-        problem: "Divergencias TRACONET x NOTTRACONET",
+        problem: "Divergências TRACONET x NOTTRACONET",
         where: sinan.crossBankDivergences?.[0]?.gve ?? "municipios/anos",
         count: divergences,
         href: "/sinan-qualidade"
@@ -130,7 +139,7 @@ function buildActions(cevesp?: CevespQuality, sinan?: SinanAuditResult): Quality
         agravo: "SINAN",
         priority: "Media",
         problem: "Completude pendente no SINAN Tracoma",
-        where: "campos de encerramento, forma clinica ou identificador",
+        where: "campos de encerramento, forma clínica ou identificador",
         count: missing,
         href: "/sinan-qualidade"
       });
@@ -212,14 +221,14 @@ export function QualityCenterView() {
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <Badge className="border-primary/30 bg-primary/10 text-primary">Central de Qualidade</Badge>
             {actions.length > 0 ? (
-              <Badge className="border-red-200 bg-red-50 text-red-700">{actions.length} frentes de acao</Badge>
+              <Badge className="border-red-200 bg-red-50 text-red-700">{actions.length} frentes de ação</Badge>
             ) : (
-              <Badge className="border-teal-200 bg-teal-50 text-teal-700">sem prioridade critica carregada</Badge>
+              <Badge className="border-teal-200 bg-teal-50 text-teal-700">sem prioridade crítica carregada</Badge>
             )}
           </div>
-          <h1 className="text-xl font-semibold tracking-tight">Qualidade dos dados epidemiologicos</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Qualidade dos dados epidemiológicos</h1>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Visao unica para acompanhar inconsistencias, divergencias, campos incompletos e a fila de correcao dos bancos CEVESP e SINAN Tracoma.
+            Visão única para acompanhar inconsistências, divergências, campos incompletos e a fila de correção dos bancos CEVESP e SINAN Tracoma.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -240,7 +249,7 @@ export function QualityCenterView() {
               <CardContent className="flex gap-3 pt-5 text-sm text-amber-900">
                 <AlertTriangle className="mt-0.5 h-4 w-4" />
                 <div>
-                  <p className="font-medium">CEVESP indisponivel nesta consulta</p>
+                  <p className="font-medium">CEVESP indisponível nesta consulta</p>
                   <p className="text-amber-800">{cevesp.error.message}</p>
                 </div>
               </CardContent>
@@ -251,7 +260,7 @@ export function QualityCenterView() {
               <CardContent className="flex gap-3 pt-5 text-sm text-amber-900">
                 <AlertTriangle className="mt-0.5 h-4 w-4" />
                 <div>
-                  <p className="font-medium">SINAN indisponivel nesta consulta</p>
+                  <p className="font-medium">SINAN indisponível nesta consulta</p>
                   <p className="text-amber-800">{sinan.error.message}</p>
                 </div>
               </CardContent>
@@ -271,7 +280,7 @@ export function QualityCenterView() {
             <StatCard
               title="CEVESP"
               value={cevespTotal}
-              detail="registros com inconsistencia"
+              detail="registros com inconsistência"
               tone={cevespTotal > 0 ? "warn" : "ok"}
             />
             <StatCard
@@ -281,15 +290,15 @@ export function QualityCenterView() {
               tone={sinanCritical > 0 ? "danger" : "ok"}
             />
             <StatCard
-              title="Divergencias"
+              title="Divergências"
               value={sinanDivergences}
-              detail="comparacoes alto risco entre bancos"
+              detail="comparações de alto risco entre bancos"
               tone={sinanDivergences > 0 ? "danger" : "ok"}
             />
             <StatCard
-              title="Correcoes exportaveis"
+              title="Correções exportáveis"
               value={sinanCorrections.length}
-              detail="registros SINAN com identificacao para cobranca"
+              detail="registros SINAN com identificação para cobrança"
               tone={sinanCorrections.length > 0 ? "warn" : "ok"}
             />
           </div>
@@ -298,7 +307,7 @@ export function QualityCenterView() {
             <Card>
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between gap-3">
-                  <CardTitle className="text-base">Plano de acao</CardTitle>
+                  <CardTitle className="text-base">Plano de ação</CardTitle>
                   {sinanCorrections.length > 0 && (
                     <Button
                       variant="outline"
@@ -315,7 +324,7 @@ export function QualityCenterView() {
                 {actions.length === 0 ? (
                   <div className="flex h-40 flex-col items-center justify-center text-center text-sm text-muted-foreground">
                     <CheckCircle2 className="mb-2 h-8 w-8 text-teal-600" />
-                    Nenhuma prioridade critica identificada com os dados carregados.
+                    Nenhuma prioridade crítica identificada com os dados carregados.
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -353,7 +362,7 @@ export function QualityCenterView() {
               </CardHeader>
               <CardContent className="space-y-2">
                 {[
-                  { icon: Database, title: "1. Importar/validar bases", text: "Confirme DBF, cache CEVESP e populacao IBGE.", href: "/sincronizacao" },
+                  { icon: Database, title: "1. Importar/validar bases", text: "Confirme DBF, cache CEVESP e população IBGE.", href: "/sincronizacao" },
                   { icon: ShieldAlert, title: "2. Auditar qualidade", text: "Revise CEVESP e SINAN por prioridade.", href: "/qualidade-dados" },
                   { icon: ClipboardCheck, title: "3. Corrigir e cobrar", text: "Exporte registros ou aplique fila CEVESP.", href: "/correcoes" }
                 ].map((item) => {
@@ -381,7 +390,7 @@ export function QualityCenterView() {
               </CardHeader>
               <CardContent>
                 {Object.entries(cevesp.data?.byType ?? {}).length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Sem inconsistencias carregadas.</p>
+                  <p className="text-sm text-muted-foreground">Sem inconsistências carregadas.</p>
                 ) : (
                   <div className="space-y-2">
                     {Object.entries(cevesp.data?.byType ?? {}).slice(0, 8).map(([label, count]) => (
@@ -401,12 +410,12 @@ export function QualityCenterView() {
               </CardHeader>
               <CardContent>
                 {sinanCorrections.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Sem lista de correcao SINAN carregada.</p>
+                  <p className="text-sm text-muted-foreground">Sem lista de correção SINAN carregada.</p>
                 ) : (
                   <div className="space-y-2">
                     {sinanCorrections.slice(0, 8).map((item, index) => (
                       <div key={`${item.rowKey}-${index}`} className="grid grid-cols-[70px_1fr_auto] gap-3 rounded-md border px-3 py-2 text-sm">
-                        <Badge className={priorityClass(item.priority)}>{item.priority}</Badge>
+                        <Badge className={priorityClass(normalizePriority(item.priority))}>{normalizePriority(item.priority)}</Badge>
                         <span className="min-w-0">
                           <span className="block truncate font-medium">{item.problem}</span>
                           <span className="block truncate text-xs text-muted-foreground">{item.municipioNome || item.municipio} - {item.gve}</span>

@@ -39,12 +39,12 @@ export function IbgePopulationCard() {
     const start = Number(yearStart);
     const end = Number(yearEnd);
     if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1900 || end < 1900) {
-      setMessage({ type: "error", text: "Informe anos validos para sincronizar a populacao." });
+      setMessage({ type: "error", text: "Informe anos válidos para sincronizar a população." });
       return;
     }
 
     setSyncing(true);
-    setMessage({ type: "info", text: "Buscando populacao municipal no IBGE/SIDRA..." });
+    setMessage({ type: "info", text: "Buscando população municipal no IBGE/SIDRA..." });
     try {
       const response = await fetch("/api/admin/ibge-population-sync", {
         method: "POST",
@@ -52,14 +52,14 @@ export function IbgePopulationCard() {
         body: JSON.stringify({ ufCode: "35", yearStart: start, yearEnd: end })
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Erro ao sincronizar populacao IBGE.");
+      if (!response.ok) throw new Error(data.error ?? "Erro ao sincronizar população IBGE.");
       setMessage({
         type: "success",
-        text: `${Number(data.upserted ?? 0).toLocaleString("pt-BR")} registros de populacao gravados para ${data.yearStart} a ${data.yearEnd}.`
+        text: `${Number(data.upserted ?? 0).toLocaleString("pt-BR")} registros de população gravados para ${data.yearStart} a ${data.yearEnd}.`
       });
       await loadStatus();
     } catch (error) {
-      setMessage({ type: "error", text: error instanceof Error ? error.message : "Erro ao sincronizar populacao IBGE." });
+      setMessage({ type: "error", text: error instanceof Error ? error.message : "Erro ao sincronizar população IBGE." });
     } finally {
       setSyncing(false);
     }
@@ -70,10 +70,10 @@ export function IbgePopulationCard() {
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-sm">
           <Database className="h-4 w-4 text-primary" />
-          Populacao IBGE
+          População IBGE
         </CardTitle>
         <CardDescription className="text-xs">
-          Base municipal por ano para incidencia, taxa de deteccao e cobertura.
+          Base municipal por ano para incidência, taxa de detecção e cobertura.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -81,8 +81,8 @@ export function IbgePopulationCard() {
           <div className="flex gap-2">
             <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <p>
-              Para comparar anos anteriores, sincronize a populacao de todos os anos do periodo analisado.
-              Se faltar algum ano, o sistema usa a populacao mais proxima disponivel e sinaliza a origem.
+              Para comparar anos anteriores, sincronize a população de todos os anos do período analisado.
+              Se faltar algum ano, o sistema usa a população mais próxima disponível e sinaliza a origem.
             </p>
           </div>
         </div>
@@ -90,12 +90,12 @@ export function IbgePopulationCard() {
         <div className="grid gap-2 rounded-md border bg-background p-3 text-xs sm:grid-cols-2">
           <InfoItem label="Registros" value={(status?.totalRows ?? 0).toLocaleString("pt-BR")} />
           <InfoItem
-            label="Periodo carregado"
+            label="Período carregado"
             value={status?.minYear && status.maxYear ? `${status.minYear} a ${status.maxYear}` : "sem status"}
           />
           {status?.years?.length ? (
             <div className="text-muted-foreground sm:col-span-2">
-              Anos disponiveis: {status.years.join(", ")}
+              Anos disponíveis: {status.years.join(", ")}
             </div>
           ) : null}
         </div>
@@ -106,7 +106,7 @@ export function IbgePopulationCard() {
             <input
               type="number"
               value={yearStart}
-              onChange={(event) => setYearStart(event.target.value)}
+              onChange={event => setYearStart(event.target.value)}
               className="h-8 rounded-md border bg-background px-2 text-sm text-foreground"
             />
           </label>
@@ -115,7 +115,7 @@ export function IbgePopulationCard() {
             <input
               type="number"
               value={yearEnd}
-              onChange={(event) => setYearEnd(event.target.value)}
+              onChange={event => setYearEnd(event.target.value)}
               className="h-8 rounded-md border bg-background px-2 text-sm text-foreground"
             />
           </label>

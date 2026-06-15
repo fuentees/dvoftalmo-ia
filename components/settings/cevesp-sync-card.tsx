@@ -21,20 +21,24 @@ interface SyncStatus {
 type Msg = { type: "success" | "error"; text: string };
 
 export function CevespSyncCard() {
-  const [status, setStatus]           = useState<SyncStatus | null>(null);
-  const [exporting, setExporting]     = useState(false);
-  const [importing, setImporting]     = useState(false);
-  const [progress, setProgress]       = useState<{ done: number; total: number } | null>(null);
-  const [msg, setMsg]                 = useState<Msg | null>(null);
-  const fileRef                       = useRef<HTMLInputElement>(null);
+  const [status, setStatus] = useState<SyncStatus | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [msg, setMsg] = useState<Msg | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { loadStatus(); }, []);
+  useEffect(() => {
+    void loadStatus();
+  }, []);
 
   async function loadStatus() {
     try {
-      const res = await fetch("/api/admin/cevesp-status");
-      if (res.ok) setStatus(await res.json());
-    } catch { /* ignore */ }
+      const response = await fetch("/api/admin/cevesp-status");
+      if (response.ok) setStatus(await response.json());
+    } catch {
+      // Status is informational; export/import can still be attempted.
+    }
   }
 
   async function handleExport(full: boolean) {
@@ -42,21 +46,24 @@ export function CevespSyncCard() {
     setMsg(null);
     try {
       const url = `/api/admin/cevesp-export${full ? "?full=true" : ""}`;
-      const res = await fetch(url);
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({})) as { error?: string };
+      const response = await fetch(url);
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({})) as { error?: string };
         throw new Error(err.error ?? "Erro ao exportar.");
       }
-      const count = res.headers.get("X-Row-Count") ?? "?";
-      const blob  = await res.blob();
-      const link  = document.createElement("a");
-      link.href   = URL.createObjectURL(blob);
+      const count = response.headers.get("X-Row-Count") ?? "?";
+      const blob = await response.blob();
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
       link.download = "cevesp-export.json";
       link.click();
       URL.revokeObjectURL(link.href);
-      setMsg({ type: "success", text: `${Number(count).toLocaleString("pt-BR")} registros exportados. Leve o arquivo para casa e use "Importar".` });
-    } catch (e) {
-      setMsg({ type: "error", text: (e as Error).message });
+      setMsg({
+        type: "success",
+        text: `${Number(count).toLocaleString("pt-BR")} registros exportados. Leve o arquivo para casa e use "Importar".`
+      });
+    } catch (error) {
+      setMsg({ type: "error", text: (error as Error).message });
     } finally {
       setExporting(false);
     }
@@ -71,32 +78,35 @@ export function CevespSyncCard() {
       const rows = JSON.parse(text) as Record<string, unknown>[];
       if (!Array.isArray(rows) || rows.length === 0) throw new Error("Arquivo vazio ou formato inválido.");
 
-      const BATCH = 500;
+      const batchSize = 500;
       let done = 0;
       const importId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       setProgress({ done: 0, total: rows.length });
 
-      for (let i = 0; i < rows.length; i += BATCH) {
-        const batch = rows.slice(i, i + BATCH);
-        const isLastBatch = i + BATCH >= rows.length;
-        const res = await fetch("/api/admin/cevesp-import", {
+      for (let index = 0; index < rows.length; index += batchSize) {
+        const batch = rows.slice(index, index + batchSize);
+        const isLastBatch = index + batchSize >= rows.length;
+        const response = await fetch("/api/admin/cevesp-import", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ rows: batch, importId, totalRows: rows.length, isLastBatch }),
+          body: JSON.stringify({ rows: batch, importId, totalRows: rows.length, isLastBatch })
         });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({})) as { error?: string };
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({})) as { error?: string };
           throw new Error(err.error ?? "Erro ao importar.");
         }
-        const data = await res.json() as { upserted: number };
+        const data = await response.json() as { upserted: number };
         done += data.upserted;
         setProgress({ done, total: rows.length });
       }
 
-      setMsg({ type: "success", text: `${done.toLocaleString("pt-BR")} registros importados! O agente agora usa dados reais do CEVESP.` });
+      setMsg({
+        type: "success",
+        text: `${done.toLocaleString("pt-BR")} registros importados. O agente agora usa dados reais do CEVESP.`
+      });
       await loadStatus();
-    } catch (e) {
-      setMsg({ type: "error", text: (e as Error).message });
+    } catch (error) {
+      setMsg({ type: "error", text: (error as Error).message });
     } finally {
       setImporting(false);
       setProgress(null);
@@ -105,9 +115,7 @@ export function CevespSyncCard() {
   }
 
   const pct = progress ? Math.round((progress.done / progress.total) * 100) : 0;
-  const cachePeriod = status?.minYear && status?.maxYear
-    ? `${status.minYear} a ${status.maxYear}`
-    : "sem periodo identificado";
+  const cachePeriod = status?.minYear && status?.maxYear ? `${status.minYear} a ${status.maxYear}` : "sem período identificado";
 
   return (
     <Card>
@@ -122,89 +130,68 @@ export function CevespSyncCard() {
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {/* Status do cache */}
         <div className="rounded-md bg-muted/50 px-3 py-2 text-xs">
           {status === null ? (
             <span className="text-muted-foreground">Verificando cache...</span>
           ) : status.hasData ? (
             <span className="text-green-700">
-              Cache ativo — {status.totalRows.toLocaleString("pt-BR")} registros.
+              Cache ativo - {status.totalRows.toLocaleString("pt-BR")} registros.
               {status.lastSync && ` Última sync: ${new Date(status.lastSync).toLocaleDateString("pt-BR")}.`}
             </span>
           ) : (
-            <span className="text-amber-700">Cache vazio — sincronize para ativar dados reais.</span>
+            <span className="text-amber-700">Cache vazio - sincronize para ativar dados reais.</span>
           )}
         </div>
 
         {status?.hasData && (
           <div className="grid gap-2 rounded-md border bg-background p-3 text-xs sm:grid-cols-2">
-            <StatusItem label="Periodo do cache" value={cachePeriod} />
+            <StatusItem label="Período do cache" value={cachePeriod} />
             <StatusItem label="Total de casos" value={status.totalCases.toLocaleString("pt-BR")} />
-            <StatusItem label="Municipios" value={status.municipalities.toLocaleString("pt-BR")} />
+            <StatusItem label="Municípios" value={status.municipalities.toLocaleString("pt-BR")} />
             <StatusItem label="GVEs" value={status.gves.toLocaleString("pt-BR")} />
-            <StatusItem label="Ultima notificacao" value={status.latestNotificationDate ? new Date(status.latestNotificationDate).toLocaleDateString("pt-BR") : "nao informada"} />
-            <StatusItem label="Ultima importacao" value={status.lastSync ? new Date(status.lastSync).toLocaleString("pt-BR") : "nao registrada"} />
+            <StatusItem label="Última notificação" value={status.latestNotificationDate ? new Date(status.latestNotificationDate).toLocaleDateString("pt-BR") : "não informada"} />
+            <StatusItem label="Última importação" value={status.lastSync ? new Date(status.lastSync).toLocaleString("pt-BR") : "não registrada"} />
             {status.years.length > 0 && (
               <div className="text-muted-foreground sm:col-span-2">
-                Anos disponiveis: {status.years.join(", ")}
+                Anos disponíveis: {status.years.join(", ")}
               </div>
             )}
           </div>
         )}
 
-        {/* Passo 1 — Exportar */}
         <div className="space-y-2">
           <p className="text-xs font-medium">
             <span className="mr-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] text-primary-foreground">1</span>
-            No escritório (rede SES-SP) — exporte o MySQL
+            No escritório (rede SES-SP) - exporte o MySQL
           </p>
           <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs"
-              onClick={() => handleExport(false)}
-              disabled={exporting || importing}
-            >
+            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => handleExport(false)} disabled={exporting || importing}>
               <Download className="mr-1.5 h-3.5 w-3.5" />
               {exporting ? "Exportando..." : "Exportar ano atual"}
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs"
-              onClick={() => handleExport(true)}
-              disabled={exporting || importing}
-            >
+            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => handleExport(true)} disabled={exporting || importing}>
               <Download className="mr-1.5 h-3.5 w-3.5" />
               Exportar tudo
             </Button>
           </div>
         </div>
 
-        {/* Passo 2 — Importar */}
         <div className="space-y-2">
           <p className="text-xs font-medium">
             <span className="mr-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] text-primary-foreground">2</span>
-            Em qualquer lugar — importe o arquivo para o Supabase
+            Em qualquer lugar - importe o arquivo para o Supabase
           </p>
           <input
             ref={fileRef}
             type="file"
             accept=".json"
             className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) handleImport(f);
+            onChange={event => {
+              const file = event.target.files?.[0];
+              if (file) void handleImport(file);
             }}
           />
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 text-xs"
-            onClick={() => fileRef.current?.click()}
-            disabled={importing || exporting}
-          >
+          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => fileRef.current?.click()} disabled={importing || exporting}>
             <Upload className="mr-1.5 h-3.5 w-3.5" />
             {importing ? "Importando..." : "Selecionar cevesp-export.json"}
           </Button>
@@ -212,10 +199,7 @@ export function CevespSyncCard() {
           {progress && (
             <div className="space-y-1 pt-1">
               <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full bg-primary transition-all duration-300"
-                  style={{ width: `${pct}%` }}
-                />
+                <div className="h-full bg-primary transition-all duration-300" style={{ width: `${pct}%` }} />
               </div>
               <p className="text-xs text-muted-foreground">
                 {progress.done.toLocaleString("pt-BR")} / {progress.total.toLocaleString("pt-BR")} registros ({pct}%)

@@ -37,12 +37,12 @@ interface PreviewResult {
 }
 
 function parseCsv(text: string) {
-  const lines = text.split(/\r?\n/).filter((line) => line.trim());
+  const lines = text.split(/\r?\n/).filter(line => line.trim());
   if (lines.length < 2) return [];
-  const sep = lines[0].includes(";") ? ";" : ",";
-  const headers = lines[0].split(sep).map((item) => item.trim().replace(/^"|"$/g, ""));
-  return lines.slice(1).map((line) => {
-    const values = line.split(sep).map((item) => item.trim().replace(/^"|"$/g, ""));
+  const separator = lines[0].includes(";") ? ";" : ",";
+  const headers = lines[0].split(separator).map(item => item.trim().replace(/^"|"$/g, ""));
+  return lines.slice(1).map(line => {
+    const values = line.split(separator).map(item => item.trim().replace(/^"|"$/g, ""));
     return Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""]));
   });
 }
@@ -56,7 +56,9 @@ export function SinanTracomaSyncCard() {
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { void loadStatus(); }, []);
+  useEffect(() => {
+    void loadStatus();
+  }, []);
 
   async function loadStatus() {
     try {
@@ -78,7 +80,7 @@ export function SinanTracomaSyncCard() {
     setBusy(true);
     setPreview(null);
     setPendingFile(null);
-    setMessage({ type: "info", text: `Validando ${file.name} antes da importacao...` });
+    setMessage({ type: "info", text: `Validando ${file.name} antes da importação...` });
     try {
       const form = new FormData();
       form.append("file", file);
@@ -93,7 +95,7 @@ export function SinanTracomaSyncCard() {
       setBank(data.suggestedBank);
       setMessage({
         type: data.warnings?.length ? "info" : "success",
-        text: `Pre-validacao concluida. Sugestao: importar como ${data.suggestedBank.toUpperCase()}.`
+        text: `Pré-validação concluída. Sugestão: importar como ${data.suggestedBank.toUpperCase()}.`
       });
     } catch (error) {
       setMessage({ type: "error", text: error instanceof Error ? error.message : "Erro ao validar arquivo." });
@@ -127,16 +129,14 @@ export function SinanTracomaSyncCard() {
       }
 
       const text = await file.text();
-      const rows = file.name.toLowerCase().endsWith(".csv")
-        ? parseCsv(text)
-        : JSON.parse(text);
-      if (!Array.isArray(rows) || rows.length === 0) throw new Error("Arquivo vazio ou formato invalido.");
+      const rows = file.name.toLowerCase().endsWith(".csv") ? parseCsv(text) : JSON.parse(text);
+      if (!Array.isArray(rows) || rows.length === 0) throw new Error("Arquivo vazio ou formato inválido.");
 
       const batchSize = 500;
       const importId = `${bank}-${Date.now()}`;
       let done = 0;
-      for (let i = 0; i < rows.length; i += batchSize) {
-        const batch = rows.slice(i, i + batchSize);
+      for (let index = 0; index < rows.length; index += batchSize) {
+        const batch = rows.slice(index, index + batchSize);
         const response = await fetch("/api/admin/sinan-tracoma-import", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -145,7 +145,7 @@ export function SinanTracomaSyncCard() {
             rows: batch,
             importId,
             totalRows: rows.length,
-            isLastBatch: i + batchSize >= rows.length
+            isLastBatch: index + batchSize >= rows.length
           })
         });
         const data = await readResponse(response);
@@ -177,8 +177,8 @@ export function SinanTracomaSyncCard() {
       <CardContent className="space-y-3">
         <div className="grid gap-2 rounded-md border bg-muted/30 p-3 text-xs sm:grid-cols-2">
           <Info label="Registros" value={(status?.totalRows ?? 0).toLocaleString("pt-BR")} />
-          <Info label="Periodo" value={status?.minYear && status.maxYear ? `${status.minYear} a ${status.maxYear}` : "sem dados"} />
-          <Info label="Municipios" value={(status?.municipalities ?? 0).toLocaleString("pt-BR")} />
+          <Info label="Período" value={status?.minYear && status.maxYear ? `${status.minYear} a ${status.maxYear}` : "sem dados"} />
+          <Info label="Municípios" value={(status?.municipalities ?? 0).toLocaleString("pt-BR")} />
           <Info label="Bancos" value={status?.banks?.join(", ") || "nenhum"} />
           {status?.agravos?.length ? (
             <div className="text-muted-foreground sm:col-span-2">Agravos detectados: {status.agravos.join(", ")}</div>
@@ -187,13 +187,13 @@ export function SinanTracomaSyncCard() {
 
         {status && !status.hasData ? (
           <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-            Nenhum registro SINAN Tracoma encontrado no cache. Depois de importar, este total deve sair de 0 e o historico abaixo deve mostrar a ultima importacao.
+            Nenhum registro SINAN Tracoma encontrado no cache. Depois de importar, este total deve sair de 0 e o histórico abaixo deve mostrar a última importação.
           </div>
         ) : null}
 
         {status?.lastImports?.length ? (
           <div className="rounded-md border p-3 text-xs">
-            <div className="mb-2 font-medium">Ultimas importacoes</div>
+            <div className="mb-2 font-medium">Últimas importações</div>
             <div className="space-y-1 text-muted-foreground">
               {status.lastImports.map((item, index) => (
                 <div key={`${item.imported_at}-${index}`} className="flex flex-wrap items-center justify-between gap-2">
@@ -207,20 +207,16 @@ export function SinanTracomaSyncCard() {
         ) : null}
 
         <div className="flex flex-wrap items-center gap-2">
-          <select
-            className="h-8 rounded-md border bg-background px-2 text-xs"
-            value={bank}
-            onChange={(event) => setBank(event.target.value as Bank)}
-          >
-            <option value="traconet">TRACONET — Casos individuais (TF/TT/sexo/idade)</option>
-            <option value="nottraconet">NOTTRACONET — Consolidado (nº examinados/positivos)</option>
+          <select className="h-8 rounded-md border bg-background px-2 text-xs" value={bank} onChange={event => setBank(event.target.value as Bank)}>
+            <option value="traconet">TRACONET - Casos individuais (TF/TT/sexo/idade)</option>
+            <option value="nottraconet">NOTTRACONET - Consolidado (nº examinados/positivos)</option>
           </select>
           <input
             ref={fileRef}
             type="file"
             accept=".dbf,.json,.csv"
             className="hidden"
-            onChange={(event) => {
+            onChange={event => {
               const file = event.target.files?.[0];
               if (file) void previewFile(file);
             }}
@@ -230,30 +226,27 @@ export function SinanTracomaSyncCard() {
             {busy ? "Processando..." : "Validar arquivo"}
           </Button>
         </div>
+
         {preview && (
           <div className="space-y-3 rounded-md border bg-background p-3 text-xs">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <div className="font-medium">{preview.fileName}</div>
                 <div className="text-muted-foreground">
-                  {preview.totalRows.toLocaleString("pt-BR")} registros · {preview.columns.length} colunas
+                  {preview.totalRows.toLocaleString("pt-BR")} registros - {preview.columns.length} colunas
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
-                <span className="rounded-full border px-2 py-0.5">
-                  TRACONET {preview.traconetScore}
-                </span>
-                <span className="rounded-full border px-2 py-0.5">
-                  NOTTRACONET {preview.nottraconetScore}
-                </span>
+                <span className="rounded-full border px-2 py-0.5">TRACONET {preview.traconetScore}</span>
+                <span className="rounded-full border px-2 py-0.5">NOTTRACONET {preview.nottraconetScore}</span>
               </div>
             </div>
 
             <div className="grid gap-2 sm:grid-cols-2">
               <Info label="Banco sugerido" value={preview.suggestedBank.toUpperCase()} />
               <Info label="Banco selecionado" value={bank.toUpperCase()} />
-              <Info label="Anos detectados" value={preview.years.join(", ") || "nao identificado"} />
-              <Info label="Campos municipio" value={preview.municipalityFields.join(", ") || "nao identificado"} />
+              <Info label="Anos detectados" value={preview.years.join(", ") || "não identificado"} />
+              <Info label="Campos município" value={preview.municipalityFields.join(", ") || "não identificado"} />
             </div>
 
             {preview.warnings.length > 0 && (
@@ -263,7 +256,7 @@ export function SinanTracomaSyncCard() {
                   Atenção antes de importar
                 </div>
                 <ul className="list-disc space-y-1 pl-4">
-                  {preview.warnings.map((warning) => (
+                  {preview.warnings.map(warning => (
                     <li key={warning}>{warning}</li>
                   ))}
                 </ul>
@@ -280,14 +273,9 @@ export function SinanTracomaSyncCard() {
             </details>
 
             <div className="flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                className="h-8 text-xs"
-                disabled={busy || !pendingFile}
-                onClick={() => pendingFile && void importFile(pendingFile)}
-              >
+              <Button size="sm" className="h-8 text-xs" disabled={busy || !pendingFile} onClick={() => pendingFile && void importFile(pendingFile)}>
                 <Upload className="mr-1.5 h-3.5 w-3.5" />
-                Confirmar importacao como {bank.toUpperCase()}
+                Confirmar importação como {bank.toUpperCase()}
               </Button>
               <Button
                 size="sm"
@@ -305,6 +293,7 @@ export function SinanTracomaSyncCard() {
             </div>
           </div>
         )}
+
         {message && (
           <div className={`rounded-md border px-3 py-2 text-xs ${
             message.type === "success"
