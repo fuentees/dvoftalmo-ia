@@ -108,6 +108,15 @@ const tabs: Array<{ id: HubTab; label: string; icon: React.ElementType }> = [
   { id: "saidas", label: "Saídas", icon: FileText }
 ];
 
+const guidedQuestions = [
+  "Total de casos por município nos últimos 5 anos separado por ano",
+  "Total de casos por GVE dos últimos 5 anos por mês, com total geral",
+  "Casos por semana epidemiológica no ano atual por GVE",
+  "Municípios com maior número de surtos este ano",
+  "Distribuição por sexo e faixa etária no último ano",
+  "Taxa de incidência por município no último ano"
+];
+
 function num(value: unknown) {
   return Number(value ?? 0).toLocaleString("pt-BR");
 }
@@ -500,6 +509,20 @@ export function NotificationsReportView() {
                 placeholder="Ex.: Total de casos por GVE dos últimos 5 anos por mês"
                 className="min-h-[90px]"
               />
+              <div className="flex flex-wrap gap-2">
+                {guidedQuestions.map((item) => (
+                  <Button
+                    key={item}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-auto min-h-8 whitespace-normal text-left text-xs"
+                    onClick={() => setQuestion(item)}
+                  >
+                    {item}
+                  </Button>
+                ))}
+              </div>
               <div className="flex flex-wrap gap-2">
                 <Button onClick={() => ask.mutate()} disabled={ask.isPending}>
                   {ask.isPending ? <RefreshCw className="h-4 w-4 animate-spin" /> : <MessageSquareText className="h-4 w-4" />}

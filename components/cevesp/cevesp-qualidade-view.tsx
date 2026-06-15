@@ -20,6 +20,9 @@ interface QualidadeData {
   byAno: Array<{ ano: number; count: number }>;
   byMunicipio: Array<{ municipio: string; gve: string | null; count: number }>;
   total: number;
+  filteredTotal: number;
+  limit: number;
+  offset: number;
 }
 
 interface ApiError { error: string; message?: string }
@@ -316,13 +319,21 @@ export function CevespQualidadeView() {
   const [tab, setTab]             = useState<CevespTab>("registros");
   const [filterType, setFilterType] = useState<string>("todos");
   const [recordQuery, setRecordQuery] = useState("");
+  const [page, setPage] = useState(0);
   const [selected, setSelected]   = useState<Set<string>>(new Set());
   const [proposeMsg, setProposeMsg] = useState<{ type: "ok" | "error"; text: string } | null>(null);
+  const pageSize = 100;
 
   const { data, isLoading, isError, error, refetch } = useQuery<QualidadeData, ApiError>({
-    queryKey: ["cevesp-qualidade"],
+    queryKey: ["cevesp-qualidade", filterType, recordQuery, page],
     queryFn: async () => {
-      const res  = await fetch("/api/cevesp/qualidade");
+      const params = new URLSearchParams({
+        limit: String(pageSize),
+        offset: String(page * pageSize),
+        issue: filterType,
+        q: recordQuery
+      });
+      const res  = await fetch(`/api/cevesp/qualidade?${params.toString()}`);
       const json = await res.json();
       if (!res.ok) throw json as ApiError;
       return json as QualidadeData;
@@ -353,21 +364,7 @@ export function CevespQualidadeView() {
   });
 
   const records = data?.records ?? [];
-  const visible = records.filter((record) => {
-    const matchType = filterType === "todos" || record.issue.startsWith(filterType);
-    const q = normalizeSearch(recordQuery);
-    const matchText = !q || normalizeSearch([
-      record.recordId,
-      record.dtNotificacao,
-      record.semEpidemio,
-      record.municipio,
-      record.gve,
-      record.issue,
-      record.suggestedField,
-      record.suggestedValue
-    ].join(" ")).includes(q);
-    return matchType && matchText;
-  });
+  const visible = records;
 
   const types = data ? Object.keys(data.byType) : [];
 
@@ -384,6 +381,20 @@ export function CevespQualidadeView() {
   }
   function toggleAll() {
     setSelected(selected.size === visible.length ? new Set() : new Set(visible.map((r) => r.recordId)));
+  }
+  function resetRecordFilters() {
+    setFilterType("todos");
+    setRecordQuery("");
+    setPage(0);
+    setSelected(new Set());
+  }
+  function downloadFilteredCsv() {
+    const params = new URLSearchParams({
+      issue: filterType,
+      q: recordQuery,
+      format: "csv"
+    });
+    window.location.href = `/api/cevesp/qualidade?${params.toString()}`;
   }
 
   if (isLoading) {
@@ -413,6 +424,8 @@ export function CevespQualidadeView() {
   }
 
   const total = data?.total ?? 0;
+  const filteredTotal = data?.filteredTotal ?? total;
+  const totalPages = Math.max(1, Math.ceil(filteredTotal / pageSize));
   const byType = data?.byType ?? {};
 
   const dateTempoBased = records.filter((r) => r.issueType === "data_tempo").length;
@@ -479,7 +492,7 @@ export function CevespQualidadeView() {
                 <select
                   className="h-8 rounded-md border bg-background px-2 text-xs"
                   value={filterType}
-                  onChange={(e) => { setFilterType(e.target.value); setSelected(new Set()); }}
+                  onChange={(e) => { setFilterType(e.target.value); setPage(0); setSelected(new Set()); }}
                 >
                   <option value="todos">Todos os problemas ({total})</option>
                   {types.map((t) => (
@@ -490,11 +503,21 @@ export function CevespQualidadeView() {
                   value={recordQuery}
                   onChange={(event) => {
                     setRecordQuery(event.target.value);
+                    setPage(0);
                     setSelected(new Set());
                   }}
                   placeholder="Buscar ID, município, GVE ou problema"
                   className="h-8 min-w-[260px] rounded-md border bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={downloadFilteredCsv}
+                >
+                  Exportar CSV
+                </Button>
 
                 {selected.size > 0 ? (
                   <Button
@@ -520,7 +543,7 @@ export function CevespQualidadeView() {
                 )}
 
                 <span className="text-xs text-muted-foreground">
-                  {visible.length} exibido(s)
+                  {visible.length} exibido(s) de {filteredTotal.toLocaleString("pt-BR")}
                   {selected.size > 0 && ` · ${selected.size} selecionado(s)`}
                 </span>
                 {(filterType !== "todos" || recordQuery) && (
@@ -529,11 +552,7 @@ export function CevespQualidadeView() {
                     variant="ghost"
                     size="sm"
                     className="h-8 text-xs"
-                    onClick={() => {
-                      setFilterType("todos");
-                      setRecordQuery("");
-                      setSelected(new Set());
-                    }}
+                    onClick={resetRecordFilters}
                   >
                     Limpar filtros
                   </Button>
@@ -639,6 +658,32 @@ export function CevespQualidadeView() {
                   </div>
                 </CardContent>
               </Card>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-card px-3 py-2 text-xs">
+                <span className="text-muted-foreground">
+                  Página {(page + 1).toLocaleString("pt-BR")} de {totalPages.toLocaleString("pt-BR")} · {filteredTotal.toLocaleString("pt-BR")} registro(s) filtrado(s)
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={page === 0}
+                    onClick={() => { setPage((current) => Math.max(0, current - 1)); setSelected(new Set()); }}
+                  >
+                    Anterior
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={page + 1 >= totalPages}
+                    onClick={() => { setPage((current) => current + 1); setSelected(new Set()); }}
+                  >
+                    Próxima
+                  </Button>
+                </div>
+              </div>
 
               <p className="text-xs text-muted-foreground">
                 Correções propostas ficam na fila de aprovação em{" "}

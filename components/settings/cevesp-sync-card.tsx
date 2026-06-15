@@ -80,6 +80,7 @@ export function CevespSyncCard() {
 
       const batchSize = 500;
       let done = 0;
+      let duplicateRows = 0;
       const importId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       setProgress({ done: 0, total: rows.length });
 
@@ -95,14 +96,18 @@ export function CevespSyncCard() {
           const err = await response.json().catch(() => ({})) as { error?: string };
           throw new Error(err.error ?? "Erro ao importar.");
         }
-        const data = await response.json() as { upserted: number };
+        const data = await response.json() as { upserted: number; duplicateRows?: number };
         done += data.upserted;
+        duplicateRows += data.duplicateRows ?? 0;
         setProgress({ done, total: rows.length });
       }
 
+      const skippedText = duplicateRows > 0
+        ? ` ${duplicateRows.toLocaleString("pt-BR")} linha(s) duplicada(s) no arquivo foram ignoradas no lote.`
+        : "";
       setMsg({
         type: "success",
-        text: `${done.toLocaleString("pt-BR")} registros importados. O agente agora usa dados reais do CEVESP.`
+        text: `${done.toLocaleString("pt-BR")} registros gravados de ${rows.length.toLocaleString("pt-BR")} linha(s) lida(s).${skippedText} O agente agora usa dados reais do CEVESP.`
       });
       await loadStatus();
     } catch (error) {

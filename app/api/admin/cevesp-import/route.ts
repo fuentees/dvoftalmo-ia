@@ -28,27 +28,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "JSON inválido." }, { status: 400 });
   }
 
-  // Validate DtNotificacao: PostgreSQL rejects impossible dates like "2026-04-31".
-  // Preserve the original value in dt_notificacao_raw so the agent can surface data quality issues.
   function sanitizeDates(row: Record<string, unknown>): Record<string, unknown> {
-    const r = { ...row };
-    const v = r["DtNotificacao"];
-    if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) {
-      const [y, m, d] = v.split("-").map(Number);
-      const dt = new Date(y, m - 1, d);
-      if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) {
-        r["dt_notificacao_raw"] = v;  // keep original for quality audit
-        r["DtNotificacao"] = null;
+    const next = { ...row };
+    const value = next["DtNotificacao"];
+    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      const [year, month, day] = value.split("-").map(Number);
+      const date = new Date(year, month - 1, day);
+      if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+        next["dt_notificacao_raw"] = value;
+        next["DtNotificacao"] = null;
       }
     }
-    return r;
+    return next;
   }
 
   const sanitized = rows.map(sanitizeDates);
-
-  // Deduplicate within the batch — PostgreSQL rejects two upserts for the same key in one statement
   const seen = new Set<string>();
-  const deduped = sanitized.filter(row => {
+  const deduped = sanitized.filter((row) => {
     const key = String(row.row_key ?? "");
     if (seen.has(key)) return false;
     seen.add(key);
@@ -71,5 +67,11 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  return NextResponse.json({ upserted: deduped.length });
+  return NextResponse.json({
+    received: rows.length,
+    upserted: deduped.length,
+    duplicateRows: rows.length - deduped.length,
+    totalRows,
+    importComplete: isLastBatch
+  });
 }
