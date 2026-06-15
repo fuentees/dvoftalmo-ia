@@ -346,6 +346,60 @@ function downloadCorrections(data: SinanAuditResult) {
   URL.revokeObjectURL(url);
 }
 
+function downloadTextFile(filename: string, content: string) {
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function buildSinanTechnicalReport(data: SinanAuditResult, filters: Record<string, string>) {
+  const filterText = Object.entries(filters)
+    .filter(([, value]) => value)
+    .map(([key, value]) => `${key}=${value}`)
+    .join("; ") || "base completa";
+  const highRisk = (data.crossBankDivergences ?? []).filter((item) => item.risco === "alto").length;
+  const lines = [
+    "RELATÓRIO TÉCNICO - QUALIDADE SINAN TRACOMA",
+    `Gerado em: ${new Date().toLocaleString("pt-BR")}`,
+    `Filtros aplicados: ${filterText}`,
+    "",
+    "1. Síntese dos bancos",
+    `TRACONET - casos individuais: ${data.totalTraconet.toLocaleString("pt-BR")}`,
+    `NOTTRACONET/NTRACOMA - positivos consolidados: ${data.totalNottraconet.toLocaleString("pt-BR")}`,
+    `NOTTRACONET/NTRACOMA - linhas consolidadas: ${(data.totalNottraconetRows ?? 0).toLocaleString("pt-BR")}`,
+    `Examinados consolidados: ${(data.consolidatedMetrics?.examinados?.value ?? 0).toLocaleString("pt-BR")}`,
+    "",
+    "2. Qualidade clínica e completude",
+    `Casos sem forma clínica positiva TF/TI/TS/TT/CO: ${(data.casosSemFormaPositiva ?? data.semGraduacao ?? 0).toLocaleString("pt-BR")}`,
+    `TT sem TS associado: ${(data.ttSemTs ?? 0).toLocaleString("pt-BR")}`,
+    `TF sem tratamento registrado: ${data.tfSemTratamento.toLocaleString("pt-BR")}`,
+    `TT sem encaminhamento/cirurgia registrado: ${data.ttSemCircurgia.toLocaleString("pt-BR")}`,
+    `Sem conclusão/encerramento: ${data.semConclusao.toLocaleString("pt-BR")}`,
+    `Possíveis duplicidades por chave composta: ${(data.duplicateNotificationIds?.length ?? 0).toLocaleString("pt-BR")}`,
+    "",
+    "3. Comparação TRACONET x NOTTRACONET",
+    `Divergências totais município/ano: ${(data.crossBankDivergences?.length ?? 0).toLocaleString("pt-BR")}`,
+    `Divergências de alto risco: ${highRisk.toLocaleString("pt-BR")}`,
+    ...data.crossBankDivergences.slice(0, 10).map((item) =>
+      `- ${item.municipioNome || item.municipio} ${item.ano}: individuais=${item.traconet}; consolidados=${item.nottraconet}; diferença=${item.diff}; risco=${item.risco}`
+    ),
+    "",
+    "4. Recomendações técnicas",
+    ...(data.recommendations?.length ? data.recommendations : [
+      "Manter monitoramento periódico da completude, consistência clínica e comparação entre bancos."
+    ]),
+    "",
+    "5. Encaminhamento",
+    "Priorizar correções que impactam indicador: forma clínica, tratamento, conclusão, duplicidade e divergência entre bancos.",
+    "Exportar a lista de correções e encaminhar ao município/GVE responsável com identificação do registro sempre que disponível."
+  ];
+  return lines.join("\n");
+}
+
 function GestaoTab({ data }: { data: SinanAuditResult }) {
   const priorities = buildManagementRows(data);
   const actionPlan = buildActionPlan(data);
@@ -1360,10 +1414,34 @@ export function SinanQualidadeView() {
             </Link>
           </div>
         </div>
-        <Button variant="outline" size="sm" onClick={() => { refetch(); rates.refetch(); }} disabled={isFetching || rates.isFetching}>
-          <RefreshCw className={`mr-1.5 h-4 w-4 ${isFetching || rates.isFetching ? "animate-spin" : ""}`} />
-          Atualizar
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {data && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const params = new URLSearchParams({ ...filters, format: "csv" });
+                  window.location.href = `/api/sinan/auditoria?${params.toString()}`;
+                }}
+              >
+                <Download className="mr-1.5 h-4 w-4" />
+                Exportar CSV
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => downloadTextFile(`relatorio-sinan-tracoma-${new Date().toISOString().slice(0, 10)}.txt`, buildSinanTechnicalReport(data, filters))}
+              >
+                Relatório técnico
+              </Button>
+            </>
+          )}
+          <Button variant="outline" size="sm" onClick={() => { refetch(); rates.refetch(); }} disabled={isFetching || rates.isFetching}>
+            <RefreshCw className={`mr-1.5 h-4 w-4 ${isFetching || rates.isFetching ? "animate-spin" : ""}`} />
+            Atualizar
+          </Button>
+        </div>
       </div>
 
       {/* ── Filtros ─────────────────────────────────────────────────────────── */}

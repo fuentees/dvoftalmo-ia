@@ -95,6 +95,7 @@ export function RateMap({
 }: RateMapProps) {
   const shapeType = rows.some((row) => row.municipio || row.codigoIbge) ? "municipio" : "gve";
   const valueMap = buildShapeValueMap(rows, valueKey);
+  const mappedRows = rows.filter((row) => Number(row[valueKey] ?? 0) > 0).length;
 
   if (missingPopulation) {
     return (
@@ -126,7 +127,10 @@ export function RateMap({
             colorScheme={colorFromRows(rows, valueKey)}
           />
           <p className="mt-2 text-xs text-muted-foreground">
-            Unidade do mapa: {valueLabel}. Areas sem correspondencia aparecem em cinza.
+            Unidade do mapa: {valueLabel}. Camada exibida: {shapeType === "municipio" ? "municípios do estado de SP" : "GVE"}. Áreas sem dado, sem população ou sem correspondência no shapefile aparecem em cinza.
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {mappedRows.toLocaleString("pt-BR")} território(s) com valor calculado. A tabela exibe até 100 linhas para inspeção rápida.
           </p>
           <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
             <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#14b8a6]" />baixo</span>

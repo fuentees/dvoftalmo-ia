@@ -88,6 +88,50 @@ function normalizeSearch(value: string | null | undefined) {
     .trim();
 }
 
+function downloadTextFile(filename: string, content: string) {
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function buildCevespQualityReport(data: QualidadeData) {
+  const lines = [
+    "RELATÓRIO TÉCNICO - QUALIDADE CEVESP CONJUNTIVITES",
+    `Gerado em: ${new Date().toLocaleString("pt-BR")}`,
+    "",
+    "1. Síntese",
+    `Total de registros com inconsistência: ${data.total.toLocaleString("pt-BR")}`,
+    `Registros filtrados na tela: ${(data.filteredTotal ?? data.total).toLocaleString("pt-BR")}`,
+    "",
+    "2. Principais tipos de inconsistência",
+    ...Object.entries(data.byType)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 12)
+      .map(([label, count]) => `- ${label}: ${count.toLocaleString("pt-BR")}`),
+    "",
+    "3. Territórios prioritários",
+    ...data.byGve.slice(0, 10).map((item) => `- ${item.gve}: ${item.count.toLocaleString("pt-BR")} registro(s)`),
+    "",
+    "4. Municípios prioritários",
+    ...data.byMunicipio.slice(0, 15).map((item) => `- ${item.municipio}${item.gve ? ` (${item.gve})` : ""}: ${item.count.toLocaleString("pt-BR")}`),
+    "",
+    "5. Interpretação epidemiológica",
+    "Registros com erro de data, semana epidemiológica, município/GVE ausente ou inconsistência entre TotalCaso, sexo e faixa etária devem ser corrigidos antes de boletins, mapas e análises temporais.",
+    "Notificação negativa não é tratada como erro quando TotalCaso = 0 e os campos de sexo/faixa etária também estão zerados.",
+    "",
+    "6. Recomendações",
+    "- Priorizar erros críticos de data/SE e identificação territorial.",
+    "- Exportar a lista filtrada e encaminhar aos municípios/GVEs responsáveis.",
+    "- Usar a fila de correções para propostas com campo e valor sugeridos.",
+    "- Reprocessar a qualidade após importação/correção para confirmar a redução das pendências."
+  ];
+  return lines.join("\n");
+}
+
 function TabsBar({ tab, setTab, counts }: {
   tab: CevespTab; setTab: (t: CevespTab) => void;
   counts: Record<CevespTab, number>;
@@ -457,6 +501,15 @@ export function CevespQualidadeView() {
         <Button size="sm" variant="outline" onClick={() => void refetch()}>
           <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Atualizar
         </Button>
+        {data && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => downloadTextFile(`relatorio-qualidade-cevesp-${new Date().toISOString().slice(0, 10)}.txt`, buildCevespQualityReport(data))}
+          >
+            Relatório técnico
+          </Button>
+        )}
       </div>
 
       {/* Summary cards */}

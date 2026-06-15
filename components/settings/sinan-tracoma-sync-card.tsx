@@ -122,7 +122,7 @@ export function SinanTracomaSyncCard() {
         if (!response.ok) throw new Error(data.error ?? "Erro ao importar DBF.");
         setMessage({
           type: "success",
-          text: `${Number(data.imported ?? 0).toLocaleString("pt-BR")} registros DBF importados em ${bank.toUpperCase()}.`
+          text: `${Number(data.imported ?? 0).toLocaleString("pt-BR")} registros DBF importados em ${bank.toUpperCase()}. Status atualizado abaixo com banco, período, municípios e histórico da importação.`
         });
         await loadStatus();
         return;
@@ -135,6 +135,7 @@ export function SinanTracomaSyncCard() {
       const batchSize = 500;
       const importId = `${bank}-${Date.now()}`;
       let done = 0;
+      let received = 0;
       for (let index = 0; index < rows.length; index += batchSize) {
         const batch = rows.slice(index, index + batchSize);
         const response = await fetch("/api/admin/sinan-tracoma-import", {
@@ -151,9 +152,13 @@ export function SinanTracomaSyncCard() {
         const data = await readResponse(response);
         if (!response.ok) throw new Error(data.error ?? "Erro ao importar SINAN Tracoma.");
         done += Number(data.upserted ?? 0);
+        received += Number(data.received ?? batch.length);
         setMessage({ type: "info", text: `Importando ${done.toLocaleString("pt-BR")} de ${rows.length.toLocaleString("pt-BR")} registros...` });
       }
-      setMessage({ type: "success", text: `${done.toLocaleString("pt-BR")} registros importados em ${bank.toUpperCase()}.` });
+      setMessage({
+        type: "success",
+        text: `${done.toLocaleString("pt-BR")} registros gravados em ${bank.toUpperCase()} de ${received.toLocaleString("pt-BR")} linha(s) lida(s). Confira abaixo período, municípios, agravos detectados e últimas importações.`
+      });
       await loadStatus();
     } catch (error) {
       setMessage({ type: "error", text: error instanceof Error ? error.message : "Erro ao importar." });

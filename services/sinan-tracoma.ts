@@ -284,7 +284,13 @@ export async function importSinanTracomaRows(opts: {
     });
   }
 
-  return { upserted: normalized.length };
+  return {
+    received: opts.rows.length,
+    upserted: normalized.length,
+    totalRows: opts.totalRows ?? normalized.length,
+    sourceBank: opts.bank,
+    importComplete: opts.isLastBatch ?? true
+  };
 }
 
 export async function getSinanTracomaStatus() {
