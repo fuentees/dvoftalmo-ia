@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import Link from "next/link";
 import {
   AlertTriangle, CheckCircle2, ClipboardList,
   Database, RefreshCw, XCircle, Activity,
@@ -1265,10 +1266,16 @@ export function SinanQualidadeView() {
             <ClipboardList className="h-5 w-5 text-primary" />
           </div>
           <div>
-            <h1 className="text-xl font-semibold">Qualidade SINAN — Tracoma</h1>
+            <div className="mb-1 inline-flex rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+              Análise por agravo
+            </div>
+            <h1 className="text-xl font-semibold">Tracoma - SINAN</h1>
             <p className="text-sm text-muted-foreground">
-              Auditoria automática: divergências entre bancos, completude clínica e consistência dos dados
+              Aprofundamento da Sala de Situação: TRACONET, NOTTRACONET, divergências, qualidade clínica e taxas.
             </p>
+            <Link href="/dashboard" className="mt-1 inline-flex text-xs font-medium text-primary underline">
+              Voltar para a Sala de Situação
+            </Link>
           </div>
         </div>
         <Button variant="outline" size="sm" onClick={() => { refetch(); rates.refetch(); }} disabled={isFetching || rates.isFetching}>

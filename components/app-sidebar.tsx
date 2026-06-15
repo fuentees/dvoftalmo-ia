@@ -29,7 +29,7 @@ import { createClient } from "@/lib/supabase/client";
 
 const groups = [
   {
-    label: "Gestão",
+    label: "Gestão epidemiológica",
     items: [
       { href: "/dashboard", label: "Sala de Situação", icon: LayoutDashboard },
       { href: "/alertas", label: "Alertas e Resposta", icon: Bell },
@@ -37,10 +37,10 @@ const groups = [
     ]
   },
   {
-    label: "Investigação",
+    label: "Análises por agravo",
     items: [
-      { href: "/notificacoes", label: "CEVESP Conjuntivites", icon: BarChart3 },
-      { href: "/sinan-qualidade", label: "SINAN Tracoma", icon: ShieldAlert }
+      { href: "/notificacoes", label: "Conjuntivites - CEVESP", icon: BarChart3 },
+      { href: "/sinan-qualidade", label: "Tracoma - SINAN", icon: ShieldAlert }
     ]
   },
   {

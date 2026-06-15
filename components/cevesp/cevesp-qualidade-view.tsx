@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
 import {
   AlertCircle, AlertTriangle, CheckCircle2, ClipboardCheck,
   MapPin, RefreshCw, Users, XCircle
@@ -331,10 +332,16 @@ export function CevespQualidadeView() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">Qualidade dos dados CEVESP</h1>
+          <div className="mb-1 inline-flex rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+            Auditoria de dados
+          </div>
+          <h1 className="text-xl font-semibold">Qualidade CEVESP - Conjuntivites</h1>
           <p className="text-sm text-muted-foreground">
-            Inconsistências detectadas automaticamente — datas, SE, município, GVE, distribuição de casos.
+            Tela técnica para corrigir inconsistências detectadas na base CEVESP.
           </p>
+          <Link href="/notificacoes" className="mt-1 inline-flex text-xs font-medium text-primary underline">
+            Voltar para Conjuntivites - CEVESP
+          </Link>
         </div>
         <Button size="sm" variant="outline" onClick={() => void refetch()}>
           <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Atualizar

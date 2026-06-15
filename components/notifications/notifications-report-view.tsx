@@ -349,12 +349,16 @@ export function NotificationsReportView() {
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-lg font-semibold leading-tight">Centro CEVESP Conjuntivites</h1>
+              <Badge className="border-primary/30 bg-primary/10 text-primary">Análise por agravo</Badge>
               <Badge className={risk.cls}>{risk.label}</Badge>
             </div>
+            <h1 className="mt-2 text-lg font-semibold leading-tight">Conjuntivites - CEVESP</h1>
             <p className="mt-0.5 text-sm text-muted-foreground">
-              Uma tela para situação epidemiológica, investigação de surtos, qualidade do banco e saídas técnicas.
+              Aprofundamento da Sala de Situação: consulta ao banco, canal endêmico, qualidade e saídas técnicas.
             </p>
+            <Link href="/dashboard" className="mt-1 inline-flex text-xs font-medium text-primary underline">
+              Voltar para a Sala de Situação
+            </Link>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => void report.refetch()} disabled={report.isFetching}>
@@ -643,7 +647,7 @@ export function NotificationsReportView() {
               <Button asChild>
                 <Link href="/cevesp-qualidade">
                   <ShieldCheck className="h-4 w-4" />
-                  Abrir auditoria completa
+                  Abrir auditoria técnica
                 </Link>
               </Button>
               <Button asChild variant="outline">

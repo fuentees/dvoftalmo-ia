@@ -199,6 +199,59 @@ function EmptyState({ title, detail }: { title: string; detail: string }) {
   );
 }
 
+function WorkPathCard({
+  step,
+  title,
+  description,
+  href,
+  label,
+  secondaryHref,
+  secondaryLabel,
+  icon
+}: {
+  step: string;
+  title: string;
+  description: string;
+  href: string;
+  label: string;
+  secondaryHref?: string;
+  secondaryLabel?: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <Card>
+      <CardContent className="flex h-full flex-col gap-3 pt-5">
+        <div className="flex items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+            {icon}
+          </div>
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{step}</div>
+            <h3 className="mt-1 text-sm font-semibold">{title}</h3>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</p>
+          </div>
+        </div>
+        <div className="mt-auto grid gap-2">
+          <Button asChild variant="outline" size="sm" className="justify-between">
+            <Link href={href}>
+              {label}
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </Button>
+          {secondaryHref && secondaryLabel && (
+            <Button asChild variant="ghost" size="sm" className="justify-between">
+              <Link href={secondaryHref}>
+                {secondaryLabel}
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function DashboardView() {
   const [tab, setTab] = useState<Tab>("geral");
   const [cevespMapView, setCevespMapView] = useState<"municipio" | "gve">("municipio");
@@ -301,7 +354,9 @@ export function DashboardView() {
               <Badge className={tracomaState.cls}>Tracoma: {tracomaState.label}</Badge>
             </div>
             <h1 className="text-xl font-semibold tracking-tight">Vigilância oftalmológica</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Dois agravos, uma fila de decisão.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Porta de entrada única: visão geral, aprofundamento por agravo e qualidade do banco no lugar certo.
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button
@@ -319,7 +374,9 @@ export function DashboardView() {
               Atualizar
             </Button>
             <Button size="sm" asChild>
-              <Link href={tab === "tracoma" ? "/sinan-qualidade" : "/notificacoes"}>Abrir módulo</Link>
+              <Link href={tab === "tracoma" ? "/sinan-qualidade" : tab === "conjuntivites" ? "/notificacoes" : "/sincronizacao"}>
+                {tab === "geral" ? "Atualizar bases" : "Abrir análise"}
+              </Link>
             </Button>
           </div>
         </div>
@@ -355,10 +412,39 @@ export function DashboardView() {
           </Card>
         )}
 
-        <AlertsPanel />
-
         {tab === "geral" && (
           <>
+            <div className="grid gap-3 md:grid-cols-3">
+              <WorkPathCard
+                step="1. Comece aqui"
+                title="Sala de Situação"
+                description="Compara CEVESP e SINAN, mostra risco, mapas e sinais ausentes sem entrar em detalhe operacional."
+                href="/dashboard"
+                label="Continuar na visão geral"
+                icon={<Activity className="h-4 w-4" />}
+              />
+              <WorkPathCard
+                step="2. Aprofunde por agravo"
+                title="Conjuntivites e Tracoma"
+                description="Use Conjuntivites para consulta/canal/boletim CEVESP; use Tracoma para auditoria SINAN e qualidade clínica."
+                href="/notificacoes"
+                label="Abrir Conjuntivites"
+                secondaryHref="/sinan-qualidade"
+                secondaryLabel="Abrir Tracoma"
+                icon={<Eye className="h-4 w-4" />}
+              />
+              <WorkPathCard
+                step="3. Alimente as bases"
+                title="Sincronização"
+                description="Importe CEVESP, TRACONET e NOTTRACONET quando os indicadores estiverem vazios ou desatualizados."
+                href="/sincronizacao"
+                label="Abrir Sincronização"
+                icon={<Database className="h-4 w-4" />}
+              />
+            </div>
+
+            <AlertsPanel />
+
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <KpiCard
                 label="Conjuntivites no ano"
@@ -444,6 +530,8 @@ export function DashboardView() {
           </>
         )}
 
+        {tab !== "geral" && <AlertsPanel />}
+
         {tab === "conjuntivites" && (
           <>
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -524,8 +612,8 @@ export function DashboardView() {
                 <CardTitle>Decisão CEVESP</CardTitle>
               </CardHeader>
               <CardContent className="grid gap-2 sm:grid-cols-3">
-                <ActionButton href="/notificacoes" label="Consultar banco" />
-                <ActionButton href="/cevesp-qualidade" label="Revisar qualidade" />
+                <ActionButton href="/notificacoes" label="Análise CEVESP completa" />
+                <ActionButton href="/cevesp-qualidade" label="Auditoria de dados" />
                 <ActionButton href="/correcoes" label="Tratar correções" />
               </CardContent>
             </Card>
@@ -733,7 +821,7 @@ export function DashboardView() {
                   <CardDescription>Foco em eliminação, tratamento e consistência</CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-2 sm:grid-cols-2">
-                  <ActionButton href="/sinan-qualidade" label="Abrir auditoria" />
+                  <ActionButton href="/sinan-qualidade" label="Análise SINAN completa" />
                   <ActionButton href="/sincronizacao" label="Importar bancos" />
                   <ActionButton href="/chat" label="Perguntar ao agente" />
                   <ActionButton href="/boletins" label="Registrar boletim" />
