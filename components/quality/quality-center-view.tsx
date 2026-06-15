@@ -28,30 +28,49 @@ interface CevespQuality {
   byAno: Array<{ ano: number; count: number }>;
   byMunicipio: Array<{ municipio: string; gve: string | null; count: number }>;
   total: number;
+  filteredTotal?: number;
+  source?: string;
 }
+
+type Priority = "Critica" | "Alta" | "Media";
 
 type QualityAction = {
   agravo: "CEVESP" | "SINAN";
-  priority: "Critica" | "Alta" | "Media";
+  priority: Priority;
   problem: string;
   where: string;
   count: number;
   href: string;
 };
 
-function priorityClass(priority: QualityAction["priority"]) {
+type TerritoryRow = {
+  municipio: string;
+  gve: string;
+  cevesp: number;
+  sinan: number;
+  divergencias: number;
+  problems: string[];
+  priority: Priority;
+  href: string;
+};
+
+function priorityClass(priority: Priority) {
   if (priority === "Critica") return "border-red-200 bg-red-50 text-red-700";
   if (priority === "Alta") return "border-amber-200 bg-amber-50 text-amber-700";
   return "border-sky-200 bg-sky-50 text-sky-700";
 }
 
-function normalizePriority(value: string): QualityAction["priority"] {
+function normalizePriority(value: string): Priority {
   if (value === "Critica") return "Critica";
   if (value === "Media") return "Media";
   const normalized = normalizeText(value);
   if (normalized === "critica" || normalized === "critico") return "Critica";
   if (normalized === "alta" || normalized === "alto") return "Alta";
   return "Media";
+}
+
+function priorityRank(priority: Priority) {
+  return priority === "Critica" ? 0 : priority === "Alta" ? 1 : 2;
 }
 
 function normalizeText(value: string) {
@@ -83,21 +102,62 @@ function downloadCsv(filename: string, rows: Array<Record<string, unknown>>) {
   URL.revokeObjectURL(url);
 }
 
+async function fetchJsonWithTimeout<T>(url: string, timeoutMs = 15000): Promise<T> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message ?? data.error ?? "Erro ao carregar dados.");
+    return data as T;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("A consulta demorou demais. Verifique a sincronização/cache e tente atualizar.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+function isCriticalCevespIssue(issue: string) {
+  const normalized = normalizeText(issue);
+  return (
+    normalized.startsWith("ano impossivel") ||
+    normalized.startsWith("dia impossivel") ||
+    normalized.startsWith("se invalida") ||
+    normalized.startsWith("municipio ausente") ||
+    normalized.startsWith("gve ausente") ||
+    normalized.startsWith("total de casos negativo")
+  );
+}
+
+function groupCevespIssueLabel(label: string) {
+  return label
+    .replace(/\s*\([^)]*\)\s*$/g, "")
+    .replace(/\s*-\s*.+$/g, "")
+    .trim() || label;
+}
+
+function groupedCevespTypes(byType?: Record<string, number>) {
+  const grouped = new Map<string, number>();
+  for (const [label, count] of Object.entries(byType ?? {})) {
+    const key = groupCevespIssueLabel(label);
+    grouped.set(key, (grouped.get(key) ?? 0) + count);
+  }
+  return Array.from(grouped.entries()).sort((a, b) => b[1] - a[1]);
+}
+
 function buildActions(cevesp?: CevespQuality, sinan?: SinanAuditResult): QualityAction[] {
   const actions: QualityAction[] = [];
 
   if (cevesp?.total) {
-    const critical = cevesp.records.filter((record) => {
-      const issue = normalizeText(record.issue);
-      return (
-        issue.startsWith("ano impossivel") ||
-        issue.startsWith("dia impossivel") ||
-        issue.startsWith("se invalida") ||
-        issue.startsWith("municipio ausente") ||
-        issue.startsWith("gve ausente") ||
-        issue.startsWith("total de casos negativo")
-      );
-    }).length;
+    const criticalByType = Object.entries(cevesp.byType ?? {}).reduce(
+      (sum, [issue, count]) => sum + (isCriticalCevespIssue(issue) ? count : 0),
+      0
+    );
+    const criticalSample = cevesp.records.filter((record) => isCriticalCevespIssue(record.issue)).length;
+    const critical = criticalByType || criticalSample;
     actions.push({
       agravo: "CEVESP",
       priority: critical > 0 ? "Critica" : "Alta",
@@ -127,7 +187,7 @@ function buildActions(cevesp?: CevespQuality, sinan?: SinanAuditResult): Quality
         agravo: "SINAN",
         priority: "Alta",
         problem: "Divergências TRACONET x NOTTRACONET",
-        where: sinan.crossBankDivergences?.[0]?.gve ?? "municipios/anos",
+        where: sinan.crossBankDivergences?.[0]?.gve ?? "municípios/anos",
         count: divergences,
         href: "/sinan-qualidade"
       });
@@ -146,10 +206,63 @@ function buildActions(cevesp?: CevespQuality, sinan?: SinanAuditResult): Quality
     }
   }
 
-  return actions.sort((a, b) => {
-    const rank = { Critica: 0, Alta: 1, Media: 2 };
-    return rank[a.priority] - rank[b.priority] || b.count - a.count;
-  });
+  return actions.sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority) || b.count - a.count);
+}
+
+function buildTerritoryRows(cevesp?: CevespQuality, sinan?: SinanAuditResult): TerritoryRow[] {
+  const map = new Map<string, TerritoryRow>();
+
+  function ensure(municipio: string | null | undefined, gve: string | null | undefined, href: string) {
+    const safeMunicipio = municipio?.trim() || "Município não informado";
+    const safeGve = gve?.trim() || "GVE não informada";
+    const key = `${normalizeText(safeMunicipio)}|${normalizeText(safeGve)}`;
+    const current = map.get(key);
+    if (current) return current;
+    const row: TerritoryRow = {
+      municipio: safeMunicipio,
+      gve: safeGve,
+      cevesp: 0,
+      sinan: 0,
+      divergencias: 0,
+      problems: [],
+      priority: "Media",
+      href
+    };
+    map.set(key, row);
+    return row;
+  }
+
+  function addProblem(row: TerritoryRow, problem: string, priority: Priority) {
+    if (!row.problems.includes(problem)) row.problems.push(problem);
+    if (priorityRank(priority) < priorityRank(row.priority)) row.priority = priority;
+  }
+
+  for (const item of cevesp?.byMunicipio ?? []) {
+    const row = ensure(item.municipio, item.gve, "/cevesp-qualidade");
+    row.cevesp += item.count;
+    addProblem(row, "qualidade CEVESP", item.count >= 20 ? "Alta" : "Media");
+  }
+
+  for (const item of sinan?.correctionRecords ?? []) {
+    const row = ensure(item.municipioNome || item.municipio, item.gve, "/sinan-qualidade");
+    row.sinan += 1;
+    addProblem(row, item.problem, normalizePriority(item.priority));
+  }
+
+  for (const item of sinan?.crossBankDivergences ?? []) {
+    if (item.risco !== "alto") continue;
+    const row = ensure(item.municipioNome || item.municipio, item.gve, "/sinan-qualidade");
+    row.divergencias += Math.abs(item.diff);
+    addProblem(row, "divergência entre bancos", "Alta");
+  }
+
+  return Array.from(map.values())
+    .sort((a, b) => {
+      const aScore = a.cevesp + a.sinan * 3 + a.divergencias;
+      const bScore = b.cevesp + b.sinan * 3 + b.divergencias;
+      return priorityRank(a.priority) - priorityRank(b.priority) || bScore - aScore;
+    })
+    .slice(0, 12);
 }
 
 function StatCard({
@@ -182,29 +295,21 @@ function StatCard({
 export function QualityCenterView() {
   const cevesp = useQuery<CevespQuality>({
     queryKey: ["quality-center-cevesp"],
-    queryFn: async () => {
-      const response = await fetch("/api/cevesp/qualidade");
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message ?? data.error ?? "Erro ao carregar CEVESP.");
-      return data;
-    },
+    queryFn: () => fetchJsonWithTimeout<CevespQuality>("/api/cevesp/qualidade"),
     retry: false,
     staleTime: 2 * 60 * 1000
   });
 
   const sinan = useQuery<SinanAuditResult>({
     queryKey: ["quality-center-sinan"],
-    queryFn: async () => {
-      const response = await fetch("/api/sinan/auditoria");
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message ?? data.error ?? "Erro ao carregar SINAN.");
-      return data;
-    },
+    queryFn: () => fetchJsonWithTimeout<SinanAuditResult>("/api/sinan/auditoria"),
     retry: false,
     staleTime: 2 * 60 * 1000
   });
 
   const actions = useMemo(() => buildActions(cevesp.data, sinan.data), [cevesp.data, sinan.data]);
+  const territoryRows = useMemo(() => buildTerritoryRows(cevesp.data, sinan.data), [cevesp.data, sinan.data]);
+  const cevespTypeRows = useMemo(() => groupedCevespTypes(cevesp.data?.byType), [cevesp.data?.byType]);
   const sinanCorrections = sinan.data?.correctionRecords ?? [];
   const loading = cevesp.isLoading || sinan.isLoading;
   const cevespTotal = cevesp.data?.total ?? 0;
@@ -284,7 +389,7 @@ export function QualityCenterView() {
               tone={cevespTotal > 0 ? "warn" : "ok"}
             />
             <StatCard
-              title="SINAN clinico"
+              title="SINAN clínico"
               value={sinanCritical}
               detail="TF/TT/tratamento/cirurgia para revisar"
               tone={sinanCritical > 0 ? "danger" : "ok"}
@@ -303,6 +408,30 @@ export function QualityCenterView() {
             />
           </div>
 
+          <Card>
+            <CardContent className="grid gap-3 pt-5 md:grid-cols-3">
+              <div className="rounded-md border bg-muted/30 p-3">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Fonte CEVESP</p>
+                <p className="mt-1 text-sm font-semibold">{cevesp.data?.source === "cevesp_quality_audit" ? "Auditoria com fallback para cache" : "Não carregada"}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {cevesp.data ? `${cevesp.data.total.toLocaleString("pt-BR")} pendências totais` : "Sem resposta da API"}
+                </p>
+              </div>
+              <div className="rounded-md border bg-muted/30 p-3">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Fonte SINAN</p>
+                <p className="mt-1 text-sm font-semibold">{sinan.data ? "Cache Supabase dos DBF importados" : "Não carregada"}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {sinan.data ? `${sinan.data.totalTraconet.toLocaleString("pt-BR")} TRACONET e ${sinan.data.totalNottraconet.toLocaleString("pt-BR")} NOTTRACONET` : "Importe TRACONET/NOTTRACONET"}
+                </p>
+              </div>
+              <div className="rounded-md border bg-muted/30 p-3">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Cobertura operacional</p>
+                <p className="mt-1 text-sm font-semibold">{territoryRows.length.toLocaleString("pt-BR")} territórios priorizados</p>
+                <p className="mt-1 text-xs text-muted-foreground">Lista consolidada por município/GVE para orientar cobrança.</p>
+              </div>
+            </CardContent>
+          </Card>
+
           <div className="grid gap-4 xl:grid-cols-[1fr_0.8fr]">
             <Card>
               <CardHeader className="pb-2">
@@ -312,7 +441,7 @@ export function QualityCenterView() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => downloadCsv(`qualidade-sinan-correcoes-${new Date().toISOString().slice(0, 10)}.csv`, sinanCorrections)}
+                      onClick={() => downloadCsv(`qualidade-sinan-correcoes-${new Date().toISOString().slice(0, 10)}.csv`, sinanCorrections.map((item) => ({ ...item })))}
                     >
                       <Download className="h-4 w-4" />
                       Exportar SINAN
@@ -383,17 +512,62 @@ export function QualityCenterView() {
             </Card>
           </div>
 
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Pendências por território</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {territoryRows.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Sem território priorizado com os dados carregados.</p>
+              ) : (
+                <div className="overflow-x-auto rounded-md border">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted/60 text-xs text-muted-foreground">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-medium">Município</th>
+                        <th className="px-3 py-2 text-left font-medium">GVE</th>
+                        <th className="px-3 py-2 text-right font-medium">CEVESP</th>
+                        <th className="px-3 py-2 text-right font-medium">SINAN</th>
+                        <th className="px-3 py-2 text-right font-medium">Diferença</th>
+                        <th className="px-3 py-2 text-left font-medium">Prioridade</th>
+                        <th className="px-3 py-2 text-left font-medium">Principal achado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {territoryRows.map((row) => (
+                        <tr key={`${row.municipio}-${row.gve}`} className="border-t">
+                          <td className="px-3 py-2 font-medium">{row.municipio}</td>
+                          <td className="px-3 py-2 text-muted-foreground">{row.gve}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">{row.cevesp.toLocaleString("pt-BR")}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">{row.sinan.toLocaleString("pt-BR")}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">{row.divergencias.toLocaleString("pt-BR")}</td>
+                          <td className="px-3 py-2"><Badge className={priorityClass(row.priority)}>{row.priority}</Badge></td>
+                          <td className="px-3 py-2">
+                            <Link href={row.href} className="inline-flex max-w-[340px] items-center gap-1 truncate text-primary hover:underline">
+                              {row.problems[0] ?? "revisar território"}
+                              <ArrowRight className="h-3 w-3 shrink-0" />
+                            </Link>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           <div className="grid gap-4 lg:grid-cols-2">
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">CEVESP por tipo de problema</CardTitle>
               </CardHeader>
               <CardContent>
-                {Object.entries(cevesp.data?.byType ?? {}).length === 0 ? (
+                {cevespTypeRows.length === 0 ? (
                   <p className="text-sm text-muted-foreground">Sem inconsistências carregadas.</p>
                 ) : (
                   <div className="space-y-2">
-                    {Object.entries(cevesp.data?.byType ?? {}).slice(0, 8).map(([label, count]) => (
+                    {cevespTypeRows.slice(0, 8).map(([label, count]) => (
                       <div key={label} className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm">
                         <span className="truncate">{label}</span>
                         <span className="font-semibold tabular-nums">{count.toLocaleString("pt-BR")}</span>
@@ -420,7 +594,7 @@ export function QualityCenterView() {
                           <span className="block truncate font-medium">{item.problem}</span>
                           <span className="block truncate text-xs text-muted-foreground">{item.municipioNome || item.municipio} - {item.gve}</span>
                         </span>
-                        <span className="font-mono text-xs text-muted-foreground">{item.notificationId ?? item.rowKey ?? "-"}</span>
+                        <span className="max-w-[150px] truncate font-mono text-xs text-muted-foreground">{item.notificationId ?? item.rowKey ?? "-"}</span>
                       </div>
                     ))}
                   </div>

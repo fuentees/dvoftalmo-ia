@@ -16,8 +16,19 @@ export async function POST(request: NextRequest) {
   try {
     return NextResponse.json(await runCevespAnalysis(question));
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const lower = message.toLowerCase();
+    if (lower.includes("etimedout") || lower.includes("econnrefused") || lower.includes("connect") || lower.includes("timeout")) {
+      return NextResponse.json(
+        {
+          error: "fonte_indisponivel",
+          message: "Não foi possível acessar a fonte externa agora. Se o banco CEVESP estiver disponível apenas na rede interna, use Sincronização para importar/exportar a base e consulte pelo cache do Supabase."
+        },
+        { status: 503 }
+      );
+    }
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Erro ao analisar pergunta." },
+      { error: message || "Erro ao analisar pergunta." },
       { status: 500 }
     );
   }

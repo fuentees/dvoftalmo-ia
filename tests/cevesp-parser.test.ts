@@ -156,6 +156,28 @@ const cases = [
       amount: 4,
       dimension: "gve"
     }
+  },
+  {
+    name: "periodo livre por gve mensal",
+    question: "total de casos por GVE entre 2021 e 2025 por mes",
+    expected: {
+      metric: "total_casos",
+      time_grain: "month",
+      dateType: "between",
+      start: "2021-01-01",
+      end: "2025-12-31",
+      dimension: "gve"
+    }
+  },
+  {
+    name: "surto este ano por municipio",
+    question: "teve surto este ano por municipio?",
+    expected: {
+      metric: "surtos",
+      time_grain: "none",
+      dateType: "current_year",
+      dimension: "municipio"
+    }
   }
 ];
 

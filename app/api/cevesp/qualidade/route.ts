@@ -139,9 +139,12 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    if (msg.toLowerCase().includes("econnrefused") || msg.toLowerCase().includes("connect")) {
+    if (msg.toLowerCase().includes("econnrefused") || msg.toLowerCase().includes("etimedout") || msg.toLowerCase().includes("connect")) {
       return NextResponse.json(
-        { error: "conexao_falhou", message: "Não foi possível conectar ao banco CEVESP. Verifique as configurações de conexão." },
+        {
+          error: "conexao_falhou",
+          message: "Não foi possível conectar ao banco CEVESP. Se estiver fora da rede interna, importe/sincronize a base e consulte pelo cache do Supabase."
+        },
         { status: 503 }
       );
     }
