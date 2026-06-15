@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { categoryLabels, type DocumentCategory } from "@/lib/types";
 
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
+const MAX_FILE_SIZE = 50 * 1024 * 1024;
 const STEPS = ["Enviando arquivo...", "Extraindo texto...", "Fragmentando conteúdo...", "Gerando embeddings..."];
 
 export function UploadPanel() {
@@ -51,22 +51,22 @@ export function UploadPanel() {
     if (upload.isPending) {
       setUploadStep(0);
       const delays = [1500, 4000, 7000];
-      stepTimers.current = delays.map((ms, i) =>
-        setTimeout(() => setUploadStep(i + 1), ms)
-      );
+      stepTimers.current = delays.map((ms, index) => setTimeout(() => setUploadStep(index + 1), ms));
     } else {
       stepTimers.current.forEach(clearTimeout);
       stepTimers.current = [];
       setUploadStep(0);
     }
-    return () => { stepTimers.current.forEach(clearTimeout); };
+    return () => {
+      stepTimers.current.forEach(clearTimeout);
+    };
   }, [upload.isPending]);
 
   function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const selected = event.target.files?.[0] ?? null;
     setClientError(null);
     if (selected && selected.size > MAX_FILE_SIZE) {
-      setClientError(`Arquivo muito grande (max 50 MB). Tamanho: ${(selected.size / 1024 / 1024).toFixed(1)} MB.`);
+      setClientError(`Arquivo muito grande (máx. 50 MB). Tamanho: ${(selected.size / 1024 / 1024).toFixed(1)} MB.`);
       event.target.value = "";
       return;
     }
@@ -75,7 +75,10 @@ export function UploadPanel() {
 
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
-    if (!file) { setClientError("Selecione um arquivo."); return; }
+    if (!file) {
+      setClientError("Selecione um arquivo.");
+      return;
+    }
     setClientError(null);
     upload.mutate();
   }
@@ -87,17 +90,17 @@ export function UploadPanel() {
       <CardHeader>
         <CardTitle>Upload para base de conhecimento</CardTitle>
         <CardDescription>
-          PDF, DOCX, XLSX, CSV e TXT — ate 50 MB. O conteudo sera indexado para consulta semantica no Chat.
+          PDF, DOCX, XLSX, CSV e TXT - até 50 MB. O conteúdo será indexado para consulta semântica no Chat.
         </CardDescription>
       </CardHeader>
       <CardContent>
         <form className="grid gap-4 md:grid-cols-2" onSubmit={handleSubmit}>
           <div className="space-y-1">
-            <Label>Titulo</Label>
+            <Label>Título</Label>
             <Input
               value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              placeholder="Manual, oficio, relatorio..."
+              onChange={event => setTitle(event.target.value)}
+              placeholder="Manual, ofício, relatório..."
             />
           </div>
           <div className="space-y-1">
@@ -105,7 +108,7 @@ export function UploadPanel() {
             <select
               className="h-10 w-full rounded-md border bg-background px-3 text-sm"
               value={category}
-              onChange={(event) => setCategory(event.target.value as DocumentCategory)}
+              onChange={event => setCategory(event.target.value as DocumentCategory)}
             >
               {Object.entries(categoryLabels).map(([value, label]) => (
                 <option key={value} value={value}>{label}</option>
@@ -116,8 +119,8 @@ export function UploadPanel() {
             <Label>Tags</Label>
             <Input
               value={tags}
-              onChange={(event) => setTags(event.target.value)}
-              placeholder="tracoma, campo, municipio (separar por virgula)"
+              onChange={event => setTags(event.target.value)}
+              placeholder="tracoma, campo, município (separar por vírgula)"
             />
           </div>
           <div className="space-y-1">
@@ -125,7 +128,7 @@ export function UploadPanel() {
             <Input type="file" onChange={handleFileChange} />
             {file && (
               <p className="text-xs text-muted-foreground">
-                {file.name} · {(file.size / 1024).toFixed(0)} KB
+                {file.name} - {(file.size / 1024).toFixed(0)} KB
               </p>
             )}
           </div>

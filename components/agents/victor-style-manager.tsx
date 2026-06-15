@@ -8,11 +8,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 
 const DOC_TYPES = [
   { value: "despacho", label: "Despacho" },
-  { value: "relatorio", label: "Relatorio" },
+  { value: "relatorio", label: "Relatório" },
   { value: "email", label: "E-mail" },
-  { value: "oficio", label: "Oficio" },
+  { value: "oficio", label: "Ofício" },
   { value: "memorando", label: "Memorando" },
-  { value: "analise", label: "Analise epidemiologica" },
+  { value: "analise", label: "Análise epidemiológica" },
   { value: "geral", label: "Geral" }
 ];
 
@@ -71,10 +71,11 @@ export function VictorStyleManager() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <BookOpen className="h-5 w-5 text-primary" />
-            Biblioteca de estilo — Victor
+            Biblioteca de estilo - Victor
           </CardTitle>
           <CardDescription>
-            Envie documentos que voce escreveu (oficios, relatorios, despachos, e-mails). O Agente Victor aprendera seu estilo de escrita com base nesses exemplos.
+            Envie documentos que você escreveu (ofícios, relatórios, despachos, e-mails). O Agente Victor aprenderá seu
+            estilo de escrita com base nesses exemplos.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -82,10 +83,10 @@ export function VictorStyleManager() {
             <select
               className="h-10 rounded-md border bg-background px-3 text-sm"
               value={docType}
-              onChange={(e) => setDocType(e.target.value)}
+              onChange={event => setDocType(event.target.value)}
             >
-              {DOC_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>{t.label}</option>
+              {DOC_TYPES.map(type => (
+                <option key={type.value} value={type.value}>{type.label}</option>
               ))}
             </select>
             <input
@@ -93,10 +94,10 @@ export function VictorStyleManager() {
               type="file"
               accept=".pdf,.docx,.txt,.md"
               className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) upload.mutate(f);
-                e.target.value = "";
+              onChange={event => {
+                const file = event.target.files?.[0];
+                if (file) upload.mutate(file);
+                event.target.value = "";
               }}
             />
             <Button onClick={() => fileRef.current?.click()} disabled={upload.isPending}>
@@ -121,14 +122,12 @@ export function VictorStyleManager() {
           )}
 
           <p className="text-xs text-muted-foreground">
-            Quanto mais exemplos do seu estilo voce enviar, mais precisa sera a personalizacao do Agente Victor.
+            Quanto mais exemplos do seu estilo você enviar, mais precisa será a personalização do Agente Victor.
           </p>
         </CardContent>
       </Card>
 
-      {docs.isLoading && (
-        <p className="text-sm text-muted-foreground">Carregando documentos...</p>
-      )}
+      {docs.isLoading && <p className="text-sm text-muted-foreground">Carregando documentos...</p>}
 
       {!docs.isLoading && (docs.data ?? []).length === 0 && (
         <Card className="p-6 text-center">
@@ -138,19 +137,20 @@ export function VictorStyleManager() {
       )}
 
       <div className="grid gap-3 md:grid-cols-2">
-        {(docs.data ?? []).map((doc) => (
+        {(docs.data ?? []).map(doc => (
           <Card key={doc.id}>
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center justify-between text-sm">
                 <span className="truncate">{doc.title}</span>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex shrink-0 items-center gap-2">
                   <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs text-primary">
-                    {DOC_TYPES.find((t) => t.value === doc.documentType)?.label ?? doc.documentType}
+                    {DOC_TYPES.find(type => type.value === doc.documentType)?.label ?? doc.documentType}
                   </span>
                   <button
                     onClick={() => remove.mutate(doc.id)}
                     className="text-muted-foreground hover:text-destructive"
                     disabled={remove.isPending}
+                    aria-label={`Excluir ${doc.title}`}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>

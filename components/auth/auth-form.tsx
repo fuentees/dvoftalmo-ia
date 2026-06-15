@@ -52,7 +52,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
           redirectTo: `${location.origin}/login`
         });
         setServerMessage({
-          text: error ? error.message : "Instrucoes enviadas para o seu e-mail.",
+          text: error ? error.message : "Instruções enviadas para o seu e-mail.",
           isError: !!error
         });
         return;
@@ -67,7 +67,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
         if (error) {
           setServerMessage({ text: error.message, isError: true });
         } else {
-          setServerMessage({ text: "Conta criada! Verifique o e-mail se a confirmacao estiver ativa.", isError: false });
+          setServerMessage({ text: "Conta criada! Verifique o e-mail se a confirmação estiver ativa.", isError: false });
           router.push("/dashboard");
         }
         return;

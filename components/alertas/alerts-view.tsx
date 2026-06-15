@@ -22,7 +22,7 @@ interface EpiAlert {
 
 const severityConfig = {
   high: { label: "Alta", icon: AlertCircle, cls: "border-red-200 bg-red-50 text-red-700" },
-  medium: { label: "Media", icon: AlertTriangle, cls: "border-amber-200 bg-amber-50 text-amber-700" },
+  medium: { label: "Média", icon: AlertTriangle, cls: "border-amber-200 bg-amber-50 text-amber-700" },
   low: { label: "Baixa", icon: Info, cls: "border-blue-200 bg-blue-50 text-blue-700" }
 };
 
@@ -62,9 +62,9 @@ export function AlertsView() {
               <Badge className="border-primary/30 bg-primary/10 text-primary">Resposta</Badge>
               {pending > 0 && <Badge className="border-red-200 bg-red-50 text-red-700">{pending} pendentes</Badge>}
             </div>
-            <h1 className="text-xl font-semibold tracking-tight">Alertas epidemiologicos</h1>
+            <h1 className="text-xl font-semibold tracking-tight">Alertas epidemiológicos</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Eventos que merecem verificacao local, investigacao de surto ou reforco das medidas de controle.
+              Eventos que merecem verificação local, investigação de surto ou reforço das medidas de controle.
             </p>
           </div>
           <div className="grid grid-cols-3 gap-2 text-center text-xs sm:min-w-[330px]">
@@ -132,7 +132,7 @@ export function AlertsView() {
                       <span className="text-xs text-muted-foreground">SE {alert.se}/{alert.ano}</span>
                     </div>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      <strong className="text-foreground">{alert.cases}</strong> casos registrados; media movel de{" "}
+                      <strong className="text-foreground">{alert.cases}</strong> casos registrados; média móvel de{" "}
                       <strong className="text-foreground">{alert.moving_avg.toFixed(1)}</strong> e aumento de{" "}
                       <strong className="text-foreground">{alert.pct_increase.toFixed(0)}%</strong>.
                     </p>

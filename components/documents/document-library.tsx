@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileText, Loader2, Search, Star, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,14 +23,16 @@ interface Document {
 
 export function DocumentLibrary() {
   const queryClient = useQueryClient();
-  const [search, setSearch]       = useState("");
-  const [category, setCategory]   = useState("todos");
-  const [skip, setSkip]           = useState(0);
-  const [allDocs, setAllDocs]     = useState<Document[]>([]);
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState("todos");
+  const [skip, setSkip] = useState(0);
+  const [allDocs, setAllDocs] = useState<Document[]>([]);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Reset pagination when filters change
-  useEffect(() => { setSkip(0); setAllDocs([]); }, [search, category]);
+  useEffect(() => {
+    setSkip(0);
+    setAllDocs([]);
+  }, [search, category]);
 
   const documents = useQuery<Document[]>({
     queryKey: ["documents", search, category, skip],
@@ -52,17 +54,17 @@ export function DocumentLibrary() {
     if (skip === 0) {
       setAllDocs(documents.data);
     } else {
-      setAllDocs((prev) => [...prev, ...documents.data!]);
+      setAllDocs(prev => [...prev, ...documents.data!]);
     }
   }, [documents.data, skip]);
 
   const remove = useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(`/api/documents?id=${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Erro ao excluir.");
+      const response = await fetch(`/api/documents?id=${id}`, { method: "DELETE" });
+      if (!response.ok) throw new Error("Erro ao excluir.");
     },
     onSuccess: (_, id) => {
-      setAllDocs((prev) => prev.filter((d) => d.id !== id));
+      setAllDocs(prev => prev.filter(document => document.id !== id));
       queryClient.invalidateQueries({ queryKey: ["documents"] });
     }
   });
@@ -86,15 +88,15 @@ export function DocumentLibrary() {
             <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
             <Input
               className="pl-9"
-              placeholder="Pesquisar por titulo ou descricao"
+              placeholder="Pesquisar por título ou descrição"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={event => setSearch(event.target.value)}
             />
           </div>
           <select
             className="h-10 rounded-md border bg-background px-3 text-sm"
             value={category}
-            onChange={(e) => setCategory(e.target.value)}
+            onChange={event => setCategory(event.target.value)}
           >
             <option value="todos">Todas categorias</option>
             {Object.entries(categoryLabels).map(([value, label]) => (
@@ -104,24 +106,22 @@ export function DocumentLibrary() {
         </div>
 
         <div className="grid gap-3">
-          {allDocs.map((doc) => (
-            <div key={doc.id} className="group flex items-center gap-3 rounded-md border p-3">
+          {allDocs.map(document => (
+            <div key={document.id} className="group flex items-center gap-3 rounded-md border p-3">
               <FileText className="h-5 w-5 shrink-0 text-primary" />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{doc.title}</p>
-                <p className="text-xs text-muted-foreground">v{doc.version} · {doc.file_name}</p>
+                <p className="truncate text-sm font-medium">{document.title}</p>
+                <p className="text-xs text-muted-foreground">v{document.version} - {document.file_name}</p>
               </div>
-              <Badge>{categoryLabels[doc.category as keyof typeof categoryLabels] ?? doc.category}</Badge>
-              {doc.favorite && <Star className="h-4 w-4 fill-yellow-400 text-yellow-500" />}
+              <Badge>{categoryLabels[document.category as keyof typeof categoryLabels] ?? document.category}</Badge>
+              {document.favorite && <Star className="h-4 w-4 fill-yellow-400 text-yellow-500" />}
               <button
                 className="hidden text-muted-foreground hover:text-destructive group-hover:block"
-                onClick={() => handleDelete(doc.id)}
-                disabled={deletingId === doc.id}
+                onClick={() => handleDelete(document.id)}
+                disabled={deletingId === document.id}
                 title="Excluir documento"
               >
-                {deletingId === doc.id
-                  ? <Loader2 className="h-4 w-4 animate-spin" />
-                  : <Trash2 className="h-4 w-4" />}
+                {deletingId === document.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
               </button>
             </div>
           ))}
@@ -140,11 +140,14 @@ export function DocumentLibrary() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setSkip((s) => s + PAGE_SIZE)}
+              onClick={() => setSkip(value => value + PAGE_SIZE)}
               disabled={documents.isFetching}
             >
               {documents.isFetching ? (
-                <><Loader2 className="h-4 w-4 animate-spin" /> Carregando...</>
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Carregando...
+                </>
               ) : (
                 "Carregar mais"
               )}

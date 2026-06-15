@@ -25,7 +25,10 @@ export function DataFileUpload() {
       if (!response.ok) throw new Error(data.error ?? "Erro ao analisar.");
       return data as DataAnalysisResult;
     },
-    onSuccess: (data) => { setResult(data); setError(null); },
+    onSuccess: data => {
+      setResult(data);
+      setError(null);
+    },
     onError: (err: Error) => setError(err.message)
   });
 
@@ -36,15 +39,15 @@ export function DataFileUpload() {
       const response = await fetch("/api/dados/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ result, title: `Analise — ${result.fileName}` })
+        body: JSON.stringify({ result, title: `Análise - ${result.fileName}` })
       });
       if (!response.ok) throw new Error("Erro ao exportar.");
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `analise_${result.fileName.replace(/\.[^.]+$/, "")}.docx`;
-      a.click();
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `analise_${result.fileName.replace(/\.[^.]+$/, "")}.docx`;
+      anchor.click();
       URL.revokeObjectURL(url);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao exportar.");
@@ -59,10 +62,10 @@ export function DataFileUpload() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <BarChart2 className="h-5 w-5 text-primary" />
-            Analise de planilha
+            Análise de planilha
           </CardTitle>
           <CardDescription>
-            Envie um arquivo .xlsx, .xls ou .csv para obter estatisticas descritivas, graficos e interpretacao automatica.
+            Envie um arquivo .xlsx, .xls ou .csv para obter estatísticas descritivas, gráficos e interpretação automática.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -71,10 +74,13 @@ export function DataFileUpload() {
             type="file"
             accept=".xlsx,.xls,.csv"
             className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) { setResult(null); analyze.mutate(f); }
-              e.target.value = "";
+            onChange={event => {
+              const file = event.target.files?.[0];
+              if (file) {
+                setResult(null);
+                analyze.mutate(file);
+              }
+              event.target.value = "";
             }}
           />
           <div className="flex gap-3">
@@ -99,14 +105,12 @@ export function DataFileUpload() {
             )}
           </div>
 
-          {error && (
-            <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
-          )}
+          {error && <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 
           {analyze.isSuccess && result && (
             <div className="flex items-center gap-2 text-sm text-green-700">
               <CheckCircle className="h-4 w-4" />
-              {result.fileName} — {result.rows} linhas, {result.columns.length} variaveis
+              {result.fileName} - {result.rows} linhas, {result.columns.length} variáveis
             </div>
           )}
         </CardContent>
@@ -114,19 +118,17 @@ export function DataFileUpload() {
 
       {result && (
         <>
-          {/* Interpretação */}
           <Card>
-            <CardHeader><CardTitle>Interpretacao automatica</CardTitle></CardHeader>
+            <CardHeader><CardTitle>Interpretação automática</CardTitle></CardHeader>
             <CardContent>
               <ul className="space-y-1 text-sm text-muted-foreground">
-                {result.interpretation.map((line, i) => <li key={i}>{line}</li>)}
+                {result.interpretation.map((line, index) => <li key={index}>{line}</li>)}
               </ul>
             </CardContent>
           </Card>
 
-          {/* Gráficos */}
-          {result.charts.filter((c) => c.data.length > 0).map((chart, i) => (
-            <Card key={i}>
+          {result.charts.filter(chart => chart.data.length > 0).map((chart, index) => (
+            <Card key={index}>
               <CardHeader><CardTitle className="text-base">{chart.title}</CardTitle></CardHeader>
               <CardContent className="h-[260px]">
                 <ResponsiveContainer width="100%" height="100%">
@@ -155,30 +157,29 @@ export function DataFileUpload() {
             </Card>
           ))}
 
-          {/* Tabela de estatísticas */}
           <Card>
-            <CardHeader><CardTitle>Estatisticas por variavel</CardTitle></CardHeader>
+            <CardHeader><CardTitle>Estatísticas por variável</CardTitle></CardHeader>
             <CardContent className="overflow-x-auto">
               <table className="w-full min-w-[600px] text-sm">
                 <thead>
                   <tr className="border-b text-left">
-                    {["Variavel", "Tipo", "N", "Ausentes", "Media", "Mediana", "DP", "Min", "Max"].map((h) => (
-                      <th key={h} className="py-2 pr-3 font-medium">{h}</th>
+                    {["Variável", "Tipo", "N", "Ausentes", "Média", "Mediana", "DP", "Min", "Max"].map(header => (
+                      <th key={header} className="py-2 pr-3 font-medium">{header}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {Object.entries(result.summary).map(([col, s]) => (
+                  {Object.entries(result.summary).map(([col, summary]) => (
                     <tr key={col} className="border-b">
                       <td className="py-1.5 pr-3 font-medium">{col}</td>
-                      <td className="pr-3">{s.type}</td>
-                      <td className="pr-3">{s.count}</td>
-                      <td className="pr-3">{s.missing}</td>
-                      <td className="pr-3">{s.mean ?? "—"}</td>
-                      <td className="pr-3">{s.median ?? "—"}</td>
-                      <td className="pr-3">{s.stdDev ?? "—"}</td>
-                      <td className="pr-3">{s.min ?? "—"}</td>
-                      <td className="pr-3">{s.max ?? "—"}</td>
+                      <td className="pr-3">{summary.type}</td>
+                      <td className="pr-3">{summary.count}</td>
+                      <td className="pr-3">{summary.missing}</td>
+                      <td className="pr-3">{summary.mean ?? "-"}</td>
+                      <td className="pr-3">{summary.median ?? "-"}</td>
+                      <td className="pr-3">{summary.stdDev ?? "-"}</td>
+                      <td className="pr-3">{summary.min ?? "-"}</td>
+                      <td className="pr-3">{summary.max ?? "-"}</td>
                     </tr>
                   ))}
                 </tbody>

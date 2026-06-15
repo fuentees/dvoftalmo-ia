@@ -1,7 +1,7 @@
-import { PageHeader } from "@/components/ui/page-header";
 import { DocumentLibrary } from "@/components/documents/document-library";
+import { PageHeader } from "@/components/ui/page-header";
 
-export const metadata = { title: "Documentos — DvOftalmo IA" };
+export const metadata = { title: "Documentos - DvOftalmo IA" };
 
 export default function DocumentsPage() {
   return (
