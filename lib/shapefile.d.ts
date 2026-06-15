@@ -1,12 +1,14 @@
 declare module "shapefile" {
+  import type { FeatureCollection, Geometry } from "geojson";
+
   export interface DBFHeader {
     recordCount: number;
     recordSize: number;
   }
 
   export interface ShapefileRecord {
-    geometry: any;
-    properties: Record<string, any>;
+    geometry: Geometry | null;
+    properties: Record<string, unknown>;
   }
 
   export interface ShapefileSource {
@@ -14,8 +16,10 @@ declare module "shapefile" {
   }
 
   export function open(
-    shpPath: string,
-    dbfPath?: string,
-    options?: any
+    shpPath: string | ArrayBuffer,
+    dbfPath?: string | ArrayBuffer,
+    options?: Record<string, unknown>
   ): Promise<ShapefileSource>;
+
+  export function read(shpPath: string): Promise<FeatureCollection>;
 }

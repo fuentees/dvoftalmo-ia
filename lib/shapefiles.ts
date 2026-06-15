@@ -2,9 +2,25 @@ import { readFileSync } from "fs";
 import { resolve } from "path";
 import { pathToFileURL } from "url";
 import * as shapefile from "shapefile";
-import type { FeatureCollection } from "geojson";
+import type { Feature, FeatureCollection, Geometry } from "geojson";
 
 const SHAPES_DIR = resolve(process.cwd(), "shapes");
+
+type ShapefileFeature = Feature<Geometry, Record<string, unknown>>;
+
+interface LoadAttemptError {
+  step: string;
+  message: string;
+  stack?: string;
+}
+
+function errorInfo(error: unknown, step: string): LoadAttemptError {
+  return {
+    step,
+    message: error instanceof Error ? error.message : String(error),
+    stack: error instanceof Error ? error.stack : undefined
+  };
+}
 
 export async function loadShapefileAsGeoJSON(
   subfolder: "gve" | "municipio",
@@ -13,70 +29,52 @@ export async function loadShapefileAsGeoJSON(
   try {
     const shpPath = resolve(SHAPES_DIR, subfolder, filename);
     const dbfPath = resolve(SHAPES_DIR, subfolder, filename.replace(".shp", ".dbf"));
-
-    console.log(`[shapefiles] Loading ${subfolder}/${filename}`);
-    console.log(`[shapefiles] SHP path: ${shpPath}`);
-    console.log(`[shapefiles] DBF path: ${dbfPath}`);
-
-    // Convert to file:// URLs — shapefile.open may require a proper URL in some runtimes (e.g. serverless)
     const shpUrl = pathToFileURL(shpPath).href;
     const dbfUrl = pathToFileURL(dbfPath).href;
-    console.log(`[shapefiles] Attempting open using file URLs: ${shpUrl}, ${dbfUrl}`);
 
-    const attemptErrors: any[] = [];
-    let source: any = null;
+    const attemptErrors: LoadAttemptError[] = [];
+    let source: shapefile.ShapefileSource | null = null;
+
     try {
       source = await shapefile.open(shpUrl, dbfUrl);
     } catch (firstErr) {
-      console.warn(`[shapefiles] Failed opening with file URLs: ${String(firstErr)}. Trying local paths...`);
-      attemptErrors.push({ step: "fileUrl", message: String(firstErr), stack: firstErr && (firstErr as Error).stack });
+      attemptErrors.push(errorInfo(firstErr, "fileUrl"));
       try {
         source = await shapefile.open(shpPath, dbfPath);
       } catch (secondErr) {
-        console.warn(`[shapefiles] Failed opening with local paths: ${String(secondErr)}. Trying shapefile.read fallback...`);
-        attemptErrors.push({ step: "localPath", message: String(secondErr), stack: secondErr && (secondErr as Error).stack });
+        attemptErrors.push(errorInfo(secondErr, "localPath"));
         try {
-          // shapefile.read returns a FeatureCollection directly
-          const fc = await (shapefile as any).read(shpPath);
-          if (fc && fc.type === "FeatureCollection") {
-            console.log(`[shapefiles] Loaded via shapefile.read fallback with ${fc.features?.length || 0} features.`);
-            return fc as FeatureCollection;
-          }
+          const fc = await shapefile.read(shpPath);
+          if (fc?.type === "FeatureCollection") return fc;
         } catch (readErr) {
-          console.error(`[shapefiles] shapefile.read fallback failed: ${String(readErr)}`);
-          attemptErrors.push({ step: "shapefile.read", message: String(readErr), stack: readErr && (readErr as Error).stack });
-          // continue to next fallback
+          attemptErrors.push(errorInfo(readErr, "shapefile.read"));
         }
-        // As a last resort, read the .shp and .dbf files into memory and try opening from ArrayBuffers
+
         try {
-          console.log(`[shapefiles] Attempting fallback: read files into memory and open from ArrayBuffers`);
           const shpBuf = readFileSync(shpPath);
           const dbfBuf = readFileSync(dbfPath);
           const shpArray = shpBuf.buffer.slice(shpBuf.byteOffset, shpBuf.byteOffset + shpBuf.byteLength);
           const dbfArray = dbfBuf.buffer.slice(dbfBuf.byteOffset, dbfBuf.byteOffset + dbfBuf.byteLength);
-          source = await shapefile.open(shpArray as any, dbfArray as any);
+          source = await shapefile.open(shpArray, dbfArray);
         } catch (memErr) {
-          console.error(`[shapefiles] In-memory ArrayBuffer fallback failed: ${String(memErr)}`);
-          attemptErrors.push({ step: "inMemory", message: String(memErr), stack: memErr && (memErr as Error).stack });
-          // if all fallbacks failed, throw consolidated error
+          attemptErrors.push(errorInfo(memErr, "inMemory"));
           throw new Error(JSON.stringify({ message: "All shapefile open attempts failed", attempts: attemptErrors }));
-        }
-        if (!source) {
-          throw new Error(JSON.stringify({ message: "Local path and read fallbacks failed", attempts: attemptErrors }));
         }
       }
     }
-    const features: any[] = [];
 
+    if (!source) {
+      throw new Error(JSON.stringify({ message: "No shapefile source available", attempts: attemptErrors }));
+    }
+
+    const features: ShapefileFeature[] = [];
     let result = await source.read();
     while (!result.done) {
       if (result.value.geometry) {
-        features.push(result.value);
+        features.push(result.value as ShapefileFeature);
       }
       result = await source.read();
     }
-
-    console.log(`[shapefiles] Loaded ${features.length} features from ${subfolder}/${filename}`);
 
     return {
       type: "FeatureCollection",
@@ -84,7 +82,6 @@ export async function loadShapefileAsGeoJSON(
     };
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    console.error(`[shapefiles] Error loading ${subfolder}/${filename}:`, msg);
     throw new Error(`Failed to load shapefile ${subfolder}/${filename}: ${msg}`);
   }
 }

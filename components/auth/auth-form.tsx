@@ -13,10 +13,7 @@ import { createClient } from "@/lib/supabase/client";
 import {
   loginSchema,
   recoverPasswordSchema,
-  signupSchema,
-  type LoginInput,
-  type RecoverPasswordInput,
-  type SignupInput
+  signupSchema
 } from "@/lib/validation/auth";
 
 type Mode = "login" | "signup" | "recover";
@@ -101,7 +98,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
     <Card className="w-full max-w-md">
       <CardHeader>
         <CardTitle>{title}</CardTitle>
-        <CardDescription>DvOftalmo IA — Vigilancia Epidemiologica das Conjuntivites</CardDescription>
+        <CardDescription>DvOftalmo IA - Vigilância Epidemiológica das Conjuntivites</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>

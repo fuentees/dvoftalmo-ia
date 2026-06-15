@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Loader2 } from "lucide-react";
-import type { FeatureCollection, Feature, Geometry } from "geojson";
+import type { Feature, FeatureCollection, Geometry } from "geojson";
+
+type GeoProperties = Record<string, unknown>;
 
 export type ChoroplethMapProps = {
-  dataUrl: string; // API endpoint to fetch GeoJSON
-  valueMap?: Record<string, number>; // Map of feature property (usually name) to color value
-  colorScheme?: (value: number | null) => string; // Function to determine color based on value
+  dataUrl: string;
+  valueMap?: Record<string, number>;
+  colorScheme?: (value: number | null) => string;
   label?: string;
   className?: string;
 };
@@ -17,17 +19,13 @@ const SVG_HEIGHT = 520;
 const MARGIN = 16;
 
 function getRings(geometry: Geometry): Array<number[][]> {
-  if (geometry.type === "Polygon") {
-    return geometry.coordinates as number[][][];
-  }
-  if (geometry.type === "MultiPolygon") {
-    return (geometry.coordinates as number[][][][]).flat();
-  }
+  if (geometry.type === "Polygon") return geometry.coordinates as number[][][];
+  if (geometry.type === "MultiPolygon") return (geometry.coordinates as number[][][][]).flat();
   return [];
 }
 
-function buildPaths(features: Feature<Geometry, any>[]) {
-  const rings = features.flatMap((feature) => ({
+function buildPaths(features: Array<Feature<Geometry, GeoProperties>>) {
+  const rings = features.flatMap(feature => ({
     rings: getRings(feature.geometry),
     properties: feature.properties
   }));
@@ -56,9 +54,9 @@ function buildPaths(features: Feature<Geometry, any>[]) {
   const scaleY = (SVG_HEIGHT - 2 * MARGIN) / (maxLat - minLat);
   const scale = Math.min(scaleX, scaleY);
 
-  return rings.map((r) => ({
-    properties: r.properties,
-    paths: r.rings.map((ring) => {
+  return rings.map(item => ({
+    properties: item.properties,
+    paths: item.rings.map(ring => {
       const path = ring
         .map(([lng, lat], index) => {
           const x = (lng - minLng) * scale + MARGIN;
@@ -94,38 +92,33 @@ function normalizeValueMap(valueMap: Record<string, number>) {
   return normalized;
 }
 
-function featureCandidates(properties: any) {
+function featureCandidates(properties: GeoProperties) {
   const values = [
-    properties?.CD_MUN,
-    properties?.CODMUN6,
-    properties?.NM_MUN,
-    properties?.GVE,
-    properties?.DRS,
-    properties?.NOME,
-    properties?.Nome,
-    properties?.name
-  ].filter((value) => value !== undefined && value !== null && String(value).trim() !== "");
+    properties.CD_MUN,
+    properties.CODMUN6,
+    properties.NM_MUN,
+    properties.GVE,
+    properties.DRS,
+    properties.NOME,
+    properties.Nome,
+    properties.name
+  ].filter(value => value !== undefined && value !== null && String(value).trim() !== "");
 
-  return values.flatMap((value) => {
+  return values.flatMap(value => {
     const text = String(value);
     const digits = text.replace(/\D/g, "");
-    return [
-      text,
-      normalizeKey(text),
-      digits,
-      digits ? digits.slice(0, 6) : ""
-    ].filter(Boolean);
+    return [text, normalizeKey(text), digits, digits ? digits.slice(0, 6) : ""].filter(Boolean);
   });
 }
 
-function featureLabel(properties: any) {
-  return properties?.NM_MUN ?? properties?.GVE ?? properties?.DRS ?? properties?.NOME ?? properties?.Nome ?? properties?.name ?? "Regiao";
+function featureLabel(properties: GeoProperties) {
+  return String(properties.NM_MUN ?? properties.GVE ?? properties.DRS ?? properties.NOME ?? properties.Nome ?? properties.name ?? "Região");
 }
 
 export function ChoroplethMap({
   dataUrl,
   valueMap = {},
-  colorScheme = (value) => {
+  colorScheme = value => {
     if (value === null || value === undefined) return "#94a3b8";
     if (value >= 50) return "#dc2626";
     if (value >= 20) return "#f59e0b";
@@ -135,43 +128,59 @@ export function ChoroplethMap({
   label = "Mapa",
   className
 }: ChoroplethMapProps) {
-  const [geoData, setGeoData] = useState<FeatureCollection | null>(null);
+  const [geoData, setGeoData] = useState<FeatureCollection<Geometry, GeoProperties> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let active = true;
+
     const fetchData = async () => {
       try {
         setLoading(true);
-        console.log(`[ChoroplethMap] Fetching from ${dataUrl}`);
         const response = await fetch(dataUrl);
-        
+
         if (!response.ok) {
           let errorDetail = response.statusText;
           try {
             const errorJson = await response.json();
             errorDetail = errorJson.error || errorJson.message || errorDetail;
           } catch {
-            // Se não conseguir fazer parse JSON, usa statusText
+            // Mantem statusText quando a resposta nao for JSON.
           }
           throw new Error(`API error (${response.status}): ${errorDetail}`);
         }
-        
+
         const data = await response.json();
-        console.log(`[ChoroplethMap] Loaded ${data.features?.length || 0} features`);
+        if (!active) return;
         setGeoData(data);
         setError(null);
       } catch (err) {
-        const errMsg = err instanceof Error ? err.message : "Unknown error";
-        console.error(`[ChoroplethMap] Error:`, errMsg);
-        setError(errMsg);
+        if (!active) return;
+        setError(err instanceof Error ? err.message : "Erro desconhecido");
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     };
 
     fetchData();
+    return () => {
+      active = false;
+    };
   }, [dataUrl]);
+
+  const normalizedValueMap = useMemo(() => normalizeValueMap(valueMap), [valueMap]);
+  const pathData = useMemo(() => buildPaths(geoData?.features ?? []), [geoData]);
+
+  const getFeatureValue = (properties: GeoProperties): number | null => {
+    for (const candidate of featureCandidates(properties)) {
+      const value = normalizedValueMap[candidate];
+      if (value !== undefined) return value;
+    }
+    return null;
+  };
+
+  const getFeatureColor = (properties: GeoProperties): string => colorScheme(getFeatureValue(properties));
 
   if (loading) {
     return (
@@ -187,27 +196,10 @@ export function ChoroplethMap({
       <div className={`flex flex-col items-center justify-center rounded-lg border border-dashed p-8 text-amber-600 ${className}`}>
         <AlertTriangle className="h-5 w-5" />
         <p className="mt-2 text-sm font-medium">{error || "Não foi possível carregar o mapa"}</p>
-        {dataUrl && <p className="mt-1 text-xs text-amber-500 break-all">{dataUrl}</p>}
+        {dataUrl && <p className="mt-1 break-all text-xs text-amber-500">{dataUrl}</p>}
       </div>
     );
   }
-
-  const features = geoData.type === "FeatureCollection" ? geoData.features : [geoData as any];
-  const pathData = buildPaths(features);
-  const normalizedValueMap = normalizeValueMap(valueMap);
-
-  const getFeatureValue = (properties: any): number | null => {
-    for (const candidate of featureCandidates(properties)) {
-      const value = normalizedValueMap[candidate];
-      if (value !== undefined) return value;
-    }
-    return null;
-  };
-
-  const getFeatureColor = (properties: any): string => {
-    const value = getFeatureValue(properties);
-    return colorScheme(value);
-  };
 
   return (
     <div className={className}>
@@ -219,8 +211,8 @@ export function ChoroplethMap({
           role="img"
           aria-label={label}
         >
-          {pathData.map((item, idx) => (
-            item.paths.map((d: string, pathIdx: number) => {
+          {pathData.map((item, idx) =>
+            item.paths.map((d, pathIdx) => {
               const featureName = featureLabel(item.properties);
               const featureValue = getFeatureValue(item.properties);
               return (
@@ -233,7 +225,7 @@ export function ChoroplethMap({
                   strokeWidth="0.8"
                   strokeLinejoin="round"
                   fillRule="evenodd"
-                  className="hover:stroke-2 hover:stroke-foreground transition-all"
+                  className="transition-all hover:stroke-2 hover:stroke-foreground"
                   data-title={featureName}
                   aria-label={`${featureName}: ${featureValue ?? "sem valor"}`}
                 >
@@ -241,7 +233,7 @@ export function ChoroplethMap({
                 </path>
               );
             })
-          ))}
+          )}
         </svg>
       </div>
     </div>

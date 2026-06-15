@@ -1,22 +1,31 @@
-import { NextResponse } from "next/server";
 import { existsSync, readdirSync } from "fs";
 import { resolve } from "path";
+import { NextResponse } from "next/server";
+
+interface FolderInfo {
+  dirExists: boolean;
+  files: string[];
+}
+
+interface GeoDebugInfo {
+  baseDir: string;
+  dirExists: boolean;
+  contents: Record<string, FolderInfo>;
+}
 
 export async function GET() {
-  const SHAPES_DIR = resolve(process.cwd(), "shapes");
-  
+  const shapesDir = resolve(process.cwd(), "shapes");
+
   try {
-    const info: Record<string, any> = {
-      baseDir: SHAPES_DIR,
-      dirExists: existsSync(SHAPES_DIR),
+    const info: GeoDebugInfo = {
+      baseDir: shapesDir,
+      dirExists: existsSync(shapesDir),
       contents: {}
     };
 
-    if (existsSync(SHAPES_DIR)) {
-      const folders = ["municipio", "gve"];
-      
-      for (const folder of folders) {
-        const folderPath = resolve(SHAPES_DIR, folder);
+    if (info.dirExists) {
+      for (const folder of ["municipio", "gve"]) {
+        const folderPath = resolve(shapesDir, folder);
         info.contents[folder] = {
           dirExists: existsSync(folderPath),
           files: existsSync(folderPath) ? readdirSync(folderPath) : []

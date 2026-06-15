@@ -2,7 +2,8 @@
 
 import type { Feature, FeatureCollection, Geometry } from "geojson";
 
-type GeoShape = FeatureCollection<Geometry, any> | Feature<Geometry, any>;
+type GeoProperties = Record<string, unknown>;
+type GeoShape = FeatureCollection<Geometry, GeoProperties> | Feature<Geometry, GeoProperties>;
 
 export type StateMapProps = {
   geoJson: GeoShape;
@@ -16,28 +17,18 @@ const SVG_HEIGHT = 520;
 const MARGIN = 16;
 
 function getRings(geometry: Geometry): Array<number[][]> {
-  if (geometry.type === "Polygon") {
-    return geometry.coordinates as number[][][];
-  }
-
-  if (geometry.type === "MultiPolygon") {
-    return (geometry.coordinates as number[][][][]).flat();
-  }
-
+  if (geometry.type === "Polygon") return geometry.coordinates as number[][][];
+  if (geometry.type === "MultiPolygon") return (geometry.coordinates as number[][][][]).flat();
   return [];
 }
 
-function extractFeatures(geoJson: GeoShape): Array<Feature<Geometry, any>> {
-  if (geoJson.type === "FeatureCollection") {
-    return geoJson.features;
-  }
-
-  return [geoJson];
+function extractFeatures(geoJson: GeoShape): Array<Feature<Geometry, GeoProperties>> {
+  return geoJson.type === "FeatureCollection" ? geoJson.features : [geoJson];
 }
 
 function buildPaths(geoJson: GeoShape) {
   const features = extractFeatures(geoJson);
-  const rings = features.flatMap((feature) => getRings(feature.geometry));
+  const rings = features.flatMap(feature => getRings(feature.geometry));
 
   let pointCount = 0;
   let minLng = Infinity;
@@ -61,7 +52,7 @@ function buildPaths(geoJson: GeoShape) {
   const scaleY = (SVG_HEIGHT - 2 * MARGIN) / (maxLat - minLat);
   const scale = Math.min(scaleX, scaleY);
 
-  return rings.map((ring) => {
+  return rings.map(ring => {
     const path = ring
       .map(([lng, lat], index) => {
         const x = (lng - minLng) * scale + MARGIN;

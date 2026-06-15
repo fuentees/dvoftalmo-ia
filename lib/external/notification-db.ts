@@ -1,4 +1,5 @@
 import mysql from "mysql2/promise";
+import type { RowDataPacket } from "mysql2/promise";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const identifierPattern = /^[a-zA-Z0-9_]+$/;
@@ -79,11 +80,11 @@ export async function readNotificationRows(limit?: number) {
   }
 
   try {
-    const [countRows] = await connection.query(`select count(*) as total from ${table}`);
+    const [countRows] = await connection.query<Array<RowDataPacket & { total: number }>>(`select count(*) as total from ${table}`);
     const [rows] = limit
       ? await connection.query(`select * from ${table} limit ?`, [limit])
       : await connection.query(`select * from ${table}`);
-    const total = Array.isArray(countRows) ? Number((countRows[0] as any)?.total ?? 0) : 0;
+    const total = Number(countRows[0]?.total ?? 0);
 
     return {
       total,
