@@ -146,7 +146,7 @@ type ManagementRow = {
 };
 
 type ActionPlanRow = {
-  prioridade: "Critica" | "Alta" | "Media";
+  prioridade: "Urgente" | "Alta" | "Normal";
   problema: string;
   volume: number;
   onde: string;
@@ -182,7 +182,7 @@ function buildManagementRows(data: SinanAuditResult): ManagementRow[] {
     addManagementRow(map, item, {
       score: item.count * 8,
       criticos: item.count,
-      acao: "Corrigir casos sem TF/TI/TS/TT/CO antes de interpretar prevalencia."
+      acao: "Corrigir a classificação clínica dos casos antes de analisar a prevalência."
     });
   }
 
@@ -190,7 +190,7 @@ function buildManagementRows(data: SinanAuditResult): ManagementRow[] {
     addManagementRow(map, item, {
       score: item.count * 10,
       criticos: item.count,
-      acao: "Revisar TT sem TS: possivel erro de classificacao clinica."
+      acao: "Revisar a classificação clínica — trichiasis sem cicatriz associada sugere erro de digitação."
     });
   }
 
@@ -201,8 +201,8 @@ function buildManagementRows(data: SinanAuditResult): ManagementRow[] {
       alertas: item.risco === "alto" ? 1 : 0,
       divergencia: item.diff,
       acao: item.diff > 0
-        ? "Consolidado maior que individual: procurar subregistro no TRACONET."
-        : "Individual maior que consolidado: revisar duplicidade ou ausencia no consolidado."
+        ? "Registro consolidado maior que o individual: verificar se há casos não registrados no sistema."
+        : "Registro individual maior que o consolidado: verificar duplicidade ou ausência no consolidado."
     });
   }
 
@@ -221,88 +221,88 @@ function buildActionPlan(data: SinanAuditResult): ActionPlanRow[] {
   const examinados = data.consolidatedMetrics?.examinados?.value ?? 0;
 
   if (semForma > 0) rows.push({
-    prioridade: "Critica",
-    problema: "Casos individuais sem TF/TI/TS/TT/CO positivo",
+    prioridade: "Urgente",
+    problema: "Casos sem classificação clínica confirmada",
     volume: semForma,
-    onde: `${(data.semFormaClinicaDetalhe ?? []).length.toLocaleString("pt-BR")} municipios/GVE`,
-    acao: "Corrigir a forma clinica no TRACONET ou retirar da base de casos quando todas as formas forem negativas.",
+    onde: `${(data.semFormaClinicaDetalhe ?? []).length.toLocaleString("pt-BR")} município(s)`,
+    acao: "Revisar o preenchimento clínico no sistema ou excluir o registro se nenhuma forma for positiva.",
     tone: "red"
   });
 
   if (ttSemTs > 0) rows.push({
-    prioridade: "Critica",
-    problema: "TT sem TS associado",
+    prioridade: "Urgente",
+    problema: "Casos graves de tracoma sem cicatriz associada — possível erro de digitação",
     volume: ttSemTs,
-    onde: `${(data.ttSemTsDetalhe ?? []).length.toLocaleString("pt-BR")} territorios`,
-    acao: "Revisar classificacao clinica, pois TT isolado sugere erro de digitacao ou classificacao incompleta.",
+    onde: `${(data.ttSemTsDetalhe ?? []).length.toLocaleString("pt-BR")} território(s)`,
+    acao: "Revisar a classificação clínica — caso grave sem cicatriz nos olhos associada sugere erro de digitação ou preenchimento incompleto.",
     tone: "red"
   });
 
   if (altoRisco > 0) rows.push({
     prioridade: "Alta",
-    problema: "Divergencia alta entre TRACONET e NOTTRACONET",
+    problema: "Grande diferença entre os dois registros de dados",
     volume: altoRisco,
-    onde: "Municipio/ano",
-    acao: "Conciliar os dois bancos antes de publicar boletim, separando subregistro de duplicidade.",
+    onde: "Município / ano",
+    acao: "Verificar e corrigir a diferença entre os dois sistemas antes de divulgar os dados.",
     tone: "amber"
   });
 
   if (data.tfSemTratamento > 0) rows.push({
     prioridade: "Alta",
-    problema: "TF sem tratamento registrado",
+    problema: "Casos ativos de tracoma sem tratamento registrado",
     volume: data.tfSemTratamento,
     onde: "Casos ativos",
-    acao: "Verificar registro de tratamento/azitromicina e acionar municipio quando a conduta nao estiver documentada.",
+    acao: "Confirmar que o tratamento foi realizado e está registrado no sistema. Acionar o município se não houver registro.",
     tone: "amber"
   });
 
   if (data.ttSemCircurgia > 0) rows.push({
     prioridade: "Alta",
-    problema: "TT sem encaminhamento cirurgico",
+    problema: "Casos graves sem encaminhamento para cirurgia",
     volume: data.ttSemCircurgia,
-    onde: "Casos cicatriciais",
-    acao: "Conferir encaminhamento para avaliacao oftalmologica/cirurgia e registrar a conduta.",
+    onde: "Casos graves de tracoma",
+    acao: "Confirmar encaminhamento para avaliação com oftalmologista e registrar a conduta no sistema.",
     tone: "amber"
   });
 
   if (data.semConclusao > 0) rows.push({
-    prioridade: "Media",
-    problema: "Investigações sem conclusão/encerramento",
+    prioridade: "Normal",
+    problema: "Casos em aberto sem conclusão registrada",
     volume: data.semConclusao,
-    onde: "TRACONET",
-    acao: "Regularizar encerramento para nao distorcer indicadores e acompanhamento dos casos.",
+    onde: "Sistema de notificação",
+    acao: "Encerrar os casos no sistema para não distorcer os indicadores de acompanhamento.",
     tone: "amber"
   });
 
   if (duplicidades > 0) rows.push({
-    prioridade: "Critica",
-    problema: "Possivel duplicidade do mesmo caso",
+    prioridade: "Urgente",
+    problema: "Possível registro duplicado do mesmo paciente",
     volume: duplicidades,
-    onde: "NU_NOTIFIC + pessoa + ano",
-    acao: "Confirmar se e o mesmo paciente no mesmo ano; anos diferentes podem representar reinfeccao.",
+    onde: "Número de notificação + paciente + ano",
+    acao: "Confirmar se é o mesmo paciente. Se forem anos diferentes, pode ser reinfecção — não é duplicidade.",
     tone: "red"
   });
 
   if (examinados === 0 && (data.totalNottraconetRows ?? 0) > 0) rows.push({
     prioridade: "Alta",
-    problema: "Total de examinados não reconhecido no consolidado",
+    problema: "Total de examinados não identificado no arquivo",
     volume: data.totalNottraconetRows ?? 0,
-    onde: "NOTTRACONET",
-    acao: "Revisar campo de examinados do DBF; sem examinados nao ha prevalencia/cobertura confiavel.",
+    onde: "Consolidado anual",
+    acao: "Verificar o campo de examinados no arquivo importado — sem esse dado não é possível calcular prevalência ou cobertura.",
     tone: "amber"
   });
 
   if (!rows.length) rows.push({
-    prioridade: "Media",
-    problema: "Sem pendencia critica detectada",
+    prioridade: "Normal",
+    problema: "Nenhuma pendência crítica detectada",
     volume: 0,
-    onde: "Base filtrada",
-    acao: "Manter monitoramento periodico e validar indicadores antes do boletim.",
+    onde: "Base atual",
+    acao: "Manter o monitoramento periódico e validar os indicadores antes de divulgar.",
     tone: "green"
   });
 
   return rows.sort((a, b) => {
-    const weight = { Critica: 3, Alta: 2, Media: 1 };
+    const weight = { Urgente: 3, Alta: 2, Normal: 1 };
     return weight[b.prioridade] - weight[a.prioridade] || b.volume - a.volume;
   }).slice(0, 7);
 }
@@ -410,9 +410,9 @@ function GestaoTab({ data }: { data: SinanAuditResult }) {
   const encerrados = Math.max(data.totalTraconet - data.semConclusao, 0);
   const funnel = [
     { label: "Examinados", value: examinados, tone: "neutral" },
-    { label: "Positivos consolidados", value: positivos, tone: "neutral" },
-    { label: "Casos individuais", value: data.totalTraconet, tone: "neutral" },
-    { label: "Forma clinica valida", value: data.casosComFormaClinica ?? data.totalTraconetPositive ?? 0, tone: "green" },
+    { label: "Confirmados com tracoma", value: positivos, tone: "neutral" },
+    { label: "Registros no sistema", value: data.totalTraconet, tone: "neutral" },
+    { label: "Forma clínica confirmada", value: data.casosComFormaClinica ?? data.totalTraconetPositive ?? 0, tone: "green" },
     { label: "Tratamento registrado", value: tratamentoRegistrado, tone: "amber" },
     { label: "Encerrados", value: encerrados, tone: "green" }
   ];
@@ -428,9 +428,9 @@ function GestaoTab({ data }: { data: SinanAuditResult }) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold">Sala de situacao - Tracoma</h2>
+          <h2 className="text-base font-semibold">O que precisa ser resolvido</h2>
           <p className="text-xs text-muted-foreground">
-            Priorizacao territorial para corrigir base, fechar casos e alinhar TRACONET com NOTTRACONET.
+            Municípios e problemas prioritários para corrigir os dados e fechar os casos em aberto.
           </p>
         </div>
         <Button size="sm" variant="outline" onClick={() => downloadCorrections(data)}>
@@ -439,18 +439,11 @@ function GestaoTab({ data }: { data: SinanAuditResult }) {
         </Button>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-4">
-        <KpiCard label="Pendencias criticas" value={criticos.toLocaleString("pt-BR")} sub="Forma, TT sem TS e duplicidades" tone={criticos > 0 ? "red" : "green"} icon={<AlertTriangle className="h-4 w-4" />} />
-        <KpiCard label="Municipios priorizados" value={priorities.length.toLocaleString("pt-BR")} sub="Com algum alerta territorial" tone={priorities.length > 0 ? "amber" : "green"} icon={<Target className="h-4 w-4" />} />
-        <KpiCard label="Divergencias alto risco" value={altoRisco.toLocaleString("pt-BR")} sub="Municipio/ano com diferenca elevada" tone={altoRisco > 0 ? "red" : "green"} icon={<Activity className="h-4 w-4" />} />
-        <KpiCard label="Conclusão pendente" value={data.semConclusao.toLocaleString("pt-BR")} sub="Casos sem encerramento" tone={data.semConclusao > 0 ? "amber" : "green"} icon={<ClipboardList className="h-4 w-4" />} />
-      </div>
-
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Plano de acao operacional</CardTitle>
+          <CardTitle className="text-base">O que fazer primeiro</CardTitle>
           <p className="text-xs text-muted-foreground">
-            O que deve ser corrigido primeiro para transformar a base em indicador confiavel.
+            Corrija estes problemas em ordem de urgência para garantir dados confiáveis.
           </p>
         </CardHeader>
         <CardContent className="p-0">
@@ -458,11 +451,11 @@ function GestaoTab({ data }: { data: SinanAuditResult }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/30">
-                  <th className={thCls}>Prioridade</th>
+                  <th className={thCls}>Urgência</th>
                   <th className={thCls}>Problema</th>
-                  <th className={`${thCls} text-right`}>Volume</th>
-                  <th className={thCls}>Onde olhar</th>
-                  <th className={thCls}>Encaminhamento</th>
+                  <th className={`${thCls} text-right`}>Qtd.</th>
+                  <th className={thCls}>Onde</th>
+                  <th className={thCls}>O que fazer</th>
                 </tr>
               </thead>
               <tbody>
@@ -481,7 +474,7 @@ function GestaoTab({ data }: { data: SinanAuditResult }) {
                       </td>
                       <td className="px-4 py-2.5 font-medium">{row.problema}</td>
                       <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
-                        {row.volume.toLocaleString("pt-BR")}
+                        {row.volume > 0 ? row.volume.toLocaleString("pt-BR") : "—"}
                       </td>
                       <td className="px-4 py-2.5 text-xs text-muted-foreground">{row.onde}</td>
                       <td className="px-4 py-2.5 text-xs text-muted-foreground">{row.acao}</td>
@@ -497,9 +490,9 @@ function GestaoTab({ data }: { data: SinanAuditResult }) {
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Fila de prioridade por territorio</CardTitle>
+            <CardTitle className="text-base">Municípios que precisam de atenção</CardTitle>
             <p className="text-xs text-muted-foreground">
-              Escore combina volume de erro clinico, TT sem TS, duplicidade e divergencia entre bancos.
+              Ordenados pela quantidade de problemas encontrados nos dados.
             </p>
           </CardHeader>
           <CardContent className="overflow-x-auto p-0">
@@ -507,12 +500,12 @@ function GestaoTab({ data }: { data: SinanAuditResult }) {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/30">
-                    <th className={thCls}>Prioridade</th>
-                    <th className={thCls}>Municipio</th>
+                    <th className={thCls}>#</th>
+                    <th className={thCls}>Município</th>
                     <th className={thCls}>GVE</th>
-                    <th className={`${thCls} text-right`}>Criticos</th>
-                    <th className={`${thCls} text-right`}>Divergencia</th>
-                    <th className={thCls}>Acao indicada</th>
+                    <th className={`${thCls} text-right`}>Problemas</th>
+                    <th className={`${thCls} text-right`}>Diferença</th>
+                    <th className={thCls}>O que fazer</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -525,9 +518,6 @@ function GestaoTab({ data }: { data: SinanAuditResult }) {
                       </td>
                       <td className="px-4 py-2.5 font-medium">
                         {row.municipioNome !== row.municipio ? row.municipioNome : row.municipio}
-                        {row.municipioNome !== row.municipio && (
-                          <span className="ml-1 text-[10px] text-muted-foreground">({row.municipio})</span>
-                        )}
                       </td>
                       <td className="px-4 py-2.5 text-xs text-muted-foreground">{row.gve || "-"}</td>
                       <td className="px-4 py-2.5 text-right font-semibold tabular-nums text-red-700">{row.criticos.toLocaleString("pt-BR")}</td>
@@ -540,7 +530,7 @@ function GestaoTab({ data }: { data: SinanAuditResult }) {
             ) : (
               <div className="flex h-28 items-center justify-center text-sm text-muted-foreground">
                 <CheckCircle2 className="mr-2 h-4 w-4 text-green-500" />
-                Nenhuma prioridade critica detectada para os filtros atuais.
+                Nenhum município com pendência crítica nos filtros atuais.
               </div>
             )}
           </CardContent>
@@ -548,9 +538,9 @@ function GestaoTab({ data }: { data: SinanAuditResult }) {
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Linha do cuidado</CardTitle>
+            <CardTitle className="text-base">Fluxo de atendimento</CardTitle>
             <p className="text-xs text-muted-foreground">
-              Visao de fluxo: examinar, confirmar, registrar forma, tratar e encerrar.
+              Quantas pessoas passaram por cada etapa do atendimento.
             </p>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -1352,9 +1342,72 @@ function CompletudeTecnicoTab({ data }: { data: SinanAuditResult }) {
   );
 }
 
+// ── Aba: Qualidade dos dados (fusão Divergências + Clínica + Completude) ──────
+
+function QualidadeDadosTab({ data, clinicalMappingMissing, yearChartData }: {
+  data: SinanAuditResult;
+  clinicalMappingMissing: boolean;
+  yearChartData: { ano: string; individuais: number; positivos: number }[];
+}) {
+  return (
+    <div className="space-y-8">
+      <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+        Esta seção é voltada para analistas e equipes técnicas responsáveis pela qualidade dos dados.
+      </div>
+
+      {yearChartData.length > 1 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Série histórica — casos registrados por ano</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Comparação entre os casos individuais e o consolidado anual. Divergências persistentes ao longo dos anos indicam problema estrutural nos bancos.
+            </p>
+          </CardHeader>
+          <CardContent className="h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={yearChartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-muted" />
+                <XAxis dataKey="ano" tickLine={false} axisLine={false} fontSize={11} />
+                <YAxis tickLine={false} axisLine={false} fontSize={11} width={48} />
+                <Tooltip formatter={(v) => Number(v).toLocaleString("pt-BR")} contentStyle={{ borderRadius: 8, fontSize: 12 }} />
+                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
+                <Line type="monotone" dataKey="individuais" name="Casos individuais" stroke="#0f766e" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="positivos"   name="Positivos consolidados" stroke="#dc2626" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      <div>
+        <h3 className="mb-1 text-base font-semibold">Divergências entre os dois bancos</h3>
+        <p className="mb-4 text-sm text-muted-foreground">
+          Comparação entre os casos registrados individualmente e o consolidado anual.
+          Diferenças grandes precisam ser investigadas antes de publicar indicadores.
+        </p>
+        <DivergenciasTab data={data} />
+      </div>
+      <div className="border-t pt-6">
+        <h3 className="mb-1 text-base font-semibold">Alertas e problemas clínicos</h3>
+        <p className="mb-4 text-sm text-muted-foreground">
+          Registros com inconsistências que precisam de revisão direta no sistema ou junto ao município.
+        </p>
+        <QualidadeClinicaTab data={data} clinicalMappingMissing={clinicalMappingMissing} />
+      </div>
+      <div className="border-t pt-6">
+        <h3 className="mb-1 text-base font-semibold">Completude dos campos</h3>
+        <p className="mb-4 text-sm text-muted-foreground">
+          Percentual de preenchimento de cada campo e diagnóstico técnico da importação.
+        </p>
+        <CompletudeTecnicoTab data={data} />
+      </div>
+    </div>
+  );
+}
+
 // ── Componente principal ──────────────────────────────────────────────────────
 
-type PageTab = "gestao" | "divergencias" | "qualidade" | "completude" | "taxas";
+type PageTab = "situacao" | "qualidade" | "mapa";
 
 export function SinanQualidadeView() {
   const [municipio, setMunicipio] = useState("");
@@ -1362,7 +1415,7 @@ export function SinanQualidadeView() {
   const [yearStart, setYearStart] = useState("");
   const [yearEnd,   setYearEnd]   = useState("");
   const [filters,   setFilters]   = useState<Record<string, string>>({});
-  const [pageTab,   setPageTab]   = useState<PageTab>("gestao");
+  const [pageTab,   setPageTab]   = useState<PageTab>("situacao");
   const [taxaMapView, setTaxaMapView] = useState<"municipio" | "gve">("municipio");
   const [taxaMetric, setTaxaMetric] = useState<"prevalencia" | "taxaDeteccao100k" | "coberturaExame">("prevalencia");
   const gveOptions = useMemo(() => listarGvesSp(), []);
@@ -1416,17 +1469,21 @@ export function SinanQualidadeView() {
     (data?.semConclusao ?? 0) +
     (data?.duplicateNotificationIds?.length ?? 0) +
     (clinicalMappingMissing ? 0 : data?.semGraduacao ?? 0);
+  const criticosCount =
+    (data?.casosSemFormaPositiva ?? data?.semGraduacao ?? 0) +
+    (data?.ttSemTs ?? 0) +
+    (data?.duplicateNotificationIds?.length ?? 0);
 
   const yearChartData = [...(data?.divergencesByYear ?? [])]
     .sort((a, b) => a.ano - b.ano)
     .map((r) => ({ ano: String(r.ano), individuais: r.traconet, positivos: r.nottraconet }));
 
+  const priorities = data ? buildManagementRows(data) : [];
+
   const pageTabs: { id: PageTab; label: string; icon: React.ReactNode; badge?: number }[] = [
-    { id: "gestao",       label: "Gestao", icon: <Target className="h-4 w-4" />, badge: data ? buildManagementRows(data).length : undefined },
-    { id: "divergencias", label: "Divergências",    icon: <Activity className="h-4 w-4" />,   badge: data?.crossBankDivergences.length },
-    { id: "qualidade",    label: "Qualidade Clínica", icon: <Stethoscope className="h-4 w-4" />, badge: alertasCount + (data?.semGraduacao ?? 0) },
-    { id: "completude",   label: "Completude & Técnico", icon: <BarChart2 className="h-4 w-4" /> },
-    { id: "taxas",        label: "Taxas", icon: <MapPin className="h-4 w-4" /> }
+    { id: "situacao",  label: "Situação atual",      icon: <Target className="h-4 w-4" />,  badge: priorities.length > 0 ? priorities.length : undefined },
+    { id: "qualidade", label: "Qualidade dos dados", icon: <Activity className="h-4 w-4" />, badge: highRisk > 0 ? highRisk : undefined },
+    { id: "mapa",      label: "Mapa epidemiológico", icon: <MapPin className="h-4 w-4" /> },
   ];
 
   return (
@@ -1439,12 +1496,9 @@ export function SinanQualidadeView() {
             <ClipboardList className="h-5 w-5 text-primary" />
           </div>
           <div>
-            <div className="mb-1 inline-flex rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-              Análise por agravo
-            </div>
-            <h1 className="text-xl font-semibold">Tracoma - SINAN</h1>
+            <h1 className="text-xl font-semibold">Tracoma</h1>
             <p className="text-sm text-muted-foreground">
-              Aprofundamento da Sala de Situação: TRACONET, NOTTRACONET, divergências, qualidade clínica e taxas.
+              Situação atual, qualidade dos dados e mapa epidemiológico do tracoma.
             </p>
             <Link href="/dashboard" className="mt-1 inline-flex text-xs font-medium text-primary underline">
               Voltar para a Sala de Situação
@@ -1484,7 +1538,7 @@ export function SinanQualidadeView() {
       {/* ── Filtros ─────────────────────────────────────────────────────────── */}
       <div className="sticky top-0 z-10 flex flex-wrap items-end gap-3 rounded-xl border bg-card/95 px-5 py-4 shadow-sm backdrop-blur">
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-muted-foreground">GVE</label>
+          <label className="text-xs font-medium text-muted-foreground">Região de Saúde (GVE)</label>
           <select
             value={gve}
             onChange={(e) => {
@@ -1513,27 +1567,27 @@ export function SinanQualidadeView() {
           </select>
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-muted-foreground">Ano início</label>
+          <label className="text-xs font-medium text-muted-foreground">Ano — de</label>
           <input
             value={yearStart}
             onChange={(e) => setYearStart(e.target.value)}
-            placeholder="Todo"
+            placeholder="2020"
             type="number"
             className="h-8 w-24 rounded-md border bg-background px-2.5 text-sm"
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-muted-foreground">Ano fim</label>
+          <label className="text-xs font-medium text-muted-foreground">até</label>
           <input
             value={yearEnd}
             onChange={(e) => setYearEnd(e.target.value)}
-            placeholder="Todo"
+            placeholder="2024"
             type="number"
             className="h-8 w-24 rounded-md border bg-background px-2.5 text-sm"
           />
         </div>
         <Button size="sm" onClick={() => setFilters({ municipio, gve, yearStart, yearEnd })} disabled={isFetching}>
-          Filtrar
+          Aplicar
         </Button>
         {Object.values(filters).some(Boolean) && (
           <Button size="sm" variant="ghost" onClick={() => {
@@ -1603,69 +1657,7 @@ END;`}</pre>
             </div>
           )}
 
-          {/* ── KPIs ─────────────────────────────────────────────────────────── */}
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-            <KpiCard
-              label="Casos individuais (TRACONET)"
-              value={data.totalTraconet}
-              sub={`${(data.totalTraconetComparable ?? data.totalTraconet).toLocaleString("pt-BR")} com ano válido`}
-              icon={<Database className="h-4 w-4" />}
-            />
-            <KpiCard
-              label="Positivos consolidados (NOTTRACONET)"
-              value={data.totalNottraconet}
-              sub={`${(data.totalNottraconetRows ?? 0).toLocaleString("pt-BR")} linhas no consolidado`}
-              icon={<MapPin className="h-4 w-4" />}
-            />
-            <KpiCard
-              label="Examinados (NOTTRACONET)"
-              value={data.consolidatedMetrics?.examinados?.value ?? 0}
-              sub={data.consolidatedMetrics?.examinados?.field ? `Campo: ${data.consolidatedMetrics.examinados.field}` : "Campo não reconhecido"}
-              tone={(data.consolidatedMetrics?.examinados?.value ?? 0) > 0 ? "green" : "amber"}
-              icon={<ClipboardList className="h-4 w-4" />}
-            />
-            <KpiCard
-              label="Divergências de alto risco"
-              value={highRisk}
-              sub={`${data.crossBankDivergences.length} município/ano com diferença`}
-              tone={highRisk > 0 ? "red" : "green"}
-              icon={<AlertTriangle className="h-4 w-4" />}
-            />
-            <KpiCard
-              label="Alertas clínicos"
-              value={alertasCount}
-              sub="TF s/tratamento + TT s/cirurgia + duplicidades"
-              tone={alertasCount > 0 ? "amber" : "green"}
-              icon={<Stethoscope className="h-4 w-4" />}
-            />
-          </div>
-
-          {/* ── Gráfico temporal ─────────────────────────────────────────────── */}
-          {yearChartData.length > 1 && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Série Histórica: Casos Individuais × Positivos Consolidados</CardTitle>
-              </CardHeader>
-              <CardContent className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={yearChartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-muted" />
-                    <XAxis dataKey="ano" tickLine={false} axisLine={false} fontSize={11} />
-                    <YAxis tickLine={false} axisLine={false} fontSize={11} width={48} />
-                    <Tooltip
-                      formatter={(v) => Number(v).toLocaleString("pt-BR")}
-                      contentStyle={{ borderRadius: 8, fontSize: 12 }}
-                    />
-                    <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
-                    <Line type="monotone" dataKey="individuais" name="TRACONET" stroke="#0f766e" strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey="positivos"   name="NOTTRACONET" stroke="#dc2626" strokeWidth={2} dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* ── Abas principais ──────────────────────────────────────────────── */}
+          {/* ── Navegação principal ──────────────────────────────────────────── */}
           <div className="rounded-xl border bg-card shadow-sm">
             <div className="flex gap-0 border-b overflow-x-auto">
               {pageTabs.map((t) => (
@@ -1689,11 +1681,51 @@ END;`}</pre>
               ))}
             </div>
             <div className="p-5">
-              {pageTab === "gestao" && <GestaoTab data={data} />}
-              {pageTab === "divergencias" && <DivergenciasTab data={data} />}
-              {pageTab === "qualidade"    && <QualidadeClinicaTab data={data} clinicalMappingMissing={clinicalMappingMissing} />}
-              {pageTab === "completude"   && <CompletudeTecnicoTab data={data} />}
-              {pageTab === "taxas" && (
+
+              {/* ── Aba: Situação atual ──────────────────────────────────────── */}
+              {pageTab === "situacao" && (
+                <div className="space-y-6">
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <KpiCard
+                      label="Pessoas examinadas"
+                      value={data.consolidatedMetrics?.examinados?.value ?? 0}
+                      sub="No período e região selecionados"
+                      tone={(data.consolidatedMetrics?.examinados?.value ?? 0) > 0 ? "neutral" : "amber"}
+                      icon={<ClipboardList className="h-4 w-4" />}
+                    />
+                    <KpiCard
+                      label="Casos confirmados de tracoma"
+                      value={data.totalNottraconet}
+                      sub="Positivos no consolidado"
+                      icon={<Activity className="h-4 w-4" />}
+                    />
+                    <KpiCard
+                      label="Municípios com pendências"
+                      value={priorities.length}
+                      sub={priorities.length > 0 ? "Precisam de atenção" : "Nenhuma pendência detectada"}
+                      tone={priorities.length > 0 ? "amber" : "green"}
+                      icon={<Target className="h-4 w-4" />}
+                    />
+                    <KpiCard
+                      label="Situação dos dados"
+                      value={criticosCount > 0 ? "Atenção" : "Em ordem"}
+                      sub={criticosCount > 0 ? `${criticosCount} registro(s) crítico(s) a corrigir` : "Sem pendências críticas detectadas"}
+                      tone={criticosCount > 0 ? "red" : "green"}
+                      icon={criticosCount > 0 ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+                    />
+                  </div>
+
+                  <GestaoTab data={data} />
+                </div>
+              )}
+
+              {/* ── Aba: Qualidade dos dados ─────────────────────────────────── */}
+              {pageTab === "qualidade" && (
+                <QualidadeDadosTab data={data} clinicalMappingMissing={clinicalMappingMissing} yearChartData={yearChartData} />
+              )}
+
+              {/* ── Aba: Mapa epidemiológico ─────────────────────────────────── */}
+              {pageTab === "mapa" && (
                 <div className="space-y-4">
                   {rates.isLoading && (
                     <div className="flex h-28 items-center justify-center gap-2 text-sm text-muted-foreground">
