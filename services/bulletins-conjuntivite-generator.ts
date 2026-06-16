@@ -243,7 +243,7 @@ export async function generateConjuntiviteBulletin(
 
   const { data, error } = await supabase
     .from("bulletins")
-    .insert({ se, ano, agravo: "conjuntivite", title, content })
+    .upsert({ se, ano, agravo: "conjuntivite", title, content }, { onConflict: "se,ano,agravo" })
     .select("id, title")
     .single();
 

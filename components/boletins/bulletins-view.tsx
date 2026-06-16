@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, Calendar, ChevronRight, Clipboard, Eye, Loader2,
-  Newspaper, Plus, Printer, RefreshCw
+  Newspaper, Plus, Printer, RefreshCw, RotateCcw
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { Badge } from "@/components/ui/badge";
@@ -116,9 +116,28 @@ const AGRAVO_CONFIG = {
 // ──── BulletinDetail ──────────────────────────────────────────────────────────
 function BulletinDetail({ id, onBack }: { id: string; onBack: () => void }) {
   const [copied, setCopied] = useState(false);
+  const queryClient = useQueryClient();
+
   const { data, isLoading, error } = useQuery<BulletinDetail>({
     queryKey: ["bulletin", id],
     queryFn: () => fetchJson(`/api/boletins/${id}`)
+  });
+
+  const regenerateMutation = useMutation({
+    mutationFn: () => {
+      if (!data) throw new Error("Boletim não carregado");
+      const body: Record<string, unknown> = { agravo: data.agravo, force: true };
+      if (data.agravo === "conjuntivite") { body.se = data.se; body.ano = data.ano; }
+      else { body.ano = data.ano; }
+      return fetchJson<{ ok: boolean; error?: string }>(
+        "/api/boletins",
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+      );
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["bulletin", id] });
+      await queryClient.invalidateQueries({ queryKey: ["bulletins", data?.agravo] });
+    }
   });
 
   async function copyContent() {
@@ -139,6 +158,18 @@ function BulletinDetail({ id, onBack }: { id: string; onBack: () => void }) {
           Voltar
         </Button>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => regenerateMutation.mutate()}
+            disabled={!data || regenerateMutation.isPending}
+            title="Regera o conteúdo com os dados mais recentes"
+          >
+            {regenerateMutation.isPending
+              ? <Loader2 className="h-4 w-4 animate-spin" />
+              : <RotateCcw className="h-4 w-4" />}
+            {regenerateMutation.isPending ? "Gerando…" : "Regenerar"}
+          </Button>
           <Button variant="outline" size="sm" onClick={() => window.print()} disabled={!data}>
             <Printer className="h-4 w-4" />
             Imprimir
@@ -149,6 +180,12 @@ function BulletinDetail({ id, onBack }: { id: string; onBack: () => void }) {
           </Button>
         </div>
       </div>
+
+      {regenerateMutation.error && (
+        <div className="mb-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 print:hidden">
+          {regenerateMutation.error instanceof Error ? regenerateMutation.error.message : "Erro ao regenerar."}
+        </div>
+      )}
 
       {isLoading && (
         <Card>

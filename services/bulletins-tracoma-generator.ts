@@ -279,7 +279,7 @@ export async function generateTracomaBulletin(
 
   const { data, error } = await supabase
     .from("bulletins")
-    .insert({ se: 0, ano, agravo: "tracoma", title, content })
+    .upsert({ se: 0, ano, agravo: "tracoma", title, content }, { onConflict: "se,ano,agravo" })
     .select("id, title")
     .single();
 
