@@ -2,16 +2,22 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Calendar, ChevronRight, Clipboard, Loader2, Newspaper, Plus, Printer, RefreshCw } from "lucide-react";
+import {
+  ArrowLeft, Calendar, ChevronRight, Clipboard, Eye, Loader2,
+  Newspaper, Plus, Printer, RefreshCw
+} from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
+type Agravo = "conjuntivite" | "tracoma";
+
 interface BulletinSummary {
   id: string;
   se: number;
   ano: number;
+  agravo: Agravo;
   title: string;
   created_at: string;
 }
@@ -27,14 +33,14 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return payload;
 }
 
-function getLastCompleteEpidemiologicalWeek(now = new Date()) {
+function lastCompleteWeek(now = new Date()) {
   const ano = now.getFullYear();
   const week = Math.ceil((now.getTime() - new Date(ano, 0, 1).getTime()) / (7 * 864e5));
   return { ano, se: Math.max(1, week - 1) };
 }
 
-// Markdown components with institutional blue styling (inspired by federal bulletin layout)
-const bulletinMdComponents: React.ComponentProps<typeof ReactMarkdown>["components"] = {
+// ──── Markdown component map — blue institutional style ───────────────────────
+const mdComponents: React.ComponentProps<typeof ReactMarkdown>["components"] = {
   h1: ({ children }) => (
     <h1 className="mb-4 mt-8 text-lg font-bold text-blue-900 first:mt-0">{children}</h1>
   ),
@@ -81,6 +87,33 @@ const bulletinMdComponents: React.ComponentProps<typeof ReactMarkdown>["componen
   ),
 };
 
+// ──── Configs per disease ─────────────────────────────────────────────────────
+const AGRAVO_CONFIG = {
+  conjuntivite: {
+    label: "Conjuntivite",
+    subtitle: "Boletim semanal — CEVESP/SES-SP",
+    divisionLabel: "Divisão de Doenças de Transmissão Respiratória e Ocular",
+    headerClass: "bg-blue-900",
+    badgeClass: "bg-blue-700 text-white hover:bg-blue-700",
+    accentClass: "bg-blue-700",
+    cardClass: "border-blue-100",
+    seLabel: (se: number, ano: number) => `SE ${String(se).padStart(2, "0")}/${ano}`,
+    seDisplay: (se: number) => String(se).padStart(2, "0"),
+  },
+  tracoma: {
+    label: "Tracoma",
+    subtitle: "Boletim anual — SINAN/SES-SP",
+    divisionLabel: "Divisão de Doenças Oculares — Programa de Eliminação do Tracoma",
+    headerClass: "bg-teal-900",
+    badgeClass: "bg-teal-700 text-white hover:bg-teal-700",
+    accentClass: "bg-teal-600",
+    cardClass: "border-teal-100",
+    seLabel: (_se: number, ano: number) => `Ano ${ano}`,
+    seDisplay: (_se: number) => "ANO",
+  },
+};
+
+// ──── BulletinDetail ──────────────────────────────────────────────────────────
 function BulletinDetail({ id, onBack }: { id: string; onBack: () => void }) {
   const [copied, setCopied] = useState(false);
   const { data, isLoading, error } = useQuery<BulletinDetail>({
@@ -95,9 +128,11 @@ function BulletinDetail({ id, onBack }: { id: string; onBack: () => void }) {
     window.setTimeout(() => setCopied(false), 1800);
   }
 
+  const cfg = data ? AGRAVO_CONFIG[data.agravo] : AGRAVO_CONFIG.conjuntivite;
+
   return (
     <div className="mx-auto max-w-4xl p-4 md:p-6">
-      {/* Action bar — hidden on print */}
+      {/* Action bar */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 print:hidden">
         <Button variant="ghost" onClick={onBack} className="px-2">
           <ArrowLeft className="h-4 w-4" />
@@ -134,9 +169,8 @@ function BulletinDetail({ id, onBack }: { id: string; onBack: () => void }) {
 
       {data && (
         <article className="overflow-hidden rounded-lg border border-blue-200 bg-white shadow-md print:shadow-none">
-
-          {/* ── Institutional top strip ──────────────────────────── */}
-          <div className="flex flex-wrap items-center justify-between gap-2 bg-blue-950 px-5 py-2 text-[11px] text-blue-200">
+          {/* Top strip */}
+          <div className={`flex flex-wrap items-center justify-between gap-2 bg-blue-950 px-5 py-2 text-[11px] text-blue-200`}>
             <div className="flex items-center gap-2 font-medium tracking-wide">
               <span className="text-white">ESTADO DE SÃO PAULO</span>
               <span>·</span>
@@ -145,54 +179,53 @@ function BulletinDetail({ id, onBack }: { id: string; onBack: () => void }) {
             <span>Centro de Vigilância Epidemiológica &quot;Prof. Alexandre Vranjac&quot;</span>
           </div>
 
-          {/* ── Main header ─────────────────────────────────────── */}
-          <div className="relative overflow-hidden bg-blue-900 px-6 pb-7 pt-5 text-white">
-            {/* Big SE number watermark */}
-            <div
-              className="pointer-events-none absolute right-4 top-0 select-none text-[9rem] font-black leading-none text-white/10"
-              aria-hidden
-            >
-              {String(data.se).padStart(2, "0")}
+          {/* Header */}
+          <div className={`relative overflow-hidden ${cfg.headerClass} px-6 pb-7 pt-5 text-white`}>
+            <div className="pointer-events-none absolute right-4 top-0 select-none text-[9rem] font-black leading-none text-white/10" aria-hidden>
+              {cfg.seDisplay(data.se)}
             </div>
-
             <div className="relative flex items-end justify-between gap-4">
               <div>
-                <p className="mb-1 text-[11px] uppercase tracking-widest text-blue-300">
-                  Divisão de Vigilância Epidemiológica · Doenças Oculares
+                <p className="mb-1 text-[11px] uppercase tracking-widest opacity-60">
+                  {cfg.divisionLabel}
                 </p>
                 <h1 className="text-3xl font-black leading-tight md:text-4xl">
                   Boletim<br />Epidemiológico
                 </h1>
+                <p className="mt-1 text-sm opacity-75">{cfg.subtitle}</p>
               </div>
               <div className="text-right">
-                <div className="text-xs text-blue-300">Semana Epidemiológica</div>
-                <div className="text-4xl font-black text-white/90">{String(data.se).padStart(2, "0")}</div>
-                <div className="text-sm font-semibold text-blue-200">{data.ano}</div>
-                <div className="mt-1 text-[11px] text-blue-400">
+                <div className="text-xs opacity-60">
+                  {data.agravo === "tracoma" ? "Ano de referência" : "Semana Epidemiológica"}
+                </div>
+                <div className="text-4xl font-black text-white/90">
+                  {data.agravo === "tracoma" ? data.ano : String(data.se).padStart(2, "0")}
+                </div>
+                {data.agravo === "conjuntivite" && (
+                  <div className="text-sm font-semibold opacity-75">{data.ano}</div>
+                )}
+                <div className="mt-1 text-[11px] opacity-50">
                   Emitido em {new Date(data.created_at).toLocaleDateString("pt-BR")}
                 </div>
               </div>
             </div>
           </div>
 
-          {/* ── Article title strip ──────────────────────────────── */}
-          <div className="border-b-4 border-blue-700 bg-blue-700 px-6 py-4 text-white">
+          {/* Title strip */}
+          <div className={`${cfg.accentClass} border-b-4 border-opacity-80 px-6 py-4 text-white`}
+               style={{ borderBottomColor: "rgba(255,255,255,0.2)" }}>
             <h2 className="text-base font-bold leading-snug md:text-lg">{data.title}</h2>
           </div>
 
-          {/* ── Content ──────────────────────────────────────────── */}
+          {/* Content */}
           <div className="px-6 pb-8 pt-6 md:px-8">
-            <ReactMarkdown components={bulletinMdComponents}>{data.content}</ReactMarkdown>
+            <ReactMarkdown components={mdComponents}>{data.content}</ReactMarkdown>
           </div>
 
-          {/* ── Footer ───────────────────────────────────────────── */}
+          {/* Footer */}
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-blue-100 bg-blue-50 px-6 py-3 text-[11px] text-blue-700">
-            <span>
-              Centro de Vigilância Epidemiológica &quot;Prof. Alexandre Vranjac&quot; | CCD/SES-SP
-            </span>
-            <span className="text-blue-400">
-              SE {String(data.se).padStart(2, "0")}/{data.ano}
-            </span>
+            <span>Centro de Vigilância Epidemiológica &quot;Prof. Alexandre Vranjac&quot; | CCD/SES-SP</span>
+            <span className="text-blue-400">{cfg.seLabel(data.se, data.ano)}</span>
           </div>
         </article>
       )}
@@ -200,157 +233,209 @@ function BulletinDetail({ id, onBack }: { id: string; onBack: () => void }) {
   );
 }
 
-export function BulletinsView() {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [skippedSE, setSkippedSE] = useState<{ se: number; ano: number } | null>(null);
+// ──── GenerateButton ──────────────────────────────────────────────────────────
+function GenerateButton({
+  agravo,
+  onSuccess
+}: {
+  agravo: Agravo;
+  onSuccess: (id: string) => void;
+}) {
   const queryClient = useQueryClient();
+  const nextSE = useMemo(() => lastCompleteWeek(), []);
+  const [skipped, setSkipped] = useState(false);
 
-  const nextSE = useMemo(() => getLastCompleteEpidemiologicalWeek(), []);
-
-  const { data: bulletins = [], isLoading, error } = useQuery<BulletinSummary[]>({
-    queryKey: ["bulletins"],
-    queryFn: () => fetchJson("/api/boletins")
-  });
-
-  const generateMutation = useMutation({
-    mutationFn: () => fetchJson<{ id?: string; skipped?: boolean; se: number; ano: number }>("/api/boletins", { method: "POST" }),
+  const mutation = useMutation({
+    mutationFn: () =>
+      fetchJson<{ id?: string; skipped?: boolean; se: number; ano: number; agravo: Agravo }>(
+        "/api/boletins",
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agravo }) }
+      ),
     onSuccess: async result => {
-      await queryClient.invalidateQueries({ queryKey: ["bulletins"] });
-      if (result.skipped) setSkippedSE({ se: result.se, ano: result.ano });
-      if (result.id) setSelectedId(result.id);
+      await queryClient.invalidateQueries({ queryKey: ["bulletins", agravo] });
+      setSkipped(Boolean(result.skipped));
+      if (result.id) onSuccess(result.id);
     }
   });
 
-  const uniqueYears = useMemo(() => new Set(bulletins.map(b => b.ano)).size, [bulletins]);
-  const latest = bulletins[0];
+  const cfg = AGRAVO_CONFIG[agravo];
+  const hint = agravo === "tracoma"
+    ? `Ano ${new Date().getFullYear()}`
+    : `Próxima SE: ${nextSE.se}/${nextSE.ano}`;
 
-  if (selectedId) {
-    return <BulletinDetail id={selectedId} onBack={() => { setSelectedId(null); setSkippedSE(null); }} />;
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <Button
+        onClick={() => { setSkipped(false); mutation.mutate(); }}
+        disabled={mutation.isPending}
+        className={agravo === "tracoma" ? "bg-teal-700 hover:bg-teal-800" : "bg-blue-700 hover:bg-blue-800"}
+      >
+        {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+        Gerar boletim de {cfg.label}
+      </Button>
+      <span className="text-xs text-muted-foreground">
+        {mutation.isPending ? "Gerando…" : hint}
+      </span>
+      {mutation.error && (
+        <span className="text-xs text-red-600">
+          {mutation.error instanceof Error ? mutation.error.message : "Erro ao gerar"}
+        </span>
+      )}
+      {skipped && !mutation.isPending && (
+        <span className="text-xs text-amber-600">Boletim já existe — abrindo o existente…</span>
+      )}
+    </div>
+  );
+}
+
+// ──── BulletinList ────────────────────────────────────────────────────────────
+function BulletinList({ agravo, onSelect }: { agravo: Agravo; onSelect: (id: string) => void }) {
+  const queryClient = useQueryClient();
+  const cfg = AGRAVO_CONFIG[agravo];
+
+  const { data: bulletins = [], isLoading, error } = useQuery<BulletinSummary[]>({
+    queryKey: ["bulletins", agravo],
+    queryFn: () => fetchJson(`/api/boletins?agravo=${agravo}`)
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Carregando boletins…
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+        {error instanceof Error ? error.message : "Erro ao carregar boletins."}
+      </div>
+    );
+  }
+
+  if (bulletins.length === 0) {
+    return (
+      <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+        Nenhum boletim de {cfg.label.toLowerCase()} publicado ainda.
+        <br />Use o botão acima para gerar o primeiro.
+      </div>
+    );
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-5 p-4 md:p-6">
+    <div className="space-y-2">
+      {bulletins.map(b => (
+        <button
+          key={b.id}
+          onClick={() => onSelect(b.id)}
+          className={`grid w-full grid-cols-[auto_1fr_auto] items-center gap-3 rounded-md border bg-background p-3 text-left transition hover:border-${agravo === "tracoma" ? "teal" : "blue"}-500 hover:bg-${agravo === "tracoma" ? "teal" : "blue"}-50/50`}
+        >
+          <div className={`rounded-md px-3 py-2 text-center text-white ${agravo === "tracoma" ? "bg-teal-800" : "bg-blue-900"}`}>
+            <div className="text-[10px] font-medium tracking-widest opacity-60">
+              {agravo === "tracoma" ? "ANO" : "SE"}
+            </div>
+            <div className="text-lg font-bold leading-none">
+              {agravo === "tracoma" ? b.ano : String(b.se).padStart(2, "0")}
+            </div>
+          </div>
+          <div className="min-w-0">
+            <div className="truncate font-medium text-foreground">{b.title}</div>
+            <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+              <Calendar className="h-3.5 w-3.5" />
+              {b.ano} · {new Date(b.created_at).toLocaleDateString("pt-BR")}
+            </div>
+          </div>
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        </button>
+      ))}
+      <div className="pt-1 text-right">
+        <Button variant="ghost" size="sm" onClick={() => queryClient.invalidateQueries({ queryKey: ["bulletins", agravo] })}>
+          <RefreshCw className="h-3.5 w-3.5" />
+          Atualizar
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ──── BulletinsView (main export) ─────────────────────────────────────────────
+export function BulletinsView() {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<Agravo>("conjuntivite");
+
+  if (selectedId) {
+    return <BulletinDetail id={selectedId} onBack={() => setSelectedId(null)} />;
+  }
+
+  const tabs: { id: Agravo; label: string; icon: React.ReactNode }[] = [
+    { id: "conjuntivite", label: "Conjuntivite", icon: <Eye className="h-4 w-4" /> },
+    { id: "tracoma",      label: "Tracoma",       icon: <Newspaper className="h-4 w-4" /> },
+  ];
+
+  return (
+    <div className="mx-auto max-w-6xl space-y-6 p-4 md:p-6">
 
       {/* Page header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <Newspaper className="h-6 w-6 text-blue-700" />
-            <h1 className="text-2xl font-semibold text-foreground">Boletins Epidemiológicos</h1>
-          </div>
-          <p className="max-w-3xl text-sm text-muted-foreground">
-            Boletins semanais gerados automaticamente com base nos dados do CEVESP — CVE/SES-SP.
-          </p>
+      <div className="space-y-1">
+        <div className="flex items-center gap-2">
+          <Newspaper className="h-6 w-6 text-blue-700" />
+          <h1 className="text-2xl font-semibold text-foreground">Boletins Epidemiológicos</h1>
         </div>
+        <p className="max-w-3xl text-sm text-muted-foreground">
+          Boletins gerados automaticamente com base nos dados do CEVESP (conjuntivite) e SINAN (tracoma) — CVE/SES-SP.
+        </p>
+      </div>
 
-        <div className="flex flex-col items-end gap-1">
-          <Button
-            onClick={() => { setSkippedSE(null); generateMutation.mutate(); }}
-            disabled={generateMutation.isPending}
-            className="bg-blue-700 hover:bg-blue-800"
+      {/* Disease tabs */}
+      <div className="flex gap-1 rounded-lg border bg-muted/30 p-1">
+        {tabs.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition ${
+              activeTab === tab.id
+                ? tab.id === "tracoma"
+                  ? "bg-teal-800 text-white shadow"
+                  : "bg-blue-800 text-white shadow"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
           >
-            {generateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-            Gerar boletim
-          </Button>
-          <span className="text-xs text-muted-foreground">
-            {generateMutation.isPending ? "Gerando…" : `Próxima SE: ${nextSE.se}/${nextSE.ano}`}
-          </span>
-        </div>
+            {tab.icon}
+            {tab.label}
+          </button>
+        ))}
       </div>
 
-      {/* Errors */}
-      {generateMutation.error && (
-        <Card className="border-red-200 bg-red-50 text-red-900">
-          <CardContent className="py-4 text-sm">
-            {generateMutation.error instanceof Error ? generateMutation.error.message : "Não foi possível gerar o boletim."}
-          </CardContent>
-        </Card>
-      )}
-
-      {skippedSE && (
-        <Card className="border-amber-200 bg-amber-50 text-amber-900">
-          <CardContent className="py-3 text-sm">
-            Já existe um boletim para a SE {skippedSE.se}/{skippedSE.ano}. Abrindo o existente…
-          </CardContent>
-        </Card>
-      )}
-
-      {/* KPI cards */}
-      <div className="grid gap-3 md:grid-cols-3">
-        <Card className="border-blue-100">
-          <CardHeader className="pb-2">
-            <CardDescription>Total publicado</CardDescription>
-            <CardTitle className="text-2xl text-blue-900">{bulletins.length}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card className="border-blue-100">
-          <CardHeader className="pb-2">
-            <CardDescription>Anos com boletim</CardDescription>
-            <CardTitle className="text-2xl text-blue-900">{uniqueYears || "—"}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card className="border-blue-100">
-          <CardHeader className="pb-2">
-            <CardDescription>Boletim mais recente</CardDescription>
-            <CardTitle className="text-2xl text-blue-900">{latest ? `SE ${latest.se}/${latest.ano}` : "—"}</CardTitle>
-          </CardHeader>
-        </Card>
-      </div>
-
-      {/* Bulletin list */}
-      <Card className="border-blue-100">
-        <CardHeader className="flex-row items-center justify-between gap-4">
+      {/* Content per tab */}
+      <div className="space-y-4">
+        {/* Header strip for active disease */}
+        <div className={`flex flex-wrap items-center justify-between gap-3 rounded-lg px-4 py-3 ${
+          activeTab === "tracoma" ? "bg-teal-50 border border-teal-100" : "bg-blue-50 border border-blue-100"
+        }`}>
           <div>
-            <CardTitle>Histórico</CardTitle>
-            <CardDescription>Clique em um boletim para ler, imprimir ou copiar o texto.</CardDescription>
+            <div className={`text-sm font-semibold ${activeTab === "tracoma" ? "text-teal-900" : "text-blue-900"}`}>
+              {AGRAVO_CONFIG[activeTab].label}
+            </div>
+            <div className="text-xs text-muted-foreground">{AGRAVO_CONFIG[activeTab].subtitle}</div>
           </div>
-          <Button variant="outline" size="sm" onClick={() => queryClient.invalidateQueries({ queryKey: ["bulletins"] })}>
-            <RefreshCw className="h-4 w-4" />
-            Atualizar
-          </Button>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {isLoading && (
-            <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Carregando boletins...
-            </div>
-          )}
+          <GenerateButton agravo={activeTab} onSuccess={id => setSelectedId(id)} />
+        </div>
 
-          {error && (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
-              {error instanceof Error ? error.message : "Erro ao carregar boletins."}
-            </div>
-          )}
-
-          {!isLoading && bulletins.length === 0 && (
-            <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-              Nenhum boletim publicado ainda. Use o botão acima para gerar o primeiro.
-            </div>
-          )}
-
-          {bulletins.map(bulletin => (
-            <button
-              key={bulletin.id}
-              onClick={() => setSelectedId(bulletin.id)}
-              className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-3 rounded-md border bg-background p-3 text-left transition hover:border-blue-500 hover:bg-blue-50/50"
-            >
-              <div className="rounded-md bg-blue-900 px-3 py-2 text-center text-white">
-                <div className="text-[10px] font-medium tracking-widest text-blue-300">SE</div>
-                <div className="text-lg font-bold leading-none">{String(bulletin.se).padStart(2, "0")}</div>
-              </div>
-              <div className="min-w-0">
-                <div className="truncate font-medium text-foreground">{bulletin.title}</div>
-                <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                  <Calendar className="h-3.5 w-3.5" />
-                  {bulletin.ano} · {new Date(bulletin.created_at).toLocaleDateString("pt-BR")}
-                </div>
-              </div>
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-            </button>
-          ))}
-        </CardContent>
-      </Card>
+        {/* Bulletin list */}
+        <Card className={activeTab === "tracoma" ? "border-teal-100" : "border-blue-100"}>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Histórico</CardTitle>
+            <CardDescription>
+              Clique em um boletim para ler, imprimir ou copiar o conteúdo.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <BulletinList agravo={activeTab} onSelect={id => setSelectedId(id)} />
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
