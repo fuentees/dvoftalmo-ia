@@ -1,5 +1,5 @@
-import { NotificationsReportView } from "@/components/notifications/notifications-report-view";
+import { redirect } from "next/navigation";
 
-export default function NotificationsPage() {
-  return <NotificationsReportView />;
+export default function NotificacoesPage() {
+  redirect("/conjuntivite");
 }

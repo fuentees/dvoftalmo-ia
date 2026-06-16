@@ -612,8 +612,8 @@ export function DashboardView() {
                 <CardTitle>Decisão CEVESP</CardTitle>
               </CardHeader>
               <CardContent className="grid gap-2 sm:grid-cols-3">
-                <ActionButton href="/notificacoes" label="Análise CEVESP completa" />
-                <ActionButton href="/cevesp-qualidade" label="Auditoria de dados" />
+                <ActionButton href="/conjuntivite" label="Análise CEVESP completa" />
+                <ActionButton href="/conjuntivite" label="Auditoria de dados" />
                 <ActionButton href="/correcoes" label="Tratar correções" />
               </CardContent>
             </Card>
@@ -795,7 +795,7 @@ export function DashboardView() {
                   <CardDescription>Foco em eliminação, tratamento e consistência</CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-2 sm:grid-cols-2">
-                  <ActionButton href="/sinan-qualidade" label="Análise SINAN completa" />
+                  <ActionButton href="/tracoma" label="Análise SINAN completa" />
                   <ActionButton href="/sincronizacao" label="Importar bancos" />
                   <ActionButton href="/chat" label="Perguntar ao agente" />
                   <ActionButton href="/boletins" label="Registrar boletim" />

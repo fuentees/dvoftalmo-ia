@@ -164,7 +164,7 @@ function buildActions(cevesp?: CevespQuality, sinan?: SinanAuditResult): Quality
       problem: "Inconsistências em notificações CEVESP",
       where: cevesp.byGve[0]?.gve ?? cevesp.byMunicipio[0]?.municipio ?? "base completa",
       count: cevesp.total,
-      href: "/cevesp-qualidade"
+      href: "/conjuntivite"
     });
   }
 
@@ -177,7 +177,7 @@ function buildActions(cevesp?: CevespQuality, sinan?: SinanAuditResult): Quality
         problem: "Inconsistências clínicas do tracoma",
         where: "TRACONET",
         count: critical,
-        href: "/sinan-qualidade"
+        href: "/tracoma"
       });
     }
 
@@ -189,7 +189,7 @@ function buildActions(cevesp?: CevespQuality, sinan?: SinanAuditResult): Quality
         problem: "Divergências TRACONET x NOTTRACONET",
         where: sinan.crossBankDivergences?.[0]?.gve ?? "municípios/anos",
         count: divergences,
-        href: "/sinan-qualidade"
+        href: "/tracoma"
       });
     }
 
@@ -201,7 +201,7 @@ function buildActions(cevesp?: CevespQuality, sinan?: SinanAuditResult): Quality
         problem: "Completude pendente no SINAN Tracoma",
         where: "campos de encerramento, forma clínica ou identificador",
         count: missing,
-        href: "/sinan-qualidade"
+        href: "/tracoma"
       });
     }
   }

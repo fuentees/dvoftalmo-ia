@@ -526,8 +526,8 @@ export function CevespQualidadeView() {
           <p className="text-sm text-muted-foreground">
             Tela técnica para corrigir inconsistências detectadas na base CEVESP.
           </p>
-          <Link href="/notificacoes" className="mt-1 inline-flex text-xs font-medium text-primary underline">
-            Voltar para Conjuntivites - CEVESP
+          <Link href="/conjuntivite" className="mt-1 inline-flex text-xs font-medium text-primary underline">
+            Voltar para Conjuntivite — CEVESP
           </Link>
         </div>
         <Button size="sm" variant="outline" onClick={() => void refetch()}>

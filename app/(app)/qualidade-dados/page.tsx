@@ -1,7 +1,5 @@
-import { QualityCenterView } from "@/components/quality/quality-center-view";
-
-export const metadata = { title: "Qualidade dos Dados" };
+import { redirect } from "next/navigation";
 
 export default function QualidadeDadosPage() {
-  return <QualityCenterView />;
+  redirect("/dashboard");
 }

@@ -668,7 +668,7 @@ export function NotificationsReportView() {
 
             <div className="flex flex-wrap gap-2">
               <Button asChild>
-                <Link href="/cevesp-qualidade">
+                <Link href="/conjuntivite">
                   <ShieldCheck className="h-4 w-4" />
                   Abrir auditoria técnica
                 </Link>

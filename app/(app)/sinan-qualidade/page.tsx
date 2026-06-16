@@ -1,7 +1,5 @@
-import { SinanQualidadeView } from "@/components/sinan/sinan-qualidade-view";
-
-export const metadata = { title: "Qualidade SINAN Tracoma" };
+import { redirect } from "next/navigation";
 
 export default function SinanQualidadePage() {
-  return <SinanQualidadeView />;
+  redirect("/tracoma");
 }
