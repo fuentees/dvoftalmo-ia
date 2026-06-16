@@ -11,7 +11,7 @@ import { findInvalidRecords, saveCorrectionsToQueue } from "@/services/cevesp-co
 import { getNotificationTableName } from "@/lib/external/notification-db";
 import { auditarSinanTracoma, runSinanTracomaAnalysis } from "@/services/sinan-tracoma";
 // 5-min in-memory cache for tracoma queries (REDCap is slow and data rarely changes)
-const tracomaCache = new Map<string, { data: TracomaSurveyResult[]; expiresAt: number }>();
+const tracomaCache = new Map<string, { data: { data: TracomaSurveyResult[]; isMock: boolean }; expiresAt: number }>();
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
 
@@ -334,25 +334,26 @@ async function executeTool(
         b: args.ano_fim ?? null
       });
       const cached = tracomaCache.get(cacheKey);
-      const surveys = (cached && Date.now() < cached.expiresAt)
+      const { data: surveys, isMock } = (cached && Date.now() < cached.expiresAt)
         ? cached.data
         : await fetchTracomaSurveys({
             municipality: args.municipio ? String(args.municipio) : undefined,
             uf: args.uf ? String(args.uf) : undefined,
             yearFrom: args.ano_inicio ? Number(args.ano_inicio) : undefined,
             yearTo: args.ano_fim ? Number(args.ano_fim) : undefined
-          }).then((data) => {
-            tracomaCache.set(cacheKey, { data, expiresAt: Date.now() + 5 * 60_000 });
-            return data;
+          }).then((result) => {
+            tracomaCache.set(cacheKey, { data: result, expiresAt: Date.now() + 5 * 60_000 });
+            return result;
           });
       if (!surveys.length) return { content: "Nenhum dado de tracoma encontrado." };
+      const mockWarning = isMock ? "\n\n⚠️ DADOS DE EXEMPLO — REDCap não está configurado. Configure REDCAP_API_URL e REDCAP_API_TOKEN para dados reais." : "";
       const lines = surveys.map((s) =>
         `${s.municipality} (${s.uf}) ${s.examYear}: TF=${s.tfPrevalence.toFixed(1)}% ` +
         `(${s.tfEliminated ? "eliminado" : "acima do limiar OMS"}) | ` +
         `TT=${s.ttPrevalence.toFixed(2)}% (${s.ttEliminated ? "eliminado" : "acima do limiar OMS"}) | ` +
         `Examinados=${s.totalExamined}`
       );
-      return { content: `Resultados de tracoma (${surveys.length} municípios/anos):\n` + lines.join("\n") };
+      return { content: `Resultados de tracoma (${surveys.length} municípios/anos):\n` + lines.join("\n") + mockWarning };
     } catch (err) {
       return { content: `Erro tracoma: ${err instanceof Error ? err.message : String(err)}` };
     }

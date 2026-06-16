@@ -6,7 +6,7 @@ import {
   AlertCircle, AlertTriangle, CheckCircle2, ClipboardCheck,
   MapPin, RefreshCw, Users, XCircle
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { InvalidRecord } from "@/services/cevesp-corrections";
@@ -166,14 +166,17 @@ function TabsBar({ tab, setTab, counts }: {
   );
 }
 
-function PorAnoPanel({ data }: { data: QualidadeData }) {
+function PorAnoPanel({ data, onSelectAno }: { data: QualidadeData; onSelectAno?: (ano: number) => void }) {
   if (!data.byAno.length) {
     return <p className="py-6 text-center text-sm text-muted-foreground">Nenhum registro com ano informado.</p>;
   }
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm">Problemas por Ano</CardTitle>
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="text-sm">Problemas por Ano</CardTitle>
+          {onSelectAno && <p className="text-xs text-muted-foreground">Clique em um ano para ver os registros</p>}
+        </div>
       </CardHeader>
       <CardContent className="p-0">
         <div className="overflow-x-auto">
@@ -182,6 +185,7 @@ function PorAnoPanel({ data }: { data: QualidadeData }) {
               <tr className="border-b bg-muted/40">
                 <th className="px-4 py-2 text-left font-medium">Ano</th>
                 <th className="px-4 py-2 text-right font-medium">Registros com problema</th>
+                {onSelectAno && <th className="px-4 py-2" />}
               </tr>
             </thead>
             <tbody>
@@ -193,6 +197,16 @@ function PorAnoPanel({ data }: { data: QualidadeData }) {
                       {count.toLocaleString("pt-BR")}
                     </span>
                   </td>
+                  {onSelectAno && (
+                    <td className="px-4 py-2 text-right">
+                      <button
+                        onClick={() => onSelectAno(ano)}
+                        className="text-primary underline-offset-2 hover:underline text-[11px]"
+                      >
+                        ver registros →
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -203,7 +217,7 @@ function PorAnoPanel({ data }: { data: QualidadeData }) {
   );
 }
 
-function PorGvePanel({ data }: { data: QualidadeData }) {
+function PorGvePanel({ data, onSelectGve }: { data: QualidadeData; onSelectGve?: (gve: string) => void }) {
   if (!data.byGve.length) {
     return <p className="py-6 text-center text-sm text-muted-foreground">Nenhum registro com GVE informado.</p>;
   }
@@ -211,7 +225,10 @@ function PorGvePanel({ data }: { data: QualidadeData }) {
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm">Problemas por GVE</CardTitle>
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="text-sm">Problemas por GVE</CardTitle>
+          {onSelectGve && <p className="text-xs text-muted-foreground">Clique em um GVE para ver os municípios</p>}
+        </div>
       </CardHeader>
       <CardContent className="p-0">
         <div className="overflow-x-auto">
@@ -221,6 +238,7 @@ function PorGvePanel({ data }: { data: QualidadeData }) {
                 <th className="px-4 py-2 text-left font-medium">GVE</th>
                 <th className="px-4 py-2 text-right font-medium">Registros</th>
                 <th className="px-4 py-2 text-left font-medium w-32">Proporção</th>
+                {onSelectGve && <th className="px-4 py-2" />}
               </tr>
             </thead>
             <tbody>
@@ -238,6 +256,16 @@ function PorGvePanel({ data }: { data: QualidadeData }) {
                       />
                     </div>
                   </td>
+                  {onSelectGve && (
+                    <td className="px-4 py-2 text-right">
+                      <button
+                        onClick={() => onSelectGve(gve)}
+                        className="text-primary underline-offset-2 hover:underline text-[11px]"
+                      >
+                        ver municípios →
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -248,10 +276,18 @@ function PorGvePanel({ data }: { data: QualidadeData }) {
   );
 }
 
-function PorMunicipioPanel({ data }: { data: QualidadeData }) {
-  const [gveFilter, setGveFilter] = useState("todos");
+function PorMunicipioPanel({ data, externalGve, onClearGve }: { data: QualidadeData; externalGve?: string; onClearGve?: () => void }) {
+  const [gveFilter, setGveFilter] = useState(externalGve ?? "todos");
   const [query, setQuery] = useState("");
   const [showAll, setShowAll] = useState(false);
+
+  // sync external GVE cross-filter from Por GVE tab
+  useEffect(() => {
+    if (externalGve !== undefined) {
+      setGveFilter(externalGve || "todos");
+      setShowAll(false);
+    }
+  }, [externalGve]);
 
   const gves = useMemo(
     () => [...new Set(data.byMunicipio.map((item) => item.gve).filter(Boolean) as string[])].sort((a, b) => a.localeCompare(b, "pt-BR")),
@@ -275,7 +311,14 @@ function PorMunicipioPanel({ data }: { data: QualidadeData }) {
     <Card>
       <CardHeader className="space-y-3 pb-3">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle className="text-sm">Problemas por Município</CardTitle>
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-sm">Problemas por Município</CardTitle>
+            {externalGve && gveFilter !== "todos" && (
+              <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                filtrado: {gveFilter}
+              </span>
+            )}
+          </div>
           <span className="text-xs text-muted-foreground">
             {filteredRows.length.toLocaleString("pt-BR")} município(s), {totalFiltered.toLocaleString("pt-BR")} registro(s)
           </span>
@@ -312,6 +355,7 @@ function PorMunicipioPanel({ data }: { data: QualidadeData }) {
               setGveFilter("todos");
               setQuery("");
               setShowAll(false);
+              onClearGve?.();
             }}
           >
             Limpar
@@ -366,7 +410,22 @@ export function CevespQualidadeView() {
   const [page, setPage] = useState(0);
   const [selected, setSelected]   = useState<Set<string>>(new Set());
   const [proposeMsg, setProposeMsg] = useState<{ type: "ok" | "error"; text: string } | null>(null);
+  const [crossGve, setCrossGve]   = useState<string | undefined>(undefined);
   const pageSize = 100;
+
+  function handleSelectAno(ano: number) {
+    setRecordQuery(String(ano));
+    setPage(0);
+    setSelected(new Set());
+    setTab("registros");
+  }
+  function handleSelectGve(gve: string) {
+    setCrossGve(gve);
+    setTab("por_municipio");
+  }
+  function handleClearGve() {
+    setCrossGve(undefined);
+  }
 
   const { data, isLoading, isError, error, refetch } = useQuery<QualidadeData, ApiError>({
     queryKey: ["cevesp-qualidade", filterType, recordQuery, page],
@@ -572,16 +631,27 @@ export function CevespQualidadeView() {
                   Exportar CSV
                 </Button>
 
+                {/* Ação de propor — sempre explícito sobre o que será enviado */}
                 {selected.size > 0 ? (
-                  <Button
-                    size="sm"
-                    className="h-8 text-xs"
-                    disabled={proposeMutation.isPending}
-                    onClick={() => { setProposeMsg(null); proposeMutation.mutate([...selected]); }}
-                  >
-                    <ClipboardCheck className="mr-1.5 h-3.5 w-3.5" />
-                    {proposeMutation.isPending ? "Propondo..." : `Propor correção (${selected.size})`}
-                  </Button>
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      size="sm"
+                      className="h-8 text-xs"
+                      disabled={proposeMutation.isPending}
+                      onClick={() => { setProposeMsg(null); proposeMutation.mutate([...selected]); }}
+                    >
+                      <ClipboardCheck className="mr-1.5 h-3.5 w-3.5" />
+                      {proposeMutation.isPending ? "Enviando..." : `Propor ${selected.size} selecionado(s)`}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 text-xs text-muted-foreground"
+                      onClick={() => setSelected(new Set())}
+                    >
+                      Limpar seleção
+                    </Button>
+                  </div>
                 ) : (
                   <Button
                     size="sm"
@@ -589,15 +659,18 @@ export function CevespQualidadeView() {
                     className="h-8 text-xs"
                     disabled={proposeMutation.isPending}
                     onClick={() => { setProposeMsg(null); proposeMutation.mutate(undefined); }}
+                    title="Envia todos os registros com problema para a fila de correção"
                   >
                     <ClipboardCheck className="mr-1.5 h-3.5 w-3.5" />
-                    {proposeMutation.isPending ? "Propondo..." : "Propor todas as correções"}
+                    {proposeMutation.isPending ? "Enviando..." : `Propor todos (${filteredTotal.toLocaleString("pt-BR")})`}
                   </Button>
                 )}
 
                 <span className="text-xs text-muted-foreground">
-                  {visible.length} exibido(s) de {filteredTotal.toLocaleString("pt-BR")}
-                  {selected.size > 0 && ` · ${selected.size} selecionado(s)`}
+                  {visible.length} de {filteredTotal.toLocaleString("pt-BR")} registros
+                  {selected.size > 0 && (
+                    <span className="ml-1 font-medium text-primary">· {selected.size} selecionado(s) via checkbox</span>
+                  )}
                 </span>
                 {(filterType !== "todos" || recordQuery) && (
                   <Button
@@ -746,9 +819,9 @@ export function CevespQualidadeView() {
             </div>
           )}
 
-          {tab === "por_ano"      && data && <PorAnoPanel      data={data} />}
-          {tab === "por_gve"      && data && <PorGvePanel      data={data} />}
-          {tab === "por_municipio"&& data && <PorMunicipioPanel data={data} />}
+          {tab === "por_ano"       && data && <PorAnoPanel       data={data} onSelectAno={handleSelectAno} />}
+          {tab === "por_gve"       && data && <PorGvePanel       data={data} onSelectGve={handleSelectGve} />}
+          {tab === "por_municipio" && data && <PorMunicipioPanel data={data} externalGve={crossGve} onClearGve={handleClearGve} />}
         </>
       )}
 

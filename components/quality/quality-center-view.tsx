@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -261,8 +261,85 @@ function buildTerritoryRows(cevesp?: CevespQuality, sinan?: SinanAuditResult): T
       const aScore = a.cevesp + a.sinan * 3 + a.divergencias;
       const bScore = b.cevesp + b.sinan * 3 + b.divergencias;
       return priorityRank(a.priority) - priorityRank(b.priority) || bScore - aScore;
-    })
-    .slice(0, 12);
+    });
+}
+
+const TERRITORY_PAGE = 12;
+
+function TerritoryTable({ rows }: { rows: TerritoryRow[] }) {
+  const [showAll, setShowAll] = useState(false);
+  const visible = showAll ? rows : rows.slice(0, TERRITORY_PAGE);
+  const hidden = rows.length - TERRITORY_PAGE;
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base">Pendências por território</CardTitle>
+          {rows.length > 0 && (
+            <span className="text-xs text-muted-foreground">{rows.length.toLocaleString("pt-BR")} território(s)</span>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Sem território priorizado com os dados carregados.</p>
+        ) : (
+          <>
+            <div className="overflow-x-auto rounded-md border">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/60 text-xs text-muted-foreground">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium">Município</th>
+                    <th className="px-3 py-2 text-left font-medium">GVE</th>
+                    <th className="px-3 py-2 text-right font-medium">CEVESP</th>
+                    <th className="px-3 py-2 text-right font-medium">SINAN</th>
+                    <th className="px-3 py-2 text-right font-medium">Divergência</th>
+                    <th className="px-3 py-2 text-left font-medium">Prioridade</th>
+                    <th className="px-3 py-2 text-left font-medium">Principal achado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visible.map((row) => (
+                    <tr key={`${row.municipio}-${row.gve}`} className="border-t hover:bg-muted/30 transition-colors">
+                      <td className="px-3 py-2 font-medium">{row.municipio}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{row.gve}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{row.cevesp.toLocaleString("pt-BR")}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{row.sinan.toLocaleString("pt-BR")}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{row.divergencias.toLocaleString("pt-BR")}</td>
+                      <td className="px-3 py-2"><Badge className={priorityClass(row.priority)}>{row.priority}</Badge></td>
+                      <td className="px-3 py-2">
+                        <Link href={row.href} className="inline-flex max-w-[340px] items-center gap-1 truncate text-primary hover:underline">
+                          {row.problems[0] ?? "revisar território"}
+                          <ArrowRight className="h-3 w-3 shrink-0" />
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {!showAll && hidden > 0 && (
+              <button
+                onClick={() => setShowAll(true)}
+                className="mt-2 w-full rounded-md border border-dashed py-2 text-xs text-muted-foreground hover:border-primary/40 hover:text-primary transition-colors"
+              >
+                + {hidden.toLocaleString("pt-BR")} território(s) com menor prioridade — clique para ver todos
+              </button>
+            )}
+            {showAll && rows.length > TERRITORY_PAGE && (
+              <button
+                onClick={() => setShowAll(false)}
+                className="mt-2 w-full rounded-md border border-dashed py-2 text-xs text-muted-foreground hover:border-primary/40 hover:text-primary transition-colors"
+              >
+                Recolher — exibir apenas os {TERRITORY_PAGE} prioritários
+              </button>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 function StatCard({
@@ -512,50 +589,7 @@ export function QualityCenterView() {
             </Card>
           </div>
 
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Pendências por território</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {territoryRows.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Sem território priorizado com os dados carregados.</p>
-              ) : (
-                <div className="overflow-x-auto rounded-md border">
-                  <table className="w-full text-sm">
-                    <thead className="bg-muted/60 text-xs text-muted-foreground">
-                      <tr>
-                        <th className="px-3 py-2 text-left font-medium">Município</th>
-                        <th className="px-3 py-2 text-left font-medium">GVE</th>
-                        <th className="px-3 py-2 text-right font-medium">CEVESP</th>
-                        <th className="px-3 py-2 text-right font-medium">SINAN</th>
-                        <th className="px-3 py-2 text-right font-medium">Diferença</th>
-                        <th className="px-3 py-2 text-left font-medium">Prioridade</th>
-                        <th className="px-3 py-2 text-left font-medium">Principal achado</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {territoryRows.map((row) => (
-                        <tr key={`${row.municipio}-${row.gve}`} className="border-t">
-                          <td className="px-3 py-2 font-medium">{row.municipio}</td>
-                          <td className="px-3 py-2 text-muted-foreground">{row.gve}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{row.cevesp.toLocaleString("pt-BR")}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{row.sinan.toLocaleString("pt-BR")}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{row.divergencias.toLocaleString("pt-BR")}</td>
-                          <td className="px-3 py-2"><Badge className={priorityClass(row.priority)}>{row.priority}</Badge></td>
-                          <td className="px-3 py-2">
-                            <Link href={row.href} className="inline-flex max-w-[340px] items-center gap-1 truncate text-primary hover:underline">
-                              {row.problems[0] ?? "revisar território"}
-                              <ArrowRight className="h-3 w-3 shrink-0" />
-                            </Link>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <TerritoryTable rows={territoryRows} />
 
           <div className="grid gap-4 lg:grid-cols-2">
             <Card>

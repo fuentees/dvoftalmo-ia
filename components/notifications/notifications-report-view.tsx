@@ -258,7 +258,7 @@ function CevespRatesPanel({ data }: { data: CevespRatesData }) {
 
 export function NotificationsReportView() {
   const [tab, setTab] = useState<HubTab>("situacao");
-  const [question, setQuestion] = useState("Total de casos por GVE dos ultimos 5 anos por mes");
+  const [question, setQuestion] = useState("Total de casos por GVE dos últimos 5 anos por mês");
   const [showEndemic, setShowEndemic] = useState(false);
 
   const report = useQuery<ReportData>({

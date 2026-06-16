@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Check, ClipboardCheck, Copy, X } from "lucide-react";
+import { AlertTriangle, Check, ClipboardCheck, Copy, Download, Search, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,27 +21,68 @@ interface CorrectionItem {
   created_at: string;
   reviewed_at: string | null;
   applied_at: string | null;
+  proposed_by: string | null;
+  reviewed_by: string | null;
   proposer: { full_name: string } | null;
   reviewer: { full_name: string } | null;
 }
 
 const STATUS_LABELS: Record<Status, string> = {
-  pending: "Aguardando",
+  pending:  "Aguardando",
   approved: "Aprovado",
   rejected: "Rejeitado",
-  applied: "Aplicado"
+  applied:  "Aplicado"
 };
 
 const STATUS_COLORS: Record<Status, string> = {
-  pending: "border-yellow-200 bg-yellow-50 text-yellow-800",
+  pending:  "border-yellow-200 bg-yellow-50 text-yellow-800",
   approved: "border-blue-200 bg-blue-50 text-blue-800",
   rejected: "border-red-200 bg-red-50 text-red-800",
-  applied: "border-green-200 bg-green-50 text-green-800"
+  applied:  "border-green-200 bg-green-50 text-green-800"
 };
+
+function normalizeSearch(value: string | null | undefined) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function exportCsv(items: CorrectionItem[], status: string) {
+  const header = ["ID", "Tabela", "Registro", "Campo", "Valor Atual", "Valor Sugerido", "Motivo", "Status", "Proposto por", "Data proposta", "Revisado por", "Data revisão", "Aplicado em"];
+  const rows = items.map((item) => [
+    item.id,
+    item.table_name,
+    item.record_id,
+    item.field_name,
+    item.old_value ?? "",
+    item.new_value ?? "",
+    item.reason ?? "",
+    STATUS_LABELS[item.status],
+    item.proposer?.full_name ?? "sistema",
+    item.created_at ? new Date(item.created_at).toLocaleString("pt-BR") : "",
+    item.reviewer?.full_name ?? "",
+    item.reviewed_at ? new Date(item.reviewed_at).toLocaleString("pt-BR") : "",
+    item.applied_at ? new Date(item.applied_at).toLocaleString("pt-BR") : ""
+  ]);
+  const csv = [header, ...rows]
+    .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(";"))
+    .join("\n");
+  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `correcoes-${status}-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 export function CorrectionQueueView() {
   const [statusFilter, setStatusFilter] = useState<Status>("pending");
-  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const [query, setQuery]               = useState("");
+  const [fieldFilter, setFieldFilter]   = useState("todos");
+  const [toast, setToast]               = useState<{ message: string; type: "success" | "error" } | null>(null);
   const queryClient = useQueryClient();
 
   function showToast(message: string, type: "success" | "error") {
@@ -72,7 +113,7 @@ export function CorrectionQueueView() {
       return action;
     },
     onSuccess: (action) => {
-      showToast(action === "approve" ? "Correcao aprovada." : "Correcao rejeitada.", "success");
+      showToast(action === "approve" ? "Correção aprovada." : "Correção rejeitada.", "success");
       queryClient.invalidateQueries({ queryKey: ["corrections"] });
     },
     onError: (err: Error) => showToast(err.message, "error")
@@ -89,19 +130,39 @@ export function CorrectionQueueView() {
       if (!res.ok) throw new Error(data.error ?? "Erro ao aplicar.");
     },
     onSuccess: () => {
-      showToast("Correcao aplicada ao CEVESP com sucesso.", "success");
+      showToast("Correção aplicada ao CEVESP com sucesso.", "success");
       queryClient.invalidateQueries({ queryKey: ["corrections"] });
     },
     onError: (err: Error) => showToast(err.message, "error")
   });
 
-  const visibleItems = items.data ?? [];
-  const fieldSummary = Object.entries(
-    visibleItems.reduce<Record<string, number>>((acc, item) => {
-      acc[item.field_name] = (acc[item.field_name] ?? 0) + 1;
-      return acc;
-    }, {})
-  ).sort((a, b) => b[1] - a[1]);
+  const allItems = items.data ?? [];
+
+  const fieldOptions = useMemo(
+    () => [...new Set(allItems.map((i) => i.field_name))].sort(),
+    [allItems]
+  );
+
+  const visibleItems = useMemo(() => {
+    const q = normalizeSearch(query);
+    return allItems.filter((item) => {
+      if (fieldFilter !== "todos" && item.field_name !== fieldFilter) return false;
+      if (!q) return true;
+      return normalizeSearch(
+        `${item.record_id} ${item.field_name} ${item.reason} ${item.table_name} ${item.proposer?.full_name ?? ""}`
+      ).includes(q);
+    });
+  }, [allItems, fieldFilter, query]);
+
+  const fieldSummary = useMemo(
+    () => Object.entries(
+      allItems.reduce<Record<string, number>>((acc, item) => {
+        acc[item.field_name] = (acc[item.field_name] ?? 0) + 1;
+        return acc;
+      }, {})
+    ).sort((a, b) => b[1] - a[1]),
+    [allItems]
+  );
 
   async function copyCorrectionText(item: CorrectionItem) {
     const text = [
@@ -121,9 +182,9 @@ export function CorrectionQueueView() {
     ].join("\n");
     try {
       await navigator.clipboard.writeText(text);
-      showToast("Texto de cobranca copiado.", "success");
+      showToast("Texto de cobrança copiado.", "success");
     } catch {
-      showToast("Nao foi possivel copiar automaticamente neste navegador.", "error");
+      showToast("Não foi possível copiar automaticamente neste navegador.", "error");
     }
   }
 
@@ -136,20 +197,33 @@ export function CorrectionQueueView() {
               <Badge className="border-primary/30 bg-primary/10 text-primary">Dados</Badge>
               <Badge className={STATUS_COLORS[statusFilter]}>{STATUS_LABELS[statusFilter]}</Badge>
             </div>
-            <h1 className="text-xl font-semibold tracking-tight">Fila de correcoes</h1>
+            <h1 className="text-xl font-semibold tracking-tight">Fila de correções</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Revisao das inconsistencias propostas pelo agente antes de aplicar ajustes na base operacional.
+              Revisão das inconsistências propostas pelo agente antes de aplicar ajustes na base operacional.
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-2 text-center text-xs sm:min-w-[230px]">
-            <div className="rounded-md border bg-background px-3 py-2">
-              <p className="text-muted-foreground">No filtro</p>
-              <p className="text-lg font-semibold tabular-nums">{visibleItems.length}</p>
+          <div className="flex items-center gap-2">
+            <div className="grid grid-cols-2 gap-2 text-center text-xs sm:min-w-[200px]">
+              <div className="rounded-md border bg-background px-3 py-2">
+                <p className="text-muted-foreground">Exibindo</p>
+                <p className="text-lg font-semibold tabular-nums">{visibleItems.length}</p>
+              </div>
+              <div className="rounded-md border bg-background px-3 py-2">
+                <p className="text-muted-foreground">Total</p>
+                <p className="text-lg font-semibold tabular-nums">{allItems.length}</p>
+              </div>
             </div>
-            <div className="rounded-md border bg-background px-3 py-2">
-              <p className="text-muted-foreground">Etapa</p>
-              <p className="text-sm font-semibold">{STATUS_LABELS[statusFilter]}</p>
-            </div>
+            {allItems.length > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => exportCsv(visibleItems, statusFilter)}
+                title="Exportar correções exibidas para CSV"
+              >
+                <Download className="h-3.5 w-3.5" />
+                CSV
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -165,11 +239,12 @@ export function CorrectionQueueView() {
           </div>
         )}
 
+        {/* Filtro de status */}
         <div className="flex flex-wrap gap-2 rounded-md border bg-card p-1">
           {(["pending", "approved", "rejected", "applied"] as Status[]).map((status) => (
             <button
               key={status}
-              onClick={() => setStatusFilter(status)}
+              onClick={() => { setStatusFilter(status); setQuery(""); setFieldFilter("todos"); }}
               className={`h-9 rounded px-3 text-sm font-medium transition-colors ${
                 statusFilter === status ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"
               }`}
@@ -179,12 +254,52 @@ export function CorrectionQueueView() {
           ))}
         </div>
 
-        {fieldSummary.length > 0 && (
+        {/* Busca + filtro por campo */}
+        {allItems.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            <div className="relative min-w-[240px] flex-1">
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Buscar por registro, campo, motivo ou responsável"
+                className="h-8 w-full rounded-md border bg-background pl-8 pr-3 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </div>
+            <select
+              value={fieldFilter}
+              onChange={(e) => setFieldFilter(e.target.value)}
+              className="h-8 rounded-md border bg-background px-2 text-xs"
+            >
+              <option value="todos">Todos os campos</option>
+              {fieldOptions.map((f) => (
+                <option key={f} value={f}>{f}</option>
+              ))}
+            </select>
+            {(query || fieldFilter !== "todos") && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 text-xs"
+                onClick={() => { setQuery(""); setFieldFilter("todos"); }}
+              >
+                <X className="h-3.5 w-3.5" /> Limpar
+              </Button>
+            )}
+          </div>
+        )}
+
+        {/* Chips de resumo por campo */}
+        {fieldSummary.length > 0 && !query && fieldFilter === "todos" && (
           <div className="flex flex-wrap gap-2 text-xs">
             {fieldSummary.slice(0, 6).map(([field, count]) => (
-              <span key={field} className="rounded-full border bg-card px-2.5 py-1 text-muted-foreground">
+              <button
+                key={field}
+                onClick={() => setFieldFilter(field)}
+                className="rounded-full border bg-card px-2.5 py-1 text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+              >
                 {field}: <strong className="text-foreground">{count.toLocaleString("pt-BR")}</strong>
-              </span>
+              </button>
             ))}
           </div>
         )}
@@ -195,7 +310,9 @@ export function CorrectionQueueView() {
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-14 text-center text-sm text-muted-foreground">
               <ClipboardCheck className="mb-3 h-10 w-10 opacity-40" />
-              Nenhuma correcao com status "{STATUS_LABELS[statusFilter]}".
+              {allItems.length > 0
+                ? "Nenhuma correção encontrada para os filtros aplicados."
+                : `Nenhuma correção com status "${STATUS_LABELS[statusFilter]}".`}
             </CardContent>
           </Card>
         )}
@@ -209,7 +326,7 @@ export function CorrectionQueueView() {
                     <CardTitle className="flex items-center gap-2 text-sm">
                       <AlertTriangle className="h-4 w-4 shrink-0 text-yellow-500" />
                       Registro <span className="font-mono text-primary">{item.record_id}</span>
-                      {" - "}campo <span className="font-mono">{item.field_name}</span>
+                      {" — "}campo <span className="font-mono">{item.field_name}</span>
                     </CardTitle>
                     <CardDescription className="mt-1">{item.reason}</CardDescription>
                   </div>
@@ -223,10 +340,16 @@ export function CorrectionQueueView() {
                   <span className="font-medium text-green-700">{item.new_value}</span>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-                  <span>Proposto por: <strong>{item.proposer?.full_name ?? "sistema"}</strong></span>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  <span>Tabela: <span className="font-mono text-foreground">{item.table_name}</span></span>
+                  <span>Proposto por: <strong className="text-foreground">{item.proposer?.full_name ?? "sistema"}</strong></span>
                   <span>{new Date(item.created_at).toLocaleString("pt-BR")}</span>
-                  {item.reviewer && <span>Revisado por: <strong>{item.reviewer.full_name}</strong></span>}
+                  {item.reviewer && (
+                    <span>
+                      Revisado por: <strong className="text-foreground">{item.reviewer.full_name}</strong>
+                      {item.reviewed_at && <> em {new Date(item.reviewed_at).toLocaleString("pt-BR")}</>}
+                    </span>
+                  )}
                   {item.applied_at && <span>Aplicado em: {new Date(item.applied_at).toLocaleString("pt-BR")}</span>}
                 </div>
 
@@ -255,7 +378,7 @@ export function CorrectionQueueView() {
                       onClick={() => void copyCorrectionText(item)}
                     >
                       <Copy className="h-3.5 w-3.5" />
-                      Copiar cobranca
+                      Copiar cobrança
                     </Button>
                   </div>
                 )}

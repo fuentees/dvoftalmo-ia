@@ -77,7 +77,7 @@ type RateAnalysis = {
 };
 
 const tabs: Array<{ id: Tab; label: string; icon: React.ReactNode }> = [
-  { id: "geral", label: "Visao geral", icon: <Activity className="h-4 w-4" /> },
+  { id: "geral", label: "Visão geral", icon: <Activity className="h-4 w-4" /> },
   { id: "conjuntivites", label: "CEVESP", icon: <Eye className="h-4 w-4" /> },
   { id: "tracoma", label: "SINAN Tracoma", icon: <Stethoscope className="h-4 w-4" /> }
 ];
@@ -86,7 +86,7 @@ const quickActions = [
   { href: "/sincronizacao", label: "Importar bases", detail: "CEVESP, TRACONET e consolidado", icon: Database },
   { href: "/notificacoes", label: "Consultar CEVESP", detail: "Tabelas, canal e boletim", icon: Eye },
   { href: "/qualidade-dados", label: "Qualidade dos dados", detail: "CEVESP e SINAN em uma central", icon: ShieldAlert },
-  { href: "/chat", label: "Perguntar ao agente", detail: "Analise em texto, tabela ou relatorio", icon: BarChart2 }
+  { href: "/chat", label: "Perguntar ao agente", detail: "Análise em texto, tabela ou relatório", icon: BarChart2 }
 ];
 
 function formatValue(value: number | undefined) {
@@ -443,35 +443,6 @@ export function DashboardView() {
 
         {tab === "geral" && (
           <>
-            <div className="grid gap-3 md:grid-cols-3">
-              <WorkPathCard
-                step="1. Comece aqui"
-                title="Sala de Situação"
-                description="Compara CEVESP e SINAN, mostra risco, mapas e sinais ausentes sem entrar em detalhe operacional."
-                href="/dashboard"
-                label="Continuar na visão geral"
-                icon={<Activity className="h-4 w-4" />}
-              />
-              <WorkPathCard
-                step="2. Aprofunde por agravo"
-                title="Conjuntivites e Tracoma"
-                description="Use Conjuntivites para consulta/canal/boletim CEVESP; use Tracoma para auditoria SINAN e qualidade clínica."
-                href="/notificacoes"
-                label="Abrir Conjuntivites"
-                secondaryHref="/qualidade-dados"
-                secondaryLabel="Abrir Qualidade"
-                icon={<Eye className="h-4 w-4" />}
-              />
-              <WorkPathCard
-                step="3. Alimente as bases"
-                title="Sincronização"
-                description="Importe CEVESP, TRACONET e NOTTRACONET quando os indicadores estiverem vazios ou desatualizados."
-                href="/sincronizacao"
-                label="Abrir Sincronização"
-                icon={<Database className="h-4 w-4" />}
-              />
-            </div>
-
             <AlertsPanel />
 
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -737,92 +708,66 @@ export function DashboardView() {
               />
             </div>
 
-            <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle>Consolidado por ano</CardTitle>
-                  <CardDescription>
-                    NOTTRACONET/NTRACOMA
-                    {sinan.data?.consolidatedMetrics?.examinados?.field
-                      ? ` · examinados: ${sinan.data.consolidatedMetrics.examinados.field}`
-                      : ""}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {consolidatedByYear.length === 0 ? (
-                    <EmptyState title="SINAN indisponível" detail="Importe os bancos ou acesse com sessão válida." />
-                  ) : (
-                    <div className="overflow-x-auto rounded-md border">
-                      <table className="w-full min-w-[460px] text-sm">
-                        <thead>
-                          <tr className="border-b bg-muted/50 text-left">
-                            <th className="px-3 py-2">Ano</th>
-                            <th className="px-3 py-2 text-right">Examinados</th>
-                            <th className="px-3 py-2 text-right">Positivos</th>
-                            <th className="px-3 py-2 text-right">% Pos.</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {consolidatedByYear.slice(-6).map((row) => (
-                            <tr key={row.ano} className="border-b last:border-0">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle>Série histórica por ano</CardTitle>
+                <CardDescription>
+                  NOTTRACONET (examinados/positivos) × TRACONET (casos individuais)
+                  {sinan.data?.consolidatedMetrics?.examinados?.field
+                    ? ` · campo examinados: ${sinan.data.consolidatedMetrics.examinados.field}`
+                    : ""}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {consolidatedByYear.length === 0 ? (
+                  <EmptyState title="SINAN indisponível" detail="Importe os bancos ou acesse com sessão válida." />
+                ) : (
+                  <div className="overflow-x-auto rounded-md border">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-muted/50 text-left text-xs">
+                          <th className="px-3 py-2">Ano</th>
+                          <th className="px-3 py-2 text-right">Examinados</th>
+                          <th className="px-3 py-2 text-right">Positivos</th>
+                          <th className="px-3 py-2 text-right">% Prev.</th>
+                          <th className="px-3 py-2 text-right border-l">TRACONET</th>
+                          <th className="px-3 py-2 text-right">Diferença</th>
+                          <th className="px-3 py-2 text-center">Risco</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {consolidatedByYear.slice(-6).map((row) => {
+                          const divRow = (sinan.data?.divergencesByYear ?? []).find((d) => d.ano === row.ano);
+                          return (
+                            <tr key={row.ano} className="border-b last:border-0 hover:bg-muted/20">
                               <td className="px-3 py-2 font-medium">{row.ano}</td>
                               <td className="px-3 py-2 text-right tabular-nums">{formatValue(row.examinados)}</td>
                               <td className="px-3 py-2 text-right tabular-nums">{formatValue(row.positivos)}</td>
                               <td className="px-3 py-2 text-right tabular-nums">
-                                {row.examinados > 0 ? `${((row.positivos / row.examinados) * 100).toFixed(1)}%` : "-"}
+                                {row.examinados > 0 ? `${((row.positivos / row.examinados) * 100).toFixed(1)}%` : "—"}
                               </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle>Comparação dos bancos</CardTitle>
-                  <CardDescription>TRACONET individuais x consolidado positivo</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {(sinan.data?.divergencesByYear ?? []).length === 0 ? (
-                    <EmptyState title="Comparação indisponível" detail="Importe TRACONET e NOTTRACONET para comparar." />
-                  ) : (
-                    <div className="overflow-x-auto rounded-md border">
-                      <table className="w-full min-w-[520px] text-sm">
-                        <thead>
-                          <tr className="border-b bg-muted/50 text-left">
-                            <th className="px-3 py-2">Ano</th>
-                            <th className="px-3 py-2 text-right">TRACONET</th>
-                            <th className="px-3 py-2 text-right">Consolidado</th>
-                            <th className="px-3 py-2 text-right">Dif.</th>
-                            <th className="px-3 py-2 text-center">Risco</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {(sinan.data?.divergencesByYear ?? []).slice(-6).map((row) => (
-                            <tr key={row.ano} className="border-b last:border-0">
-                              <td className="px-3 py-2 font-medium">{row.ano}</td>
-                              <td className="px-3 py-2 text-right tabular-nums">{formatValue(row.traconet)}</td>
-                              <td className="px-3 py-2 text-right tabular-nums">{formatValue(row.nottraconet)}</td>
-                              <td className={`px-3 py-2 text-right font-semibold tabular-nums ${row.diff === 0 ? "text-muted-foreground" : row.diff > 0 ? "text-red-600" : "text-amber-700"}`}>
-                                {row.diff > 0 ? "+" : ""}{formatValue(row.diff)}
+                              <td className="px-3 py-2 text-right tabular-nums border-l text-muted-foreground">
+                                {divRow ? formatValue(divRow.traconet) : "—"}
+                              </td>
+                              <td className={`px-3 py-2 text-right font-semibold tabular-nums ${!divRow || divRow.diff === 0 ? "text-muted-foreground" : divRow.diff > 0 ? "text-red-600" : "text-amber-700"}`}>
+                                {divRow ? `${divRow.diff > 0 ? "+" : ""}${formatValue(divRow.diff)}` : "—"}
                               </td>
                               <td className="px-3 py-2 text-center">
-                                <Badge className={row.risco === "alto" ? "border-red-200 bg-red-50 text-red-700" : row.risco === "medio" ? "border-amber-200 bg-amber-50 text-amber-700" : "bg-muted text-foreground"}>
-                                  {row.risco}
-                                </Badge>
+                                {divRow ? (
+                                  <Badge className={divRow.risco === "alto" ? "border-red-200 bg-red-50 text-red-700" : divRow.risco === "medio" ? "border-amber-200 bg-amber-50 text-amber-700" : "bg-muted text-foreground"}>
+                                    {divRow.risco}
+                                  </Badge>
+                                ) : <span className="text-xs text-muted-foreground">—</span>}
                               </td>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
             <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
               <Card>

@@ -38,7 +38,7 @@ function currentEpiWeek() {
   return Math.ceil(((now.getTime() - startOfYear.getTime()) / 86_400_000 + startOfYear.getDay() + 1) / 7);
 }
 
-function mapInvalidCacheRow(r: Record<string, unknown>): InvalidRecord | null {
+export function mapInvalidCacheRow(r: Record<string, unknown>): InvalidRecord | null {
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentSe = currentEpiWeek();

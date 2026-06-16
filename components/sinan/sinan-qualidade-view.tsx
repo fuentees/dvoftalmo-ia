@@ -266,7 +266,7 @@ function buildActionPlan(data: SinanAuditResult): ActionPlanRow[] {
 
   if (data.semConclusao > 0) rows.push({
     prioridade: "Media",
-    problema: "Investigacoes sem conclusao/encerramento",
+    problema: "Investigações sem conclusão/encerramento",
     volume: data.semConclusao,
     onde: "TRACONET",
     acao: "Regularizar encerramento para nao distorcer indicadores e acompanhamento dos casos.",
@@ -284,7 +284,7 @@ function buildActionPlan(data: SinanAuditResult): ActionPlanRow[] {
 
   if (examinados === 0 && (data.totalNottraconetRows ?? 0) > 0) rows.push({
     prioridade: "Alta",
-    problema: "Total de examinados nao reconhecido no consolidado",
+    problema: "Total de examinados não reconhecido no consolidado",
     volume: data.totalNottraconetRows ?? 0,
     onde: "NOTTRACONET",
     acao: "Revisar campo de examinados do DBF; sem examinados nao ha prevalencia/cobertura confiavel.",
@@ -434,7 +434,7 @@ function GestaoTab({ data }: { data: SinanAuditResult }) {
         </div>
         <Button size="sm" variant="outline" onClick={() => downloadCorrections(data)}>
           <Download className="mr-2 h-4 w-4" />
-          Exportar correcoes
+          Exportar correções
         </Button>
       </div>
 
@@ -442,7 +442,7 @@ function GestaoTab({ data }: { data: SinanAuditResult }) {
         <KpiCard label="Pendencias criticas" value={criticos.toLocaleString("pt-BR")} sub="Forma, TT sem TS e duplicidades" tone={criticos > 0 ? "red" : "green"} icon={<AlertTriangle className="h-4 w-4" />} />
         <KpiCard label="Municipios priorizados" value={priorities.length.toLocaleString("pt-BR")} sub="Com algum alerta territorial" tone={priorities.length > 0 ? "amber" : "green"} icon={<Target className="h-4 w-4" />} />
         <KpiCard label="Divergencias alto risco" value={altoRisco.toLocaleString("pt-BR")} sub="Municipio/ano com diferenca elevada" tone={altoRisco > 0 ? "red" : "green"} icon={<Activity className="h-4 w-4" />} />
-        <KpiCard label="Conclusao pendente" value={data.semConclusao.toLocaleString("pt-BR")} sub="Casos sem encerramento" tone={data.semConclusao > 0 ? "amber" : "green"} icon={<ClipboardList className="h-4 w-4" />} />
+        <KpiCard label="Conclusão pendente" value={data.semConclusao.toLocaleString("pt-BR")} sub="Casos sem encerramento" tone={data.semConclusao > 0 ? "amber" : "green"} icon={<ClipboardList className="h-4 w-4" />} />
       </div>
 
       <Card>
@@ -574,10 +574,10 @@ function GestaoTab({ data }: { data: SinanAuditResult }) {
   );
 }
 
-type DivTab = "ano" | "gve" | "municipio";
+type DivView = "ano" | "gve" | "municipio";
 
 function DivergenciasTab({ data }: { data: SinanAuditResult }) {
-  const [tab, setTab] = useState<DivTab>("ano");
+  const [view, setView] = useState<DivView>("ano");
   const [busca, setBusca] = useState("");
   const [mostrarTodos, setMostrarTodos] = useState(false);
 
@@ -596,13 +596,13 @@ function DivergenciasTab({ data }: { data: SinanAuditResult }) {
   const totalGve  = sumRows(data.divergencesByGve ?? []);
   const totalMuni = sumRows(filteredMuni);
 
-  const tabs: { id: DivTab; label: string; count: number }[] = [
-    { id: "ano",       label: "Por Ano",       count: (data.divergencesByYear ?? []).length },
-    { id: "gve",       label: "Por GVE",       count: (data.divergencesByGve ?? []).length },
-    { id: "municipio", label: "Por Município",  count: allMuni.length }
-  ];
-
   const thCls = "px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground";
+
+  const views: { id: DivView; label: string; count: number }[] = [
+    { id: "ano",       label: "Por Ano",      count: (data.divergencesByYear ?? []).length },
+    { id: "gve",       label: "Por GVE",      count: (data.divergencesByGve ?? []).length },
+    { id: "municipio", label: "Por Município", count: allMuni.length },
+  ];
 
   return (
     <div className="space-y-4">
@@ -616,27 +616,30 @@ function DivergenciasTab({ data }: { data: SinanAuditResult }) {
       </div>
 
       <Card>
-        <div className="flex gap-0 border-b bg-muted/20">
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`flex items-center gap-2 px-5 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
-                tab === t.id
-                  ? "border-primary text-primary bg-background"
-                  : "border-transparent text-muted-foreground hover:text-foreground hover:bg-background/60"
-              }`}
-            >
-              {t.label}
-              <span className={`rounded-full px-1.5 py-0.5 text-xs tabular-nums ${
-                tab === t.id ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
-              }`}>{t.count.toLocaleString("pt-BR")}</span>
-            </button>
-          ))}
+        <div className="flex items-center justify-between border-b px-4 py-2.5">
+          <span className="text-xs font-medium text-muted-foreground">Agrupar por</span>
+          <div className="flex gap-1 rounded-lg bg-muted/50 p-0.5">
+            {views.map((v) => (
+              <button
+                key={v.id}
+                onClick={() => { setView(v.id); setBusca(""); setMostrarTodos(false); }}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                  view === v.id
+                    ? "bg-background shadow-sm text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {v.label}
+                <span className={`tabular-nums ${view === v.id ? "text-foreground" : "text-muted-foreground"}`}>
+                  ({v.count.toLocaleString("pt-BR")})
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="overflow-x-auto">
-          {tab === "ano" && (
+          {view === "ano" && (
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/30">
@@ -662,7 +665,7 @@ function DivergenciasTab({ data }: { data: SinanAuditResult }) {
             </table>
           )}
 
-          {tab === "gve" && (
+          {view === "gve" && (
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/30">
@@ -690,7 +693,7 @@ function DivergenciasTab({ data }: { data: SinanAuditResult }) {
             </table>
           )}
 
-          {tab === "municipio" && (
+          {view === "municipio" && (
             <div>
               <div className="flex flex-wrap items-center gap-3 border-b bg-muted/10 px-4 py-3">
                 <input
@@ -758,8 +761,6 @@ function DivergenciasTab({ data }: { data: SinanAuditResult }) {
 
 // ── Aba: Qualidade Clínica ────────────────────────────────────────────────────
 
-type QualTab = "sem_forma" | "alertas";
-
 const FIELD_LABELS: Record<string, string> = {
   agravo: "Agravo", ano: "Ano", dt_notificacao: "Data notificação",
   municipio: "Município", ibge: "Cód. IBGE", gve: "GVE", drs: "DRS",
@@ -771,8 +772,6 @@ const FIELD_LABELS: Record<string, string> = {
 function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
   data: SinanAuditResult; clinicalMappingMissing: boolean;
 }) {
-  const [tab, setTab] = useState<QualTab>("sem_forma");
-
   const detalhe = data.semFormaClinicaDetalhe ?? [];
   const gveMap = new Map<string, number>();
   for (const d of detalhe) gveMap.set(d.gve, (gveMap.get(d.gve) ?? 0) + d.count);
@@ -786,14 +785,14 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
   const casosSemForma = data.casosSemFormaPositiva ?? data.semGraduacao ?? 0;
   const correctionRecords = data.correctionRecords ?? [];
 
-  type SFSubTab = "gve" | "municipio";
-  const [sfTab, setSfTab] = useState<SFSubTab>("gve");
+  // Toggle dentro da seção de forma clínica (GVE ou Município)
+  const [formaView, setFormaView] = useState<"gve" | "municipio">("gve");
 
   const alertas = [
     {
       count: data.ttSemTs ?? 0, tone: (data.ttSemTs ?? 0) > 0 ? "red" : "green",
       label: "TT sem TS associado",
-      detail: "Pela regra de qualidade do servico, TT isolado deve ser revisado como possivel erro de classificacao ou digitacao clinica."
+      detail: "TT isolado deve ser revisado como possível erro de classificação ou digitação clínica."
     },
     {
       count: data.tfSemTratamento, tone: data.tfSemTratamento > 0 ? "red" : "green",
@@ -807,54 +806,36 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
     },
     {
       count: data.semTratamento, tone: data.semTratamento > 0 ? "amber" : "green",
-      label: "Sem tratamento registrado (geral)",
+      label: "Sem tratamento (geral)",
       detail: "Campo tratamento vazio — verificar se azitromicina ou outra conduta foi omitida no registro."
     },
     {
       count: data.semConclusao, tone: data.semConclusao > 0 ? "amber" : "green",
       label: "Sem conclusão / encerramento",
-      detail: "Investigações sem encerramento dificultam o cálculo de prevalência real e o acompanhamento dos casos."
+      detail: "Investigações sem encerramento dificultam o cálculo de prevalência real."
     },
     {
       count: data.anoImpossivel, tone: data.anoImpossivel > 0 ? "amber" : "green",
-      label: "Ano impossível (< 1975 ou > ano atual)",
-      detail: "Erro de digitação na data de notificação. Corrigir na fonte antes de analisar a série histórica."
+      label: "Ano impossível",
+      detail: "Erro de digitação na data. Corrigir na fonte antes de analisar a série histórica."
     },
     {
       count: data.duplicateNotificationIds?.length ?? 0,
       tone: (data.duplicateNotificationIds?.length ?? 0) > 0 ? "red" : "green",
-      label: "Possivel duplicidade do mesmo caso",
-      detail: "Detecta repeticao apenas quando coincidem NU_NOTIFIC, iniciais, nome da mae, data de nascimento e ano."
+      label: "Possível duplicidade",
+      detail: "Detectado quando coincidem NU_NOTIFIC, iniciais, nome da mãe, data de nascimento e ano."
     }
   ];
 
   const thCls = "px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground";
 
   return (
-    <div className="space-y-4">
-      <div className="flex gap-0 rounded-lg border overflow-hidden">
-        {([
-          { id: "sem_forma" as QualTab, label: "Forma clinica", count: casosSemForma },
-          { id: "alertas"   as QualTab, label: "Alertas Clínicos",  count: alertas.reduce((s, a) => s + a.count, 0) }
-        ]).map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`flex flex-1 items-center justify-center gap-2 px-6 py-3 text-sm font-medium transition-colors ${
-              tab === t.id ? "bg-primary text-primary-foreground" : "bg-muted/40 text-muted-foreground hover:bg-muted/70"
-            }`}
-          >
-            {t.label}
-            <span className={`rounded-full px-1.5 py-0.5 text-xs tabular-nums ${
-              tab === t.id ? "bg-primary-foreground/20 text-primary-foreground" : "bg-background text-foreground"
-            }`}>{t.count.toLocaleString("pt-BR")}</span>
-          </button>
-        ))}
-      </div>
+    <div className="space-y-6">
 
+      {/* ── Resumo de KPIs ── */}
       <div className="grid gap-3 md:grid-cols-3">
         <KpiCard
-          label="Casos com forma compativel"
+          label="Casos com forma compatível"
           value={casosComForma.toLocaleString("pt-BR")}
           sub="TF, TI, TS, TT ou CO marcados no TRACONET"
           tone="green"
@@ -863,181 +844,177 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
         <KpiCard
           label="Sem forma positiva"
           value={casosSemForma.toLocaleString("pt-BR")}
-          sub="Nao deveriam permanecer como caso sem TF/TI/TS/TT/CO"
+          sub="Casos sem TF/TI/TS/TT/CO — devem ser revisados"
           tone={casosSemForma > 0 ? "red" : "green"}
           icon={<XCircle className="h-4 w-4" />}
         />
         <KpiCard
           label="TT sem TS"
           value={(data.ttSemTs ?? 0).toLocaleString("pt-BR")}
-          sub="Registros para revisar classificacao clinica"
+          sub="TT isolado — revisar classificação clínica"
           tone={(data.ttSemTs ?? 0) > 0 ? "red" : "green"}
           icon={<AlertTriangle className="h-4 w-4" />}
         />
       </div>
 
-      {tab === "sem_forma" && (
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <Card>
-          <CardHeader className="pb-0">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-base">
-                  {clinicalMappingMissing
-                    ? "Forma clinica nao mapeada - revisar importacao"
-                    : "Erros de forma clinica - onde corrigir"}
-                </CardTitle>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {clinicalMappingMissing
-                    ? "O TRACONET foi importado, mas os campos TF/TI/TS/TT/CO nao foram identificados nas colunas do arquivo. Verifique o mapeamento antes de tratar como erro de preenchimento."
-                    : "Casos individuais (TRACONET) sem nenhuma forma clinica positiva TF/TI/TS/TT/CO. Agrupados por GVE e municipio para direcionar correcao na fonte."}
-                </p>
-              </div>
-              {clinicalMappingMissing && (
-                <span className="shrink-0 rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700">
-                  Revisar mapeamento
-                </span>
-              )}
-            </div>
-            {!clinicalMappingMissing && detalhe.length > 0 && (
-              <div className="mt-4 flex gap-0 border-b">
-                {(["gve", "municipio"] as SFSubTab[]).map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setSfTab(t)}
-                    className={`px-4 py-2 text-xs font-medium transition-colors border-b-2 -mb-px ${
-                      sfTab === t ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {t === "gve" ? "Por GVE" : "Por Município"}
-                  </button>
-                ))}
-              </div>
-            )}
-          </CardHeader>
-          <CardContent className="overflow-x-auto p-0">
-            {clinicalMappingMissing ? (
-              <div className="px-6 py-4 space-y-2 text-sm">
-                <div className="flex gap-8">
-                  <div>
-                    <div className="text-xs text-muted-foreground">Casos importados</div>
-                    <div className="text-xl font-semibold tabular-nums">{data.totalTraconet.toLocaleString("pt-BR")}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">Formas clínicas mapeadas</div>
-                    <div className="text-xl font-semibold tabular-nums text-amber-700">{(data.totalTraconetPositive ?? 0).toLocaleString("pt-BR")}</div>
-                  </div>
+      {/* ── Seção 1: Forma clínica ── */}
+      <div>
+        <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+          <Stethoscope className="h-4 w-4 text-primary" />
+          Forma clínica — onde corrigir
+        </h3>
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+          <Card>
+            <CardHeader className="pb-0">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base">
+                    {clinicalMappingMissing ? "Forma clínica não mapeada — revisar importação" : "Casos sem forma clínica positiva"}
+                  </CardTitle>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {clinicalMappingMissing
+                      ? "O TRACONET foi importado, mas os campos TF/TI/TS/TT/CO não foram identificados. Verifique o mapeamento antes de tratar como erro de preenchimento."
+                      : "Casos individuais (TRACONET) sem nenhuma forma clínica positiva. Agrupar por GVE ou Município para direcionar a correção na fonte."}
+                  </p>
                 </div>
-                {(data.diagnostico?.traconet?.colunas?.length ?? 0) > 0 && (
-                  <details className="mt-2 rounded-md border p-3">
-                    <summary className="cursor-pointer text-xs font-medium">Ver colunas detectadas no TRACONET</summary>
-                    <p className="mt-2 break-all font-mono text-[11px] text-muted-foreground">
-                      {data.diagnostico.traconet.colunas.join(", ")}
-                    </p>
-                  </details>
+                {clinicalMappingMissing && (
+                  <span className="shrink-0 rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700">Revisar mapeamento</span>
                 )}
               </div>
-            ) : !detalhe.length ? (
-              <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
-                <CheckCircle2 className="mr-2 h-4 w-4 text-green-500" />
-                Nenhum caso sem forma clínica
-              </div>
-            ) : sfTab === "gve" ? (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/30">
-                    <th className={thCls}>GVE</th>
-                    <th className={`${thCls} text-right`}>Casos s/ forma clínica</th>
-                    <th className={`${thCls} w-48`}>Proporção</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {byGve.map((d) => (
-                    <tr key={d.gve} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
-                      <td className="px-4 py-2.5 font-medium">{d.gve}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-amber-700">
-                        {d.count.toLocaleString("pt-BR")}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <div className="h-2 overflow-hidden rounded-full bg-muted">
-                          <div className="h-full rounded-full bg-amber-400"
-                            style={{ width: `${Math.round((d.count / maxGve) * 100)}%` }} />
-                        </div>
-                      </td>
-                    </tr>
+              {!clinicalMappingMissing && detalhe.length > 0 && (
+                <div className="mt-3 flex gap-1 rounded-lg bg-muted/50 p-0.5 self-start">
+                  {(["gve", "municipio"] as const).map((v) => (
+                    <button
+                      key={v}
+                      onClick={() => setFormaView(v)}
+                      className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                        formaView === v ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {v === "gve" ? "Por GVE" : "Por Município"}
+                    </button>
                   ))}
-                </tbody>
-              </table>
-            ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/30">
-                    <th className={thCls}>Município</th>
-                    <th className={thCls}>GVE</th>
-                    <th className={`${thCls} text-right`}>Casos s/ forma clínica</th>
-                    <th className={`${thCls} w-40`}>Proporção</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {detalhe.map((d, i) => (
-                    <tr key={i} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
-                      <td className="px-4 py-2.5 font-medium">
-                        {d.municipioNome !== d.municipio ? d.municipioNome : d.municipio}
-                        {d.municipioNome !== d.municipio && (
-                          <span className="ml-1 text-[10px] text-muted-foreground">({d.municipio})</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2.5 text-xs text-muted-foreground">{d.gve}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-amber-700">
-                        {d.count.toLocaleString("pt-BR")}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <div className="h-2 overflow-hidden rounded-full bg-muted">
-                          <div className="h-full rounded-full bg-amber-400"
-                            style={{ width: `${Math.round((d.count / maxMuni) * 100)}%` }} />
-                        </div>
-                      </td>
+                </div>
+              )}
+            </CardHeader>
+            <CardContent className="overflow-x-auto p-0 pt-2">
+              {clinicalMappingMissing ? (
+                <div className="px-6 py-4 space-y-2 text-sm">
+                  <div className="flex gap-8">
+                    <div>
+                      <div className="text-xs text-muted-foreground">Casos importados</div>
+                      <div className="text-xl font-semibold tabular-nums">{data.totalTraconet.toLocaleString("pt-BR")}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-muted-foreground">Formas mapeadas</div>
+                      <div className="text-xl font-semibold tabular-nums text-amber-700">{(data.totalTraconetPositive ?? 0).toLocaleString("pt-BR")}</div>
+                    </div>
+                  </div>
+                  {(data.diagnostico?.traconet?.colunas?.length ?? 0) > 0 && (
+                    <details className="mt-2 rounded-md border p-3">
+                      <summary className="cursor-pointer text-xs font-medium">Ver colunas detectadas no TRACONET</summary>
+                      <p className="mt-2 break-all font-mono text-[11px] text-muted-foreground">
+                        {data.diagnostico.traconet.colunas.join(", ")}
+                      </p>
+                    </details>
+                  )}
+                </div>
+              ) : !detalhe.length ? (
+                <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
+                  <CheckCircle2 className="mr-2 h-4 w-4 text-green-500" />
+                  Nenhum caso sem forma clínica
+                </div>
+              ) : formaView === "gve" ? (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/30">
+                      <th className={thCls}>GVE</th>
+                      <th className={`${thCls} text-right`}>Casos s/ forma</th>
+                      <th className={`${thCls} w-48`}>Proporção</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Distribuicao das formas clinicas</CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Um registro pode entrar em mais de uma forma quando ha combinacao clinica.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {formaResumo.length ? formaResumo.map((item) => (
-              <div key={item.forma}>
-                <div className="mb-1 flex justify-between text-xs">
-                  <span className="font-medium">{item.forma}</span>
-                  <span className="tabular-nums text-muted-foreground">{item.count.toLocaleString("pt-BR")}</span>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-primary"
-                    style={{ width: `${Math.max(4, Math.round((item.count / Math.max(formaTotal, 1)) * 100))}%` }}
-                  />
-                </div>
-              </div>
-            )) : (
-              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
-                Nenhuma forma clinica positiva foi identificada no TRACONET importado.
-              </div>
-            )}
-          </CardContent>
-        </Card>
-        </div>
-      )}
+                  </thead>
+                  <tbody>
+                    {byGve.map((d) => (
+                      <tr key={d.gve} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
+                        <td className="px-4 py-2.5 font-medium">{d.gve}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-amber-700">{d.count.toLocaleString("pt-BR")}</td>
+                        <td className="px-4 py-2.5">
+                          <div className="h-2 overflow-hidden rounded-full bg-muted">
+                            <div className="h-full rounded-full bg-amber-400" style={{ width: `${Math.round((d.count / maxGve) * 100)}%` }} />
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/30">
+                      <th className={thCls}>Município</th>
+                      <th className={thCls}>GVE</th>
+                      <th className={`${thCls} text-right`}>Casos s/ forma</th>
+                      <th className={`${thCls} w-40`}>Proporção</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detalhe.map((d, i) => (
+                      <tr key={i} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
+                        <td className="px-4 py-2.5 font-medium">
+                          {d.municipioNome !== d.municipio ? d.municipioNome : d.municipio}
+                          {d.municipioNome !== d.municipio && (
+                            <span className="ml-1 text-[10px] text-muted-foreground">({d.municipio})</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 text-xs text-muted-foreground">{d.gve}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-amber-700">{d.count.toLocaleString("pt-BR")}</td>
+                        <td className="px-4 py-2.5">
+                          <div className="h-2 overflow-hidden rounded-full bg-muted">
+                            <div className="h-full rounded-full bg-amber-400" style={{ width: `${Math.round((d.count / maxMuni) * 100)}%` }} />
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </CardContent>
+          </Card>
 
-      {tab === "alertas" && (
-        <div className="space-y-4">
-        <div className="grid gap-3 sm:grid-cols-2">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Distribuição das formas clínicas</CardTitle>
+              <p className="text-xs text-muted-foreground">Um registro pode ter mais de uma forma combinada.</p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {formaResumo.length ? formaResumo.map((item) => (
+                <div key={item.forma}>
+                  <div className="mb-1 flex justify-between text-xs">
+                    <span className="font-medium">{item.forma}</span>
+                    <span className="tabular-nums text-muted-foreground">{item.count.toLocaleString("pt-BR")}</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-muted">
+                    <div className="h-full rounded-full bg-primary"
+                      style={{ width: `${Math.max(4, Math.round((item.count / Math.max(formaTotal, 1)) * 100))}%` }} />
+                  </div>
+                </div>
+              )) : (
+                <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
+                  Nenhuma forma clínica positiva identificada no TRACONET importado.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* ── Seção 2: Alertas clínicos ── */}
+      <div>
+        <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+          <AlertTriangle className="h-4 w-4 text-amber-500" />
+          Alertas clínicos
+        </h3>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {alertas.map((a) => {
             const icon = a.tone === "red"
               ? <XCircle className="h-5 w-5 text-red-500" />
@@ -1050,29 +1027,32 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
             const numColor = a.tone === "red" ? "text-red-700"
               : a.tone === "amber" ? "text-amber-700" : "text-green-700";
             return (
-              <div key={a.label} className={`flex items-start gap-3 rounded-lg border p-4 ${border}`}>
+              <div key={a.label} className={`flex items-start gap-3 rounded-lg border p-3 ${border}`}>
                 <div className="mt-0.5 shrink-0">{icon}</div>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline gap-2">
-                    <span className={`text-2xl font-bold tabular-nums ${numColor}`}>
-                      {a.count.toLocaleString("pt-BR")}
-                    </span>
-                    <span className="text-sm font-medium">{a.label}</span>
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <span className={`text-xl font-bold tabular-nums ${numColor}`}>{a.count.toLocaleString("pt-BR")}</span>
+                    <span className="text-xs font-semibold leading-tight">{a.label}</span>
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">{a.detail}</p>
+                  <p className="mt-1 text-xs text-muted-foreground leading-snug">{a.detail}</p>
                 </div>
               </div>
             );
           })}
         </div>
-        {correctionRecords.length > 0 && (
+      </div>
+
+      {/* ── Seção 3: Notificações para corrigir ── */}
+      {correctionRecords.length > 0 && (
+        <div>
+          <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+            <ClipboardList className="h-4 w-4 text-primary" />
+            Notificações para solicitar correção
+            <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
+              {correctionRecords.length.toLocaleString("pt-BR")}
+            </span>
+          </h3>
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Notificações para solicitar correção</CardTitle>
-              <p className="text-xs text-muted-foreground">
-                Lista operacional com NU_NOTIFIC quando o campo existe no DBF. Quando não existir, usar row_key como identificador técnico da linha importada.
-              </p>
-            </CardHeader>
             <CardContent className="overflow-x-auto p-0">
               <table className="w-full text-sm">
                 <thead>
@@ -1091,14 +1071,10 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
                     <tr key={`${item.problem}-${item.notificationId ?? item.rowKey ?? index}`} className="border-b last:border-0 hover:bg-muted/20">
                       <td className="px-4 py-2.5">
                         <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${
-                          item.priority === "Critica"
-                            ? "border-red-200 bg-red-50 text-red-700"
-                            : item.priority === "Alta"
-                              ? "border-amber-200 bg-amber-50 text-amber-700"
-                              : "border-sky-200 bg-sky-50 text-sky-700"
-                        }`}>
-                          {item.priority}
-                        </span>
+                          item.priority === "Critica" ? "border-red-200 bg-red-50 text-red-700"
+                            : item.priority === "Alta" ? "border-amber-200 bg-amber-50 text-amber-700"
+                            : "border-sky-200 bg-sky-50 text-sky-700"
+                        }`}>{item.priority}</span>
                       </td>
                       <td className="px-4 py-2.5 font-medium">{item.problem}</td>
                       <td className="max-w-[220px] truncate px-4 py-2.5 font-mono text-xs" title={item.notificationId ?? item.rowKey ?? ""}>
@@ -1114,25 +1090,27 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
               </table>
               {correctionRecords.length > 80 && (
                 <div className="border-t px-4 py-3 text-xs text-muted-foreground">
-                  Mostrando 80 de {correctionRecords.length.toLocaleString("pt-BR")} registros. Use "Exportar correções" para baixar a lista completa.
+                  Exibindo 80 de {correctionRecords.length.toLocaleString("pt-BR")}. Use "Exportar correções" para baixar a lista completa.
                 </div>
               )}
             </CardContent>
           </Card>
-        )}
-        {ttSemTsDetalhe.length > 0 && (
+        </div>
+      )}
+
+      {/* ── Seção 4: TT sem TS detalhado ── */}
+      {ttSemTsDetalhe.length > 0 && (
+        <div>
+          <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+            <MapPin className="h-4 w-4 text-red-500" />
+            TT sem TS — onde revisar
+          </h3>
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">TT sem TS - onde revisar</CardTitle>
-              <p className="text-xs text-muted-foreground">
-                Municipios com registros de TT sem TS associado, conforme regra de qualidade clinica definida.
-              </p>
-            </CardHeader>
             <CardContent className="overflow-x-auto p-0">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/30">
-                    <th className={thCls}>Municipio</th>
+                    <th className={thCls}>Município</th>
                     <th className={thCls}>GVE</th>
                     <th className={`${thCls} text-right`}>Casos</th>
                   </tr>
@@ -1147,18 +1125,16 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-xs text-muted-foreground">{d.gve}</td>
-                      <td className="px-4 py-2.5 text-right font-semibold tabular-nums text-red-700">
-                        {d.count.toLocaleString("pt-BR")}
-                      </td>
+                      <td className="px-4 py-2.5 text-right font-semibold tabular-nums text-red-700">{d.count.toLocaleString("pt-BR")}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </CardContent>
           </Card>
-        )}
         </div>
       )}
+
     </div>
   );
 }
@@ -1166,103 +1142,179 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
 // ── Aba: Completude & Técnico ─────────────────────────────────────────────────
 
 function CompletudeTecnicoTab({ data }: { data: SinanAuditResult }) {
+  const [showAllFields, setShowAllFields] = useState(false);
+  const [showBancoDetail, setShowBancoDetail] = useState<"traconet" | "nottraconet" | null>(null);
+
   const thCls = "px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground";
 
+  const allFields = Object.entries(data.fieldCompleteness);
+  const criticalFields = allFields.filter(([, s]) => s.pct < 50 && s.total > 0);
+  const warnFields     = allFields.filter(([, s]) => s.pct >= 50 && s.pct < 70 && s.total > 0);
+  const okFields       = allFields.filter(([, s]) => s.pct >= 70);
+  const sortedFields   = [...criticalFields, ...warnFields, ...okFields];
+  const visibleFields  = showAllFields ? sortedFields : sortedFields.slice(0, 6);
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+
+      {/* Recomendações — no topo pois são o item mais acionável */}
+      {data.recommendations.length > 0 && (
+        <Card className="border-primary/20 bg-primary/5">
+          <CardHeader className="pb-2 pt-4">
+            <CardTitle className="text-sm font-semibold text-primary">
+              Recomendações prioritárias ({data.recommendations.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pb-4">
+            <ol className="space-y-1.5">
+              {data.recommendations.map((rec, i) => (
+                <li key={i} className="flex gap-2.5 text-sm">
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/20 text-xs font-bold text-primary">
+                    {i + 1}
+                  </span>
+                  <span>{rec}</span>
+                </li>
+              ))}
+            </ol>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Completude dos campos */}
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Completude dos Campos — TRACONET (Casos Individuais)</CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Percentual de registros com o campo preenchido. Abaixo de 70% indica problema de mapeamento ou subnotificação.
-          </p>
+        <CardHeader className="pb-2 pt-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <CardTitle className="text-base">Completude dos campos — TRACONET</CardTitle>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                % de registros com campo preenchido. Abaixo de 70% indica problema de mapeamento ou subnotificação.
+              </p>
+            </div>
+            <div className="flex shrink-0 gap-2 text-xs">
+              {criticalFields.length > 0 && (
+                <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-medium text-red-700">
+                  {criticalFields.length} crítico{criticalFields.length > 1 ? "s" : ""}
+                </span>
+              )}
+              {warnFields.length > 0 && (
+                <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-medium text-amber-700">
+                  {warnFields.length} atenção
+                </span>
+              )}
+              {okFields.length > 0 && (
+                <span className="rounded-full border border-green-200 bg-green-50 px-2 py-0.5 font-medium text-green-700">
+                  {okFields.length} ok
+                </span>
+              )}
+            </div>
+          </div>
         </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-2">
-          {Object.entries(data.fieldCompleteness).map(([field, stat]) => (
-            <PctBar key={field} label={FIELD_LABELS[field] ?? field} pct={stat.pct} />
-          ))}
+        <CardContent className="pb-4">
+          <div className="grid gap-2.5 sm:grid-cols-2">
+            {visibleFields.map(([field, stat]) => (
+              <PctBar key={field} label={FIELD_LABELS[field] ?? field} pct={stat.pct} />
+            ))}
+          </div>
+          {sortedFields.length > 6 && (
+            <button
+              onClick={() => setShowAllFields(!showAllFields)}
+              className="mt-3 w-full rounded-md border border-dashed py-1.5 text-xs text-muted-foreground hover:border-foreground/30 hover:text-foreground transition-colors"
+            >
+              {showAllFields
+                ? "Mostrar menos"
+                : `Ver todos os ${sortedFields.length} campos`}
+            </button>
+          )}
         </CardContent>
       </Card>
 
-      {/* Diagnóstico dos bancos */}
+      {/* Diagnóstico de importação — compacto */}
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Diagnóstico de Importação</CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Campos detectados, municípios e anos presentes em cada banco.
+        <CardHeader className="pb-2 pt-4">
+          <CardTitle className="text-base">Diagnóstico de importação</CardTitle>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Resumo do que foi detectado em cada banco ao importar o arquivo.
           </p>
         </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 sm:grid-cols-2">
-            {(["traconet", "nottraconet"] as const).map((banco) => {
-              const d = data.diagnostico[banco];
-              const count = banco === "traconet" ? data.totalTraconet : data.totalNottraconetRows;
-              return (
-                <div key={banco} className="rounded-lg border bg-muted/20 p-4 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
+        <CardContent className="pb-4 space-y-3">
+          {(["traconet", "nottraconet"] as const).map((banco) => {
+            const d = data.diagnostico[banco];
+            const count = banco === "traconet" ? data.totalTraconet : data.totalNottraconetRows;
+            const isOpen = showBancoDetail === banco;
+            return (
+              <div key={banco} className="rounded-lg border bg-muted/20">
+                <button
+                  onClick={() => setShowBancoDetail(isOpen ? null : banco)}
+                  className="flex w-full items-center justify-between gap-3 p-3 text-left"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
                     <span className="font-semibold text-sm">
-                      {banco === "traconet" ? "TRACONET — Casos Individuais" : "NOTTRACONET — Consolidado"}
+                      {banco === "traconet" ? "TRACONET" : "NOTTRACONET"}
                     </span>
-                    <span className="rounded-full bg-background border px-2 py-0.5 text-xs font-medium tabular-nums">
-                      {count.toLocaleString("pt-BR")} linhas
+                    <span className="text-xs text-muted-foreground truncate">
+                      {banco === "traconet" ? "Casos individuais" : "Consolidado"} · {count.toLocaleString("pt-BR")} linhas
                     </span>
                   </div>
-                  <div className="space-y-1 text-xs text-muted-foreground">
-                    <p><span className="font-medium text-foreground">Municípios:</span> {d.municipiosAmostra.join(", ") || "sem amostra"}</p>
-                    <p><span className="font-medium text-foreground">Anos:</span> {d.anosAmostra.join(", ") || "sem amostra"}</p>
-                    <p><span className="font-medium text-foreground">Campos reconhecidos:</span> {d.camposPreenchidos.join(", ") || "nenhum"}</p>
+                  <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+                    <span>{d.anosAmostra.join(", ") || "sem anos"}</span>
+                    <span className="text-muted-foreground/40">|</span>
+                    <span>{d.municipiosAmostra.length} munic.</span>
+                    <span className={`ml-1 transition-transform ${isOpen ? "rotate-180" : ""}`}>▾</span>
                   </div>
-                  {d.colunas.length > 0 && (
-                    <details className="mt-1">
-                      <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
-                        Colunas originais do arquivo ({d.colunas.length})
-                      </summary>
-                      <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{d.colunas.join(", ")}</p>
-                    </details>
-                  )}
-                  {d.camposNumericos.length > 0 && (
-                    <details className="mt-1" open={banco === "nottraconet"}>
-                      <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
-                        Campos numéricos com exemplo ({d.camposNumericos.length})
-                      </summary>
-                      <div className="mt-2 max-h-44 overflow-auto rounded-md border bg-background">
-                        <table className="w-full text-[11px]">
-                          <tbody>
-                            {d.camposNumericos.map((item) => (
-                              <tr key={item.campo} className="border-b last:border-0">
-                                <td className="px-2 py-1 font-mono">{item.campo}</td>
-                                <td className="px-2 py-1 text-right tabular-nums">
-                                  {item.exemplo.toLocaleString("pt-BR")}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </details>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                </button>
+                {isOpen && (
+                  <div className="border-t px-3 pb-3 pt-2 space-y-2">
+                    <div className="text-xs space-y-1 text-muted-foreground">
+                      <p><span className="font-medium text-foreground">Municípios:</span> {d.municipiosAmostra.join(", ") || "—"}</p>
+                      <p><span className="font-medium text-foreground">Campos reconhecidos:</span> {d.camposPreenchidos.join(", ") || "nenhum"}</p>
+                    </div>
+                    {d.colunas.length > 0 && (
+                      <details className="mt-1">
+                        <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+                          Colunas originais do arquivo ({d.colunas.length})
+                        </summary>
+                        <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{d.colunas.join(", ")}</p>
+                      </details>
+                    )}
+                    {d.camposNumericos.length > 0 && (
+                      <details className="mt-1">
+                        <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+                          Campos numéricos com exemplo ({d.camposNumericos.length})
+                        </summary>
+                        <div className="mt-2 max-h-40 overflow-auto rounded-md border bg-background">
+                          <table className="w-full text-[11px]">
+                            <tbody>
+                              {d.camposNumericos.map((item) => (
+                                <tr key={item.campo} className="border-b last:border-0">
+                                  <td className="px-2 py-1 font-mono">{item.campo}</td>
+                                  <td className="px-2 py-1 text-right tabular-nums">{item.exemplo.toLocaleString("pt-BR")}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </CardContent>
       </Card>
 
       {/* Possíveis duplicidades — só exibe se houver */}
       {(data.duplicateNotificationIds?.length ?? 0) > 0 && (
         <Card className="border-red-200">
-          <CardHeader className="pb-3">
+          <CardHeader className="pb-2 pt-4">
             <CardTitle className="text-base text-red-700">
-              Possíveis duplicidades do mesmo caso — {data.duplicateNotificationIds.length.toLocaleString("pt-BR")} chaves
+              Possíveis duplicidades — {data.duplicateNotificationIds.length.toLocaleString("pt-BR")} chaves
             </CardTitle>
-            <p className="text-xs text-muted-foreground">
-              A duplicidade só é apontada quando coincidem NU_NOTIFIC, iniciais do caso, nome da mãe,
-              data de nascimento e ano. O mesmo NU_NOTIFIC em pessoas diferentes ou em anos diferentes
-              não é tratado como duplicidade.
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Coincidem NU_NOTIFIC, iniciais, data de nascimento e ano. Casos diferentes com mesmo número não são contados.
             </p>
           </CardHeader>
-          <CardContent className="overflow-x-auto p-0">
+          <CardContent className="overflow-x-auto p-0 pb-0">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/30">
@@ -1277,37 +1329,21 @@ function CompletudeTecnicoTab({ data }: { data: SinanAuditResult }) {
               <tbody>
                 {data.duplicateNotificationIds.slice(0, 30).map((item) => (
                   <tr key={item.caseKey ?? item.id} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
-                    <td className="px-4 py-2.5 font-mono text-xs">{item.id}</td>
-                    <td className="px-4 py-2.5 font-mono text-xs">{item.iniciais || "-"}</td>
-                    <td className="px-4 py-2.5 font-mono text-xs">{item.dataNascimento || "-"}</td>
-                    <td className="px-4 py-2.5">{item.municipio}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">{item.ano || "—"}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-red-700">{item.count}</td>
+                    <td className="px-4 py-2 font-mono text-xs">{item.id}</td>
+                    <td className="px-4 py-2 font-mono text-xs">{item.iniciais || "-"}</td>
+                    <td className="px-4 py-2 font-mono text-xs">{item.dataNascimento || "-"}</td>
+                    <td className="px-4 py-2">{item.municipio}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{item.ano || "—"}</td>
+                    <td className="px-4 py-2 text-right tabular-nums font-semibold text-red-700">{item.count}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Recomendações */}
-      {data.recommendations.length > 0 && (
-        <Card className="border-primary/20 bg-primary/5">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm text-primary">Recomendações Prioritárias</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ol className="space-y-2">
-              {data.recommendations.map((rec, i) => (
-                <li key={i} className="flex gap-3 text-sm">
-                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/20 text-xs font-bold text-primary">
-                    {i + 1}
-                  </span>
-                  <span>{rec}</span>
-                </li>
-              ))}
-            </ol>
+            {data.duplicateNotificationIds.length > 30 && (
+              <div className="border-t px-4 py-2.5 text-xs text-muted-foreground">
+                Exibindo 30 de {data.duplicateNotificationIds.length.toLocaleString("pt-BR")} duplicidades.
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -1583,7 +1619,7 @@ END;`}</pre>
             <KpiCard
               label="Examinados (NOTTRACONET)"
               value={data.consolidatedMetrics?.examinados?.value ?? 0}
-              sub={data.consolidatedMetrics?.examinados?.field ? `Campo: ${data.consolidatedMetrics.examinados.field}` : "Campo nao reconhecido"}
+              sub={data.consolidatedMetrics?.examinados?.field ? `Campo: ${data.consolidatedMetrics.examinados.field}` : "Campo não reconhecido"}
               tone={(data.consolidatedMetrics?.examinados?.value ?? 0) > 0 ? "green" : "amber"}
               icon={<ClipboardList className="h-4 w-4" />}
             />
@@ -1666,7 +1702,7 @@ END;`}</pre>
                   )}
                   {rates.error && (
                     <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                      Nao foi possivel calcular as taxas: {rates.error.message ?? rates.error.error}
+                      Não foi possível calcular as taxas: {rates.error.message ?? rates.error.error}
                     </div>
                   )}
                   {rates.data && (
@@ -1707,7 +1743,7 @@ END;`}</pre>
                           taxaMetric === "prevalencia"
                             ? "prevalencia"
                             : taxaMetric === "taxaDeteccao100k"
-                              ? "taxa de deteccao"
+                              ? "taxa de detecção"
                               : "cobertura de exame"
                         } por ${taxaMapView === "municipio" ? "municipio" : "GVE"}${
                           rates.data.periodStart && rates.data.periodEnd

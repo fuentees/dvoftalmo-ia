@@ -87,7 +87,7 @@ const agentPrompts: Record<AgentKind, string> = {
     "Linguagem: tecnica, objetiva, estilo SES-SP. Cite os numeros das ferramentas.\n\n" +
     "QUALIDADE DE DADO — REGRA OBRIGATORIA: sempre que consultar_cevesp retornar alertas de " +
     "qualidade (secao '--- Qualidade de dado ---'), mencione: quantos registros excluidos " +
-    "(data invalida/futura), quantos suspeitos (ano improvavel). Recomende correcao na fonte."
+    "(data inválida/futura), quantos com ano improvável. Recomende correção na fonte."
 };
 
 export function buildSystemPrompt(agent: AgentKind) {

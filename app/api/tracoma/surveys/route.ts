@@ -15,8 +15,8 @@ export async function GET(request: NextRequest) {
   const yearTo = searchParams.get("yearTo") ? Number(searchParams.get("yearTo")) : undefined;
 
   try {
-    const surveys = await fetchTracomaSurveys({ municipality, uf, yearFrom, yearTo });
-    return NextResponse.json(surveys);
+    const result = await fetchTracomaSurveys({ municipality, uf, yearFrom, yearTo });
+    return NextResponse.json(result);
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Erro ao consultar dados de tracoma." },

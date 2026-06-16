@@ -86,9 +86,11 @@ function getMockSurveys(options: TracomaQueryOptions): TracomaSurveyResult[] {
   ];
 }
 
-export async function fetchTracomaSurveys(options: TracomaQueryOptions = {}): Promise<TracomaSurveyResult[]> {
+export const REDCAP_CONFIGURED = isRedCapConfigured();
+
+export async function fetchTracomaSurveys(options: TracomaQueryOptions = {}): Promise<{ data: TracomaSurveyResult[]; isMock: boolean }> {
   if (!isRedCapConfigured()) {
-    return getMockSurveys(options);
+    return { data: getMockSurveys(options), isMock: true };
   }
 
   const filterParts: string[] = [];
@@ -103,7 +105,8 @@ export async function fetchTracomaSurveys(options: TracomaQueryOptions = {}): Pr
     filterLogic: filterParts.length ? filterParts.join(" AND ") : undefined
   });
 
-  return records.map(mapRecord).filter((r): r is TracomaSurveyResult => r !== null);
+  const data = records.map(mapRecord).filter((r): r is TracomaSurveyResult => r !== null);
+  return { data, isMock: false };
 }
 
 export function estimateAzithromycin(opts: {
@@ -174,7 +177,7 @@ export async function runTracomaContextQuery(message: string): Promise<{
   const yearMatch = lower.match(/\b(20\d{2})\b/);
   const year = yearMatch ? Number(yearMatch[1]) : undefined;
 
-  const surveys = await fetchTracomaSurveys({
+  const { data: surveys } = await fetchTracomaSurveys({
     municipality: municipio,
     yearFrom: year,
     yearTo: year

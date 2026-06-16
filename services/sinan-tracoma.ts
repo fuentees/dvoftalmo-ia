@@ -409,7 +409,7 @@ function buildQualityFindings(rows: Array<Record<string, unknown>>) {
   if (missing.municipio > 0) recommendations.push(`${missing.municipio} registros nao possuem municipio identificado, limitando analise territorial.`);
   if (withoutTreatment > 0) recommendations.push(`${withoutTreatment} registros nao apresentam campo de tratamento preenchido ou mapeado; verificar antibioticoterapia/azitromicina e completude.`);
   if (withoutConclusion > 0) recommendations.push(`${withoutConclusion} registros nao apresentam conclusao/classificacao final preenchida ou mapeada.`);
-  if (futureYears > 0 || oldYears > 0) recommendations.push(`Foram encontrados ${futureYears + oldYears} registros com ano improvavel; revisar datas de notificacao/investigacao.`);
+  if (futureYears > 0 || oldYears > 0) recommendations.push(`Foram encontrados ${futureYears + oldYears} registros com ano improvável; revisar datas de notificação/investigação.`);
   if (total === 0) recommendations.push("Nenhum registro encontrado para os filtros solicitados.");
   if (recommendations.length === 0) recommendations.push("Nao foram detectadas inconsistencias basicas de completude nos campos mapeados.");
 
@@ -633,7 +633,7 @@ function resolveAuditYear(row: Record<string, unknown>): number | null {
 
 function isValidAuditYear(row: Record<string, unknown>, currentYear: number) {
   const ano = resolveAuditYear(row);
-  return ano != null && Number.isFinite(ano) && ano >= 1975 && ano <= currentYear;
+  return ano != null && Number.isFinite(ano) && ano >= 1975 && ano <= currentYear + 1;
 }
 
 function isPositiveTraconetCase(row: Record<string, unknown>) {
@@ -1175,9 +1175,14 @@ export async function auditarSinanTracoma(opts?: {
     const trat = String(r.tratamento ?? "").toLowerCase();
     const conc = String(r.conclusao ?? "").toLowerCase();
     if (conc.includes("encaminhamento cirurgia: sim")) return false;
+    // "Ignorado" (c\u00f3digo 9 no SINAN) n\u00e3o \u00e9 aus\u00eancia de encaminhamento \u2014 n\u00e3o contar como erro
+    if (conc.includes("encaminhamento cirurgia: ignorado")) return false;
     const concNorm = conc.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     if (concNorm.includes("encaminhamento cirurgia: nao")) return true;
-    return !trat.includes("cirurg") && !trat.includes("epila") && !conc.includes("cirurg");
+    // Busca por varia\u00e7\u00f5es textuais de cirurgia/epilation no tratamento ou conclus\u00e3o
+    if (trat.includes("cirurg") || trat.includes("epila") || trat.includes("triquias")) return false;
+    if (conc.includes("cirurg") || conc.includes("epila") || conc.includes("triquias")) return false;
+    return true;
   }).length;
   const ttSemTs = ttSemTsRows.length;
   const ttSemTsDetalhe = municipioDetailRows(ttSemTsRows);
@@ -1227,7 +1232,7 @@ export async function auditarSinanTracoma(opts?: {
     )),
     ...traconetInvalidYearRows.map((row) => correctionRecord(
       row,
-      "Ano impossivel ou futuro",
+      "Ano impossível ou futuro",
       "Alta",
       "DT_NOTIFIC/ANO",
       "Corrigir data ou ano de notificacao/investigacao."
@@ -1287,11 +1292,15 @@ export async function auditarSinanTracoma(opts?: {
     if (tfSemTratamento > 0) rec.push(`${tfSemTratamento} caso(s) TRACONET classificado(s) como TF sem tratamento registrado. TF ativo exige azitromicina — verificar se foi prescrita e registrada.`);
   if (ttSemCircurgia > 0)  rec.push(`${ttSemCircurgia} caso(s) TRACONET com TT confirmado sem encaminhamento para cirurgia/epilation. TT requer referencia oftalmologica — risco de progressao para cegueira.`);
   if (semConclusao > 0)    rec.push(`${semConclusao} caso(s) individual(is) sem conclusao/encerramento preenchido.`);
-  if (anoImpossivel > 0)   rec.push(`${anoImpossivel} registro(s) com ano impossivel (< 1975 ou > ${currentYear}) foram retirados das tabelas comparativas e devem ser corrigidos na fonte.`);
-  const baixoPct = Object.entries(fieldCompleteness)
+  if (anoImpossivel > 0)   rec.push(`${anoImpossivel} registro(s) com ano impossível (< 1975 ou > ${currentYear + 1}) foram retirados das tabelas comparativas e devem ser corrigidos na fonte.`);
+  const camposCriticos = Object.entries(fieldCompleteness)
     .filter(([, v]) => v.pct < 50 && v.total > 0)
     .map(([k, v]) => `${k}: ${v.pct}%`);
-  if (baixoPct.length > 0) rec.push(`Campos TRACONET com completude < 50%: ${baixoPct.join(", ")}. Verificar mapeamento do arquivo importado.`);
+  const camposBaixos = Object.entries(fieldCompleteness)
+    .filter(([, v]) => v.pct >= 50 && v.pct < 70 && v.total > 0)
+    .map(([k, v]) => `${k}: ${v.pct}%`);
+  if (camposCriticos.length > 0) rec.push(`Campos TRACONET com completude crítica (< 50%): ${camposCriticos.join(", ")}. Verificar mapeamento do arquivo importado — análises baseadas nesses campos não são confiáveis.`);
+  if (camposBaixos.length > 0) rec.push(`Campos TRACONET com completude abaixo de 70%: ${camposBaixos.join(", ")}. Interpretar resultados com cautela até completude ≥ 70%.`);
   if (rec.length === 0) rec.push("Nenhuma inconsistencia critica detectada. Dados com boa completude e sem divergencias expressivas entre bancos.");
 
   // Busca amostra de raw para diagnóstico — queries separadas por banco para garantir 1 amostra de cada
@@ -1345,9 +1354,30 @@ export async function auditarSinanTracoma(opts?: {
   }
   const traconetTemForma    = temCamposIndividuais(diagTraconet);
   const nottraconetTemForma = temCamposIndividuais(diagNottraconet);
-  let aviso: string | undefined;
+
   if (!traconetTemForma && nottraconetTemForma && traconetRows.length > 0 && nottraconetRows.length > 0) {
-    aviso = "ATENÇÃO: Os bancos parecem estar INVERTIDOS na importação. TRACONET não tem campos FORMA_TF/TT mas NOTTRACONET tem. Execute o SQL de correção no Supabase para trocar os labels.";
+    // Bancos invertidos: bloqueia análise para evitar resultados com dados errados.
+    // Retorna apenas o diagnóstico + aviso — todas as métricas ficam zeradas.
+    const aviso = "ATENÇÃO: Os bancos parecem estar INVERTIDOS na importação. TRACONET não tem campos FORMA_TF/TT mas NOTTRACONET tem. Execute o SQL de correção no Supabase para trocar os labels antes de prosseguir.";
+    const emptyMetrics = { value: 0, field: null, rowsMissing: 0 };
+    return {
+      totalTraconet: 0, totalNottraconetRows: 0, totalNottraconet: 0,
+      totalTraconetComparable: 0, totalTraconetPositive: 0,
+      totalTraconetInvalidYear: 0, totalNottraconetInvalidYear: 0,
+      consolidatedMetrics: { examinados: emptyMetrics, positivos: emptyMetrics, casosInformados: emptyMetrics, negativos: emptyMetrics, tratados: emptyMetrics, comunicantes: emptyMetrics, tf: emptyMetrics, ti: emptyMetrics, ts: emptyMetrics, tt: emptyMetrics, co: emptyMetrics },
+      consolidatedMetricsByYear: [],
+      diagnostico: { traconet: bankDiag(traconetRows, diagTraconet), nottraconet: bankDiag(nottraconetRows, diagNottraconet), aviso },
+      crossBankDivergences: [], comparisonsByMunicipalityYear: [],
+      divergencesByYear: [], divergencesByGve: [],
+      fieldCompleteness: {}, casosComFormaClinica: 0, casosSemFormaPositiva: 0,
+      formaClinicaResumo: [], semGraduacao: 0, semTratamento: 0, semConclusao: 0,
+      tfSemTratamento: 0, ttSemCircurgia: 0, ttSemTs: 0, anoImpossivel: 0,
+      semFormaClinicaDetalhe: [], ttSemTsDetalhe: [],
+      consolidatedPositiveField: null, consolidatedRowsWithoutPositiveField: 0,
+      duplicateNotificationIds: [], missingNotificationId: 0,
+      correctionRecords: [],
+      recommendations: [aviso]
+    };
   }
 
   return {
@@ -1363,7 +1393,7 @@ export async function auditarSinanTracoma(opts?: {
     diagnostico: {
       traconet: bankDiag(traconetRows, diagTraconet),
       nottraconet: bankDiag(nottraconetRows, diagNottraconet),
-      aviso
+      aviso: undefined
     },
     crossBankDivergences,
     comparisonsByMunicipalityYear,
