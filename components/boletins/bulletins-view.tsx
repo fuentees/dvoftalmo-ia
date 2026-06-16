@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Calendar, ChevronRight, Clipboard, Loader2, Newspaper, Plus, RefreshCw } from "lucide-react";
+import { ArrowLeft, Calendar, ChevronRight, Clipboard, Loader2, Newspaper, Plus, Printer, RefreshCw } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,42 +33,51 @@ function getLastCompleteEpidemiologicalWeek(now = new Date()) {
   return { ano, se: Math.max(1, week - 1) };
 }
 
-const mdComponents: React.ComponentProps<typeof ReactMarkdown>["components"] = {
+// Markdown components with institutional blue styling (inspired by federal bulletin layout)
+const bulletinMdComponents: React.ComponentProps<typeof ReactMarkdown>["components"] = {
   h1: ({ children }) => (
-    <h1 className="mb-4 mt-6 text-xl font-bold text-foreground first:mt-0">{children}</h1>
+    <h1 className="mb-4 mt-8 text-lg font-bold text-blue-900 first:mt-0">{children}</h1>
   ),
   h2: ({ children }) => (
-    <h2 className="mb-3 mt-6 border-b border-teal-200 pb-1 text-base font-semibold text-teal-800 first:mt-0">{children}</h2>
+    <h2 className="mb-3 mt-8 flex items-start gap-2 text-sm font-bold uppercase tracking-wide text-blue-900 first:mt-0">
+      <span className="mt-0.5 inline-block h-4 w-1.5 shrink-0 rounded-sm bg-blue-700" aria-hidden />
+      <span>{children}</span>
+    </h2>
   ),
   h3: ({ children }) => (
-    <h3 className="mb-2 mt-4 font-semibold text-foreground">{children}</h3>
+    <h3 className="mb-2 mt-4 font-semibold text-blue-800">{children}</h3>
   ),
   p: ({ children }) => (
-    <p className="mb-3 text-sm leading-relaxed text-foreground">{children}</p>
+    <p className="mb-3 text-[13px] leading-relaxed text-gray-700">{children}</p>
   ),
   ul: ({ children }) => (
-    <ul className="mb-3 list-disc space-y-1 pl-5 text-sm text-foreground">{children}</ul>
+    <ul className="mb-3 list-disc space-y-1 pl-5 text-[13px] text-gray-700">{children}</ul>
   ),
   ol: ({ children }) => (
-    <ol className="mb-3 list-decimal space-y-1 pl-5 text-sm text-foreground">{children}</ol>
+    <ol className="mb-3 list-decimal space-y-1 pl-5 text-[13px] text-gray-700">{children}</ol>
   ),
-  li: ({ children }) => <li>{children}</li>,
-  strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+  strong: ({ children }) => <strong className="font-semibold text-gray-900">{children}</strong>,
   em: ({ children }) => <em className="italic">{children}</em>,
   blockquote: ({ children }) => (
-    <blockquote className="my-3 border-l-4 border-teal-500 pl-4 italic text-muted-foreground">{children}</blockquote>
+    <blockquote className="my-3 border-l-4 border-blue-500 bg-blue-50 px-4 py-3 text-[13px] italic text-blue-900">
+      {children}
+    </blockquote>
   ),
-  hr: () => <hr className="my-4 border-t border-border" />,
+  hr: () => <hr className="my-6 border-t border-blue-100" />,
   table: ({ children }) => (
-    <div className="mb-3 overflow-x-auto">
-      <table className="w-full text-sm border-collapse">{children}</table>
+    <div className="mb-4 overflow-x-auto rounded border border-blue-100">
+      <table className="w-full border-collapse text-[13px]">{children}</table>
     </div>
   ),
   th: ({ children }) => (
-    <th className="border border-teal-200 bg-teal-50 px-3 py-1.5 text-left font-semibold text-teal-800">{children}</th>
+    <th className="border-b border-blue-200 bg-blue-800 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-white">
+      {children}
+    </th>
   ),
+  tr: ({ children }) => <tr className="even:bg-blue-50/30">{children}</tr>,
   td: ({ children }) => (
-    <td className="border border-border px-3 py-1.5 text-foreground">{children}</td>
+    <td className="border-b border-blue-50 px-3 py-2 text-gray-700">{children}</td>
   ),
 };
 
@@ -87,16 +96,23 @@ function BulletinDetail({ id, onBack }: { id: string; onBack: () => void }) {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-4 p-4 md:p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="mx-auto max-w-4xl p-4 md:p-6">
+      {/* Action bar — hidden on print */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 print:hidden">
         <Button variant="ghost" onClick={onBack} className="px-2">
           <ArrowLeft className="h-4 w-4" />
           Voltar
         </Button>
-        <Button variant="outline" onClick={copyContent} disabled={!data?.content}>
-          <Clipboard className="h-4 w-4" />
-          {copied ? "Copiado" : "Copiar texto"}
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => window.print()} disabled={!data}>
+            <Printer className="h-4 w-4" />
+            Imprimir
+          </Button>
+          <Button variant="outline" size="sm" onClick={copyContent} disabled={!data?.content}>
+            <Clipboard className="h-4 w-4" />
+            {copied ? "Copiado" : "Copiar texto"}
+          </Button>
+        </div>
       </div>
 
       {isLoading && (
@@ -110,23 +126,73 @@ function BulletinDetail({ id, onBack }: { id: string; onBack: () => void }) {
 
       {error && (
         <Card className="border-red-200 bg-red-50 text-red-900">
-          <CardContent className="py-4 text-sm">{error instanceof Error ? error.message : "Erro ao carregar boletim."}</CardContent>
+          <CardContent className="py-4 text-sm">
+            {error instanceof Error ? error.message : "Erro ao carregar boletim."}
+          </CardContent>
         </Card>
       )}
 
       {data && (
-        <article className="rounded-lg border bg-card shadow-sm">
-          <div className="border-b bg-teal-50/50 p-5">
-            <div className="mb-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-              <Badge className="bg-teal-700 text-white hover:bg-teal-700">SE {data.se}</Badge>
-              <span>{data.ano}</span>
+        <article className="overflow-hidden rounded-lg border border-blue-200 bg-white shadow-md print:shadow-none">
+
+          {/* ── Institutional top strip ──────────────────────────── */}
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-blue-950 px-5 py-2 text-[11px] text-blue-200">
+            <div className="flex items-center gap-2 font-medium tracking-wide">
+              <span className="text-white">ESTADO DE SÃO PAULO</span>
               <span>·</span>
-              <span>Emitido em {new Date(data.created_at).toLocaleDateString("pt-BR")}</span>
+              <span>Secretaria de Estado da Saúde</span>
             </div>
-            <h1 className="text-xl font-semibold text-foreground">{data.title}</h1>
+            <span>Centro de Vigilância Epidemiológica &quot;Prof. Alexandre Vranjac&quot;</span>
           </div>
-          <div className="p-5 md:p-6">
-            <ReactMarkdown components={mdComponents}>{data.content}</ReactMarkdown>
+
+          {/* ── Main header ─────────────────────────────────────── */}
+          <div className="relative overflow-hidden bg-blue-900 px-6 pb-7 pt-5 text-white">
+            {/* Big SE number watermark */}
+            <div
+              className="pointer-events-none absolute right-4 top-0 select-none text-[9rem] font-black leading-none text-white/10"
+              aria-hidden
+            >
+              {String(data.se).padStart(2, "0")}
+            </div>
+
+            <div className="relative flex items-end justify-between gap-4">
+              <div>
+                <p className="mb-1 text-[11px] uppercase tracking-widest text-blue-300">
+                  Divisão de Vigilância Epidemiológica · Doenças Oculares
+                </p>
+                <h1 className="text-3xl font-black leading-tight md:text-4xl">
+                  Boletim<br />Epidemiológico
+                </h1>
+              </div>
+              <div className="text-right">
+                <div className="text-xs text-blue-300">Semana Epidemiológica</div>
+                <div className="text-4xl font-black text-white/90">{String(data.se).padStart(2, "0")}</div>
+                <div className="text-sm font-semibold text-blue-200">{data.ano}</div>
+                <div className="mt-1 text-[11px] text-blue-400">
+                  Emitido em {new Date(data.created_at).toLocaleDateString("pt-BR")}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Article title strip ──────────────────────────────── */}
+          <div className="border-b-4 border-blue-700 bg-blue-700 px-6 py-4 text-white">
+            <h2 className="text-base font-bold leading-snug md:text-lg">{data.title}</h2>
+          </div>
+
+          {/* ── Content ──────────────────────────────────────────── */}
+          <div className="px-6 pb-8 pt-6 md:px-8">
+            <ReactMarkdown components={bulletinMdComponents}>{data.content}</ReactMarkdown>
+          </div>
+
+          {/* ── Footer ───────────────────────────────────────────── */}
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-blue-100 bg-blue-50 px-6 py-3 text-[11px] text-blue-700">
+            <span>
+              Centro de Vigilância Epidemiológica &quot;Prof. Alexandre Vranjac&quot; | CCD/SES-SP
+            </span>
+            <span className="text-blue-400">
+              SE {String(data.se).padStart(2, "0")}/{data.ano}
+            </span>
           </div>
         </article>
       )}
@@ -150,9 +216,7 @@ export function BulletinsView() {
     mutationFn: () => fetchJson<{ id?: string; skipped?: boolean; se: number; ano: number }>("/api/boletins", { method: "POST" }),
     onSuccess: async result => {
       await queryClient.invalidateQueries({ queryKey: ["bulletins"] });
-      if (result.skipped) {
-        setSkippedSE({ se: result.se, ano: result.ano });
-      }
+      if (result.skipped) setSkippedSE({ se: result.se, ano: result.ano });
       if (result.id) setSelectedId(result.id);
     }
   });
@@ -166,19 +230,25 @@ export function BulletinsView() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-5 p-4 md:p-6">
+
+      {/* Page header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
-            <Newspaper className="h-6 w-6 text-teal-700" />
+            <Newspaper className="h-6 w-6 text-blue-700" />
             <h1 className="text-2xl font-semibold text-foreground">Boletins Epidemiológicos</h1>
           </div>
           <p className="max-w-3xl text-sm text-muted-foreground">
-            Boletins semanais de conjuntivites gerados automaticamente com base nos dados do CEVESP.
+            Boletins semanais gerados automaticamente com base nos dados do CEVESP — CVE/SES-SP.
           </p>
         </div>
 
         <div className="flex flex-col items-end gap-1">
-          <Button onClick={() => { setSkippedSE(null); generateMutation.mutate(); }} disabled={generateMutation.isPending}>
+          <Button
+            onClick={() => { setSkippedSE(null); generateMutation.mutate(); }}
+            disabled={generateMutation.isPending}
+            className="bg-blue-700 hover:bg-blue-800"
+          >
             {generateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
             Gerar boletim
           </Button>
@@ -188,6 +258,7 @@ export function BulletinsView() {
         </div>
       </div>
 
+      {/* Errors */}
       {generateMutation.error && (
         <Card className="border-red-200 bg-red-50 text-red-900">
           <CardContent className="py-4 text-sm">
@@ -204,32 +275,34 @@ export function BulletinsView() {
         </Card>
       )}
 
+      {/* KPI cards */}
       <div className="grid gap-3 md:grid-cols-3">
-        <Card>
+        <Card className="border-blue-100">
           <CardHeader className="pb-2">
             <CardDescription>Total publicado</CardDescription>
-            <CardTitle className="text-2xl">{bulletins.length}</CardTitle>
+            <CardTitle className="text-2xl text-blue-900">{bulletins.length}</CardTitle>
           </CardHeader>
         </Card>
-        <Card>
+        <Card className="border-blue-100">
           <CardHeader className="pb-2">
             <CardDescription>Anos com boletim</CardDescription>
-            <CardTitle className="text-2xl">{uniqueYears || "—"}</CardTitle>
+            <CardTitle className="text-2xl text-blue-900">{uniqueYears || "—"}</CardTitle>
           </CardHeader>
         </Card>
-        <Card>
+        <Card className="border-blue-100">
           <CardHeader className="pb-2">
             <CardDescription>Boletim mais recente</CardDescription>
-            <CardTitle className="text-2xl">{latest ? `SE ${latest.se}/${latest.ano}` : "—"}</CardTitle>
+            <CardTitle className="text-2xl text-blue-900">{latest ? `SE ${latest.se}/${latest.ano}` : "—"}</CardTitle>
           </CardHeader>
         </Card>
       </div>
 
-      <Card>
+      {/* Bulletin list */}
+      <Card className="border-blue-100">
         <CardHeader className="flex-row items-center justify-between gap-4">
           <div>
             <CardTitle>Histórico</CardTitle>
-            <CardDescription>Clique em um boletim para ler, copiar e usar em comunicados.</CardDescription>
+            <CardDescription>Clique em um boletim para ler, imprimir ou copiar o texto.</CardDescription>
           </div>
           <Button variant="outline" size="sm" onClick={() => queryClient.invalidateQueries({ queryKey: ["bulletins"] })}>
             <RefreshCw className="h-4 w-4" />
@@ -260,11 +333,11 @@ export function BulletinsView() {
             <button
               key={bulletin.id}
               onClick={() => setSelectedId(bulletin.id)}
-              className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-3 rounded-md border bg-background p-3 text-left transition hover:border-teal-500 hover:bg-teal-50/50 dark:hover:bg-teal-950/20"
+              className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-3 rounded-md border bg-background p-3 text-left transition hover:border-blue-500 hover:bg-blue-50/50"
             >
-              <div className="rounded-md bg-teal-50 px-3 py-2 text-center text-teal-800 dark:bg-teal-950 dark:text-teal-200">
-                <div className="text-xs font-medium">SE</div>
-                <div className="text-lg font-semibold leading-none">{bulletin.se}</div>
+              <div className="rounded-md bg-blue-900 px-3 py-2 text-center text-white">
+                <div className="text-[10px] font-medium tracking-widest text-blue-300">SE</div>
+                <div className="text-lg font-bold leading-none">{String(bulletin.se).padStart(2, "0")}</div>
               </div>
               <div className="min-w-0">
                 <div className="truncate font-medium text-foreground">{bulletin.title}</div>
