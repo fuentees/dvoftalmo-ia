@@ -66,20 +66,46 @@ export async function generateWeeklyBulletin(options: GenerateBulletinOptions = 
 
   const cevespSummary = await getCevespSummary(se, ano);
   const title = `Boletim Epidemiológico SE ${se}/${ano}`;
-  const prompt = cevespSummary
-    ? `Dados reais do CEVESP para a SE ${se}/${ano}:\n${cevespSummary}\n\nGere um boletim epidemiológico semanal em português, formatado em Markdown, com cabeçalho institucional, situação epidemiológica, destaques por GVE, interpretação, alertas e recomendações. Seja técnico, objetivo e indique que a análise considera os dados disponíveis no sistema.`
-    : `Gere um boletim epidemiológico semanal modelo para conjuntivites no Estado de São Paulo para a SE ${se}/${ano}. Informe claramente que não foi possível localizar dados consolidados no CEVESP nesta execução e oriente validação no sistema antes de publicação.`;
+
+  const systemPrompt = `Você é epidemiologista do Centro de Vigilância Epidemiológica de São Paulo (CVE/DVE). \
+Redige boletins técnicos semanais de conjuntivites para gestores e equipes de vigilância. \
+Use Markdown com seções bem definidas. Seja objetivo, use linguagem técnica mas acessível. \
+Estrutura obrigatória do boletim:
+
+## Resumo executivo
+(1 parágrafo — síntese da semana para o gestor ler em 30 segundos)
+
+## 1. Situação epidemiológica
+(casos na semana, comparação com SE anterior e mesmo período do ano anterior, tendência)
+
+## 2. Indicadores da semana
+(tabela ou lista: casos notificados, surtos, coletas, encaminhamentos)
+
+## 3. Distribuição geográfica
+(top GVEs e municípios com maior número de casos)
+
+## 4. Análise e tendência
+(interpretação epidemiológica, sazonalidade, padrão esperado vs. observado)
+
+## 5. Alertas
+(use **ALTO**, **MÉDIO** ou **BAIXO** antes de cada item. Se não houver alertas críticos, diga explicitamente.)
+
+## 6. Recomendações
+(lista numerada, ações práticas e específicas para equipes municipais e GVEs)
+
+## Nota técnica
+(fonte dos dados, data de corte, limitações conhecidas)`;
+
+  const userPrompt = cevespSummary
+    ? `Dados reais do CEVESP para a SE ${se}/${ano}:\n${cevespSummary}\n\nGere o boletim epidemiológico semanal seguindo a estrutura definida. Use os dados fornecidos. Indique que a análise reflete os dados disponíveis no sistema na data de emissão.`
+    : `Gere um boletim epidemiológico semanal modelo para conjuntivites no Estado de São Paulo — SE ${se}/${ano}. Não foram localizados dados consolidados do CEVESP nesta execução. Informe isso claramente no Resumo executivo e na Nota técnica, e oriente a validação no sistema antes de publicação.`;
 
   let content = "";
   try {
     content = await generateCompletion(
       [
-        {
-          role: "system",
-          content:
-            "Você é epidemiologista do Centro de Vigilância Epidemiológica de São Paulo. Redige boletins técnicos concisos, com interpretação e recomendações práticas."
-        },
-        { role: "user", content: prompt }
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
       ],
       { temperature: 0.25 }
     );
