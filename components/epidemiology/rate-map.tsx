@@ -1,7 +1,9 @@
 "use client";
 
-import { AlertTriangle } from "lucide-react";
+import { useState } from "react";
+import { AlertTriangle, Maximize2, X } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { PagedTable, type PagedColumn } from "@/components/ui/paged-table";
 import { ChoroplethMap } from "@/components/epidemiology/choropleth-map";
 
 export type RateMapRow = {
@@ -35,19 +37,16 @@ function normalizeKey(value: unknown) {
   return String(value ?? "")
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[̀-ͯ]/g, "")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 }
 
-function formatValue(value: unknown, decimals = 0) {
+function formatNum(value: unknown, decimals = 0) {
   if (value == null || value === "") return "-";
   const n = Number(value);
   if (!Number.isFinite(n)) return String(value);
-  return n.toLocaleString("pt-BR", {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals
-  });
+  return n.toLocaleString("pt-BR", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
 
 function buildShapeValueMap(rows: RateMapRow[], valueKey: keyof RateMapRow) {
@@ -55,13 +54,8 @@ function buildShapeValueMap(rows: RateMapRow[], valueKey: keyof RateMapRow) {
   for (const row of rows) {
     const value = Number(row[valueKey] ?? 0);
     if (!Number.isFinite(value)) continue;
-
     const code = String(row.codigoIbge ?? "").replace(/\D/g, "");
-    if (code) {
-      valueMap[code] = value;
-      valueMap[code.slice(0, 6)] = value;
-    }
-
+    if (code) { valueMap[code] = value; valueMap[code.slice(0, 6)] = value; }
     for (const key of [row.municipio, row.gve]) {
       if (!key) continue;
       valueMap[key] = value;
@@ -78,9 +72,21 @@ function colorFromRows(rows: RateMapRow[], valueKey: keyof RateMapRow) {
     if (match?.riskColor) return match.riskColor;
     if (value >= 50) return "#dc2626";
     if (value >= 20) return "#f59e0b";
-    if (value >= 5) return "#84cc16";
+    if (value >= 5)  return "#84cc16";
     return "#14b8a6";
   };
+}
+
+function MapLegend() {
+  return (
+    <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+      <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#14b8a6]" />baixo</span>
+      <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#84cc16]" />atenção</span>
+      <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#f59e0b]" />médio</span>
+      <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#dc2626]" />alto</span>
+      <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#cbd5e1]" />sem dado</span>
+    </div>
+  );
 }
 
 export function RateMap({
@@ -93,8 +99,11 @@ export function RateMap({
   missingPopulation,
   message
 }: RateMapProps) {
-  const shapeType = rows.some((row) => row.municipio || row.codigoIbge) ? "municipio" : "gve";
-  const valueMap = buildShapeValueMap(rows, valueKey);
+  const [expanded, setExpanded] = useState(false);
+
+  const shapeType  = rows.some((row) => row.municipio || row.codigoIbge) ? "municipio" : "gve";
+  const valueMap   = buildShapeValueMap(rows, valueKey);
+  const colorFn    = colorFromRows(rows, valueKey);
   const mappedRows = rows.filter((row) => Number(row[valueKey] ?? 0) > 0).length;
 
   if (missingPopulation) {
@@ -113,63 +122,104 @@ export function RateMap({
 
   if (!rows.length) return null;
 
-  return (
-    <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">{title}</CardTitle>
-          <CardDescription>{description}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ChoroplethMap
-            dataUrl={`/api/geo/shapefiles?type=${shapeType}`}
-            valueMap={valueMap}
-            colorScheme={colorFromRows(rows, valueKey)}
-          />
-          <p className="mt-2 text-xs text-muted-foreground">
-            Unidade do mapa: {valueLabel}. Camada exibida: {shapeType === "municipio" ? "municípios do estado de SP" : "GVE"}. Áreas sem dado, sem população ou sem correspondência no shapefile aparecem em cinza.
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {mappedRows.toLocaleString("pt-BR")} território(s) com valor calculado. A tabela exibe até 100 linhas para inspeção rápida.
-          </p>
-          <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
-            <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#14b8a6]" />baixo</span>
-            <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#84cc16]" />atenção</span>
-            <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#f59e0b]" />médio</span>
-            <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#dc2626]" />alto</span>
-          </div>
-        </CardContent>
-      </Card>
+  // Build PagedTable columns from tableColumns prop
+  const pagedCols: PagedColumn<RateMapRow>[] = tableColumns.map((col) => ({
+    key: col.key as string & keyof RateMapRow,
+    label: col.label,
+    align: (typeof rows[0]?.[col.key] === "number" ? "right" : "left") as "left" | "right",
+    render: (v) => formatNum(v, col.decimals ?? 0)
+  }));
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">Tabela de taxas</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="max-h-[420px] overflow-auto rounded-md border">
-            <table className="w-full min-w-[760px] text-sm">
-              <thead className="sticky top-0 bg-background">
-                <tr className="border-b text-left">
-                  {tableColumns.map((column) => (
-                    <th key={String(column.key)} className="px-3 py-2 font-medium">{column.label}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.slice(0, 100).map((row, index) => (
-                  <tr key={`${row.municipio ?? row.gve}-${index}`} className="border-b last:border-0">
-                    {tableColumns.map((column) => (
-                      <td key={String(column.key)} className="px-3 py-2">
-                        {formatValue(row[column.key], column.decimals)}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+  const defaultSortKey = (tableColumns.find((c) => c.key === valueKey) ? valueKey : tableColumns[1]?.key ?? tableColumns[0]?.key) as string & keyof RateMapRow;
+
+  return (
+    <>
+      {/* Fullscreen map overlay */}
+      {expanded && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-background/95 backdrop-blur-sm">
+          <div className="flex items-center justify-between border-b px-4 py-3">
+            <div>
+              <p className="font-semibold">{title}</p>
+              <p className="text-xs text-muted-foreground">{valueLabel}</p>
+            </div>
+            <button
+              onClick={() => setExpanded(false)}
+              className="rounded-md border p-1.5 hover:bg-muted"
+              aria-label="Fechar mapa"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
-        </CardContent>
-      </Card>
-    </div>
+          <div className="flex-1 overflow-hidden p-4">
+            <ChoroplethMap
+              dataUrl={`/api/geo/shapefiles?type=${shapeType}`}
+              valueMap={valueMap}
+              colorScheme={colorFn}
+              className="h-full w-full"
+            />
+          </div>
+          <div className="flex items-center justify-between border-t px-4 py-2">
+            <MapLegend />
+            <p className="text-xs text-muted-foreground">
+              {mappedRows.toLocaleString("pt-BR")} territórios com valor calculado
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-4">
+        {/* Mapa */}
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <CardTitle className="text-base">{title}</CardTitle>
+                <CardDescription>{description}</CardDescription>
+              </div>
+              <button
+                onClick={() => setExpanded(true)}
+                className="shrink-0 rounded-md border p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                title="Expandir mapa"
+              >
+                <Maximize2 className="h-4 w-4" />
+              </button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <ChoroplethMap
+              dataUrl={`/api/geo/shapefiles?type=${shapeType}`}
+              valueMap={valueMap}
+              colorScheme={colorFn}
+            />
+            <MapLegend />
+            <p className="text-xs text-muted-foreground">
+              Unidade: <strong>{valueLabel}</strong>. Camada: {shapeType === "municipio" ? "municípios de SP" : "GVE"}.
+              {" "}{mappedRows.toLocaleString("pt-BR")} território(s) com valor calculado. Cinza = sem dado.
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Tabela paginada + ordenável */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Tabela de taxas</CardTitle>
+            <CardDescription>
+              Clique no cabeçalho de qualquer coluna para ordenar. Use os controles abaixo para paginar ou ver todos.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <PagedTable<RateMapRow>
+              rows={rows}
+              columns={pagedCols}
+              defaultPageSize={20}
+              defaultSortKey={defaultSortKey}
+              defaultSortDir="desc"
+              rowKey={(row, i) => `${row.municipio ?? row.gve ?? ""}-${i}`}
+              emptyText="Nenhum território com dados calculados."
+            />
+          </CardContent>
+        </Card>
+      </div>
+    </>
   );
 }

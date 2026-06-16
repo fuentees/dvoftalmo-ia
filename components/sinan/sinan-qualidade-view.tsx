@@ -5,8 +5,9 @@ import Link from "next/link";
 import {
   AlertTriangle, CheckCircle2, ClipboardList,
   Database, RefreshCw, XCircle, Activity,
-  MapPin, Stethoscope, BarChart2, Download, Target
+  MapPin, Stethoscope, BarChart2, Download, Search, Target
 } from "lucide-react";
+import { PagedTable, type PagedColumn } from "@/components/ui/paged-table";
 import { useMemo, useState } from "react";
 import {
   CartesianGrid, Line, LineChart,
@@ -579,7 +580,6 @@ type DivView = "ano" | "gve" | "municipio";
 function DivergenciasTab({ data }: { data: SinanAuditResult }) {
   const [view, setView] = useState<DivView>("ano");
   const [busca, setBusca] = useState("");
-  const [mostrarTodos, setMostrarTodos] = useState(false);
 
   const normalizedBusca = busca.trim().toLowerCase();
   const allMuni = data.comparisonsByMunicipalityYear?.length
@@ -590,7 +590,6 @@ function DivergenciasTab({ data }: { data: SinanAuditResult }) {
         `${d.municipio} ${d.municipioNome} ${d.gve} ${d.ano}`.toLowerCase().includes(normalizedBusca)
       )
     : allMuni;
-  const visibleMuni = mostrarTodos ? filteredMuni : filteredMuni.slice(0, 50);
 
   const totalYear = sumRows(data.divergencesByYear ?? []);
   const totalGve  = sumRows(data.divergencesByGve ?? []);
@@ -622,7 +621,7 @@ function DivergenciasTab({ data }: { data: SinanAuditResult }) {
             {views.map((v) => (
               <button
                 key={v.id}
-                onClick={() => { setView(v.id); setBusca(""); setMostrarTodos(false); }}
+                onClick={() => { setView(v.id); setBusca(""); }}
                 className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                   view === v.id
                     ? "bg-background shadow-sm text-foreground"
@@ -695,62 +694,64 @@ function DivergenciasTab({ data }: { data: SinanAuditResult }) {
 
           {view === "municipio" && (
             <div>
-              <div className="flex flex-wrap items-center gap-3 border-b bg-muted/10 px-4 py-3">
-                <input
-                  value={busca}
-                  onChange={(e) => { setBusca(e.target.value); setMostrarTodos(false); }}
-                  placeholder="Filtrar por município, GVE ou ano…"
-                  className="h-8 min-w-60 flex-1 rounded-md border bg-background px-3 text-sm"
-                />
-                <span className="text-xs text-muted-foreground whitespace-nowrap">
-                  {visibleMuni.length.toLocaleString("pt-BR")} de {filteredMuni.length.toLocaleString("pt-BR")} registros
-                </span>
-              </div>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/30">
-                    <th className={thCls}>Município</th>
-                    <th className={thCls}>GVE</th>
-                    <th className={`${thCls} text-right`}>Ano</th>
-                    <th className={`${thCls} text-right`}>Individuais</th>
-                    <th className={`${thCls} text-right`}>Positivos</th>
-                    <th className={`${thCls} text-right`}>Diferença</th>
-                    <th className={`${thCls} text-center`}>Risco</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleMuni.map((d, i) => (
-                    <tr key={i} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
-                      <td className="px-4 py-2.5 font-medium">
-                        {d.municipioNome !== d.municipio ? d.municipioNome : d.municipio}
-                        {d.municipioNome !== d.municipio && (
-                          <span className="ml-1 text-[10px] text-muted-foreground">({d.municipio})</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2.5 text-xs text-muted-foreground">{d.gve || "—"}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{d.ano}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{d.traconet.toLocaleString("pt-BR")}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{d.nottraconet.toLocaleString("pt-BR")}</td>
-                      <DiffCell diff={d.diff} />
-                      <RiscoCell risco={d.risco} />
-                    </tr>
-                  ))}
-                  <TotalRow
-                    label={busca ? "Total filtrado" : "Total"}
-                    traconet={totalMuni.traconet}
-                    nottraconet={totalMuni.nottraconet}
-                    diff={totalMuni.diff}
-                    colSpan={3}
+              <div className="flex flex-wrap items-center gap-2 border-b bg-muted/10 px-4 py-3">
+                <div className="relative min-w-52 flex-1">
+                  <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    value={busca}
+                    onChange={(e) => setBusca(e.target.value)}
+                    placeholder="Filtrar por município, GVE ou ano…"
+                    className="h-8 w-full rounded-md border bg-background pl-8 pr-3 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   />
-                </tbody>
-              </table>
-              {!mostrarTodos && filteredMuni.length > visibleMuni.length && (
-                <div className="border-t p-3 text-center">
-                  <Button size="sm" variant="outline" onClick={() => setMostrarTodos(true)}>
-                    Mostrar todos os {filteredMuni.length.toLocaleString("pt-BR")} registros
-                  </Button>
                 </div>
-              )}
+                {busca && (
+                  <button onClick={() => setBusca("")} className="text-xs text-muted-foreground hover:text-foreground">
+                    Limpar
+                  </button>
+                )}
+              </div>
+              <PagedTable
+                rows={filteredMuni.map((d) => ({
+                  municipioNome: d.municipioNome !== d.municipio ? d.municipioNome : d.municipio,
+                  gve: d.gve || "—",
+                  ano: d.ano,
+                  traconet: d.traconet,
+                  nottraconet: d.nottraconet,
+                  diff: d.diff,
+                  risco: d.risco ?? "baixo"
+                }))}
+                columns={[
+                  { key: "municipioNome", label: "Município",   align: "left"  },
+                  { key: "gve",          label: "GVE",          align: "left"  },
+                  { key: "ano",          label: "Ano",          align: "right" },
+                  { key: "traconet",     label: "Individuais",  align: "right",
+                    render: (v) => Number(v).toLocaleString("pt-BR") },
+                  { key: "nottraconet",  label: "Positivos",    align: "right",
+                    render: (v) => Number(v).toLocaleString("pt-BR") },
+                  { key: "diff",         label: "Diferença",    align: "right",
+                    render: (v) => {
+                      const n = Number(v);
+                      return (
+                        <span className={n > 0 ? "font-semibold text-red-600" : n < 0 ? "font-semibold text-amber-600" : "text-muted-foreground"}>
+                          {n > 0 ? "+" : ""}{n.toLocaleString("pt-BR")}
+                        </span>
+                      );
+                    }
+                  },
+                  { key: "risco", label: "Risco", align: "center",
+                    render: (v) => (
+                      <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${RISK_COLOR[String(v)] ?? ""}`}>
+                        {RISK_LABEL[String(v)] ?? String(v)}
+                      </span>
+                    )
+                  }
+                ]}
+                defaultSortKey="diff"
+                defaultSortDir="desc"
+                defaultPageSize={20}
+                rowKey={(_, i) => String(i)}
+                emptyText="Nenhum município com divergência para os filtros aplicados."
+              />
             </div>
           )}
         </div>

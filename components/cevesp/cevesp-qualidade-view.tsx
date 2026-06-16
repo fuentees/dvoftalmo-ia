@@ -9,6 +9,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PagedTable, type PagedColumn } from "@/components/ui/paged-table";
 import type { InvalidRecord } from "@/services/cevesp-corrections";
 
 type CevespTab = "registros" | "por_ano" | "por_gve" | "por_municipio";
@@ -279,13 +280,11 @@ function PorGvePanel({ data, onSelectGve }: { data: QualidadeData; onSelectGve?:
 function PorMunicipioPanel({ data, externalGve, onClearGve }: { data: QualidadeData; externalGve?: string; onClearGve?: () => void }) {
   const [gveFilter, setGveFilter] = useState(externalGve ?? "todos");
   const [query, setQuery] = useState("");
-  const [showAll, setShowAll] = useState(false);
 
   // sync external GVE cross-filter from Por GVE tab
   useEffect(() => {
     if (externalGve !== undefined) {
       setGveFilter(externalGve || "todos");
-      setShowAll(false);
     }
   }, [externalGve]);
 
@@ -301,8 +300,14 @@ function PorMunicipioPanel({ data, externalGve, onClearGve }: { data: QualidadeD
       return matchGve && matchText;
     });
   }, [data.byMunicipio, gveFilter, query]);
-  const visibleRows = showAll ? filteredRows : filteredRows.slice(0, 80);
   const totalFiltered = filteredRows.reduce((sum, item) => sum + item.count, 0);
+
+  const muniCols: PagedColumn<{ municipio: string; gve: string; count: number }>[] = [
+    { key: "municipio", label: "Município", align: "left" },
+    { key: "gve",       label: "GVE",       align: "left" },
+    { key: "count",     label: "Registros", align: "right",
+      render: (v) => Number(v).toLocaleString("pt-BR") }
+  ];
 
   if (!data.byMunicipio.length) {
     return <p className="py-6 text-center text-sm text-muted-foreground">Nenhum registro com município informado.</p>;
@@ -326,10 +331,7 @@ function PorMunicipioPanel({ data, externalGve, onClearGve }: { data: QualidadeD
         <div className="grid gap-2 sm:grid-cols-[220px_1fr_auto]">
           <select
             value={gveFilter}
-            onChange={(event) => {
-              setGveFilter(event.target.value);
-              setShowAll(false);
-            }}
+            onChange={(event) => setGveFilter(event.target.value)}
             className="h-8 rounded-md border bg-background px-2 text-xs"
           >
             <option value="todos">Todos os GVEs</option>
@@ -339,10 +341,7 @@ function PorMunicipioPanel({ data, externalGve, onClearGve }: { data: QualidadeD
           </select>
           <input
             value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setShowAll(false);
-            }}
+            onChange={(event) => setQuery(event.target.value)}
             placeholder="Buscar município ou GVE"
             className="h-8 rounded-md border bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
@@ -354,7 +353,6 @@ function PorMunicipioPanel({ data, externalGve, onClearGve }: { data: QualidadeD
             onClick={() => {
               setGveFilter("todos");
               setQuery("");
-              setShowAll(false);
               onClearGve?.();
             }}
           >
@@ -363,40 +361,15 @@ function PorMunicipioPanel({ data, externalGve, onClearGve }: { data: QualidadeD
         </div>
       </CardHeader>
       <CardContent className="p-0">
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b bg-muted/40">
-                <th className="px-4 py-2 text-left font-medium">Município</th>
-                <th className="px-4 py-2 text-left font-medium">GVE</th>
-                <th className="px-4 py-2 text-right font-medium">Registros</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleRows.map(({ municipio, gve, count }) => (
-                <tr key={municipio} className="border-b last:border-0 hover:bg-muted/20">
-                  <td className="px-4 py-2 font-medium">{municipio}</td>
-                  <td className="px-4 py-2 text-muted-foreground">{gve ?? "—"}</td>
-                  <td className="px-4 py-2 text-right tabular-nums font-semibold">
-                    {count.toLocaleString("pt-BR")}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {filteredRows.length === 0 && (
-          <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-            Nenhum município encontrado para os filtros aplicados.
-          </p>
-        )}
-        {filteredRows.length > visibleRows.length && (
-          <div className="border-t p-3 text-center">
-            <Button variant="outline" size="sm" onClick={() => setShowAll(true)}>
-              Mostrar todos ({filteredRows.length.toLocaleString("pt-BR")})
-            </Button>
-          </div>
-        )}
+        <PagedTable
+          rows={filteredRows.map((r) => ({ municipio: r.municipio, gve: r.gve ?? "—", count: r.count }))}
+          columns={muniCols}
+          defaultSortKey="count"
+          defaultSortDir="desc"
+          defaultPageSize={20}
+          rowKey={(r) => r.municipio}
+          emptyText="Nenhum município encontrado para os filtros aplicados."
+        />
       </CardContent>
     </Card>
   );
