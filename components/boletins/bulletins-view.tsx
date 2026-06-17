@@ -53,6 +53,18 @@ interface SeHistoryRow {
   encaminhamentos: number;
 }
 
+interface YearHistoryRow {
+  ano: number;
+  munis: number;
+  examinados: number;
+  positivos: number;
+  prevalencia: number;
+  tratados: number;
+  cobertura: number;
+  traconet: number;
+  tt: number;
+}
+
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
   const payload = await response.json().catch(() => ({}));
@@ -526,6 +538,150 @@ function ConjuntiviteHistoryTable({ se: currentSe, ano }: { se: number; ano: num
   );
 }
 
+// ──── TracomaHistoryTable ─────────────────────────────────────────────────────
+function TracomaHistoryTable({ ano: currentAno }: { ano: number }) {
+  const { data: rows, isLoading } = useQuery<YearHistoryRow[]>({
+    queryKey: ["tracoma-history"],
+    queryFn: () => fetchJson("/api/boletins/history?agravo=tracoma")
+  });
+
+  function fmtPct(v: number) {
+    return `${v.toFixed(1).replace(".", ",")}%`;
+  }
+
+  const totals = useMemo(() => {
+    if (!rows?.length) return null;
+    const exam = rows.reduce((s, r) => s + r.examinados, 0);
+    const pos  = rows.reduce((s, r) => s + r.positivos, 0);
+    const trat = rows.reduce((s, r) => s + r.tratados, 0);
+    return {
+      examinados: exam,
+      positivos: pos,
+      tratados: trat,
+      traconet: rows.reduce((s, r) => s + r.traconet, 0),
+      tt: rows.reduce((s, r) => s + r.tt, 0),
+      prevalencia: exam > 0 ? (pos / exam) * 100 : 0,
+      cobertura: pos > 0 ? (trat / pos) * 100 : 0,
+    };
+  }, [rows]);
+
+  if (isLoading) {
+    return (
+      <div className="flex h-20 items-center justify-center text-sm text-teal-400">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        Carregando histórico...
+      </div>
+    );
+  }
+
+  if (!rows?.length) return null;
+
+  return (
+    <div className="print:break-inside-avoid">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-start gap-2 text-sm font-extrabold uppercase tracking-wider text-teal-900">
+          <span className="mt-0.5 inline-block h-4 w-1.5 shrink-0 rounded-sm bg-teal-600" aria-hidden />
+          <span>Série Histórica — Examinados e Casos por Ano</span>
+        </div>
+        <span className="text-xs text-muted-foreground">{rows.length} anos com dados</span>
+      </div>
+
+      <div className="overflow-x-auto rounded-xl border border-teal-100 shadow-sm">
+        <table className="w-full border-collapse text-[12px]">
+          <thead>
+            <tr className="bg-teal-800 text-white">
+              <th className="px-3 py-2.5 text-left font-semibold uppercase tracking-wide">Ano</th>
+              <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Municípios</th>
+              <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Examinados</th>
+              <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Positivos</th>
+              <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Prevalência</th>
+              <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Tratados</th>
+              <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Cobertura</th>
+              <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">TRACONET</th>
+              <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">TT</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, idx) => {
+              const isCurrent = row.ano === currentAno;
+              const aboveMeta = row.prevalencia >= 5;
+              return (
+                <tr
+                  key={row.ano}
+                  className={`border-b transition-colors ${
+                    isCurrent
+                      ? "bg-teal-100 font-semibold"
+                      : idx % 2 === 0 ? "bg-white" : "bg-teal-50/40"
+                  }`}
+                >
+                  <td className="px-3 py-2">
+                    <span className={`inline-flex items-center gap-1.5 ${isCurrent ? "text-teal-800" : "text-gray-600"}`}>
+                      {isCurrent && <span className="inline-block h-2 w-2 rounded-full bg-teal-600" />}
+                      {row.ano}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-right text-gray-700">
+                    {row.munis > 0 ? row.munis : <span className="text-gray-300">—</span>}
+                  </td>
+                  <td className="px-3 py-2 text-right text-gray-700">
+                    {row.examinados > 0 ? row.examinados.toLocaleString("pt-BR") : <span className="text-gray-300">—</span>}
+                  </td>
+                  <td className="px-3 py-2 text-right font-medium text-gray-900">
+                    {row.positivos > 0 ? row.positivos.toLocaleString("pt-BR") : <span className="font-normal text-gray-300">—</span>}
+                  </td>
+                  <td className={`px-3 py-2 text-right font-bold ${
+                    aboveMeta ? "text-red-600" : row.prevalencia >= 2 ? "text-amber-600" : row.examinados > 0 ? "text-green-700" : ""
+                  }`}>
+                    {row.examinados > 0 ? fmtPct(row.prevalencia) : <span className="font-normal text-gray-300">—</span>}
+                  </td>
+                  <td className="px-3 py-2 text-right text-gray-700">
+                    {row.tratados > 0 ? row.tratados.toLocaleString("pt-BR") : <span className="text-gray-300">—</span>}
+                  </td>
+                  <td className="px-3 py-2 text-right text-gray-700">
+                    {row.positivos > 0 ? fmtPct(row.cobertura) : <span className="text-gray-300">—</span>}
+                  </td>
+                  <td className="px-3 py-2 text-right text-gray-700">
+                    {row.traconet > 0 ? row.traconet.toLocaleString("pt-BR") : <span className="text-gray-300">—</span>}
+                  </td>
+                  <td className="px-3 py-2 text-right text-gray-700">
+                    {row.tt > 0
+                      ? <span className="font-semibold text-red-600">{row.tt}</span>
+                      : <span className="text-gray-300">—</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+          {totals && rows.length > 1 && (
+            <tfoot>
+              <tr className="border-t-2 border-teal-200 bg-teal-900 text-white text-[11px] font-semibold">
+                <td className="px-3 py-2.5 uppercase tracking-wide">Total</td>
+                <td className="px-3 py-2.5 text-right text-teal-300">—</td>
+                <td className="px-3 py-2.5 text-right">{totals.examinados.toLocaleString("pt-BR")}</td>
+                <td className="px-3 py-2.5 text-right">{totals.positivos.toLocaleString("pt-BR")}</td>
+                <td className="px-3 py-2.5 text-right text-teal-300">{fmtPct(totals.prevalencia)}</td>
+                <td className="px-3 py-2.5 text-right">{totals.tratados.toLocaleString("pt-BR")}</td>
+                <td className="px-3 py-2.5 text-right text-teal-300">{fmtPct(totals.cobertura)}</td>
+                <td className="px-3 py-2.5 text-right">{totals.traconet.toLocaleString("pt-BR")}</td>
+                <td className="px-3 py-2.5 text-right">{totals.tt > 0 ? totals.tt : "—"}</td>
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+
+      <p className="mt-1.5 text-[11px] text-gray-400">
+        Prevalência ≥ 5%{" "}
+        <span className="font-semibold text-red-600">vermelha</span>{" "}
+        (acima da meta OMS) · TT = cirurgia trichiasis indicada ·{" "}
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block h-2 w-2 rounded-full bg-teal-600" /> Ano do boletim
+        </span>
+      </p>
+    </div>
+  );
+}
+
 // ──── BulletinDetail ──────────────────────────────────────────────────────────
 function BulletinDetail({ id, onBack }: { id: string; onBack: () => void }) {
   const [copied, setCopied] = useState(false);
@@ -681,30 +837,114 @@ function BulletinDetail({ id, onBack }: { id: string; onBack: () => void }) {
             <h2 className="text-base font-bold leading-snug md:text-lg">{data.title}</h2>
           </div>
 
-          {/* Map — tracoma: municipality prevalence | conjuntivite: GVE cases */}
-          {data.agravo === "tracoma" && (
-            <div className="border-b border-teal-100 bg-teal-50/30 px-8 py-6">
-              <TracomaMapSection ano={data.ano} />
-            </div>
-          )}
-          {data.agravo === "conjuntivite" && data.se > 0 && (
-            <div className="border-b border-blue-100 bg-blue-50/30 px-8 py-6">
-              <ConjuntiviteMapSection se={data.se} ano={data.ano} />
-            </div>
-          )}
-
-          {/* Historical SE table — conjuntivite only */}
-          {data.agravo === "conjuntivite" && data.se > 0 && (
-            <div className="border-b border-blue-100 px-8 py-6">
-              <ConjuntiviteHistoryTable se={data.se} ano={data.ano} />
-            </div>
-          )}
-
-          {/* Markdown content */}
+          {/* Bulletin body — markdown with map + history injected at correct sections */}
           <div className="px-8 pb-10 pt-6">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-              {cleanContent(data.content)}
-            </ReactMarkdown>
+            {(() => {
+              const clean = cleanContent(data.content);
+
+              const renderMd = (content: string) =>
+                content ? (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                    {content}
+                  </ReactMarkdown>
+                ) : null;
+
+              // Returns the index of the next ## heading after `from`
+              function nextSectionIdx(from: number): number {
+                const n = clean.slice(from + 1).search(/^## /m);
+                return n === -1 ? clean.length : from + 1 + n;
+              }
+
+              // ── Conjuntivite ─────────────────────────────────────────────
+              if (data.agravo === "conjuntivite") {
+                const geoIdx  = clean.search(/^## Distribuição Geográfica/im);
+                const tendIdx = clean.search(/^## Tendência/im);
+
+                // Neither section found → components at end
+                if (geoIdx === -1 && tendIdx === -1) {
+                  return (
+                    <>
+                      {renderMd(clean)}
+                      {data.se > 0 && (
+                        <div className="mt-6 space-y-6">
+                          <ConjuntiviteMapSection se={data.se} ano={data.ano} />
+                          <ConjuntiviteHistoryTable se={data.se} ano={data.ano} />
+                        </div>
+                      )}
+                    </>
+                  );
+                }
+
+                // cut1 = where geo section starts (or tendency start if no geo)
+                const cut1    = geoIdx !== -1 ? geoIdx : tendIdx;
+                const cut1End = geoIdx !== -1 ? nextSectionIdx(geoIdx) : cut1;
+                // cut2 = where tendency section starts
+                const cut2    = tendIdx !== -1 ? tendIdx : clean.length;
+                const cut2End = tendIdx !== -1 ? nextSectionIdx(tendIdx) : clean.length;
+
+                // p1 = before map | p2 = between map and history | p3 = after history
+                const p1 = clean.slice(0, cut1).trim();
+                const p2 = geoIdx !== -1 ? clean.slice(cut1End, cut2).trim() : "";
+                const p3 = clean.slice(cut2End).trim();
+
+                return (
+                  <>
+                    {renderMd(p1)}
+                    {data.se > 0 && (
+                      <div className="my-6">
+                        <ConjuntiviteMapSection se={data.se} ano={data.ano} />
+                      </div>
+                    )}
+                    {renderMd(p2)}
+                    {data.se > 0 && (
+                      <div className="my-6">
+                        <ConjuntiviteHistoryTable se={data.se} ano={data.ano} />
+                      </div>
+                    )}
+                    {renderMd(p3)}
+                  </>
+                );
+              }
+
+              // ── Tracoma ──────────────────────────────────────────────────
+              if (data.agravo === "tracoma") {
+                // Annual bulletin → "Distribuição Geográfica"
+                // Period bulletin → "Municípios Prioritários"
+                const geoPattern = data.se > 0
+                  ? /^## Municípios Prioritários/im
+                  : /^## Distribuição Geográfica/im;
+                const geoIdx = clean.search(geoPattern);
+
+                // Section not found → components before content (visible summary first)
+                if (geoIdx === -1) {
+                  return (
+                    <>
+                      <div className="mb-6 space-y-6">
+                        <TracomaHistoryTable ano={data.ano} />
+                        <TracomaMapSection ano={data.ano} />
+                      </div>
+                      {renderMd(clean)}
+                    </>
+                  );
+                }
+
+                const p1 = clean.slice(0, geoIdx).trim();
+                const p2 = clean.slice(nextSectionIdx(geoIdx)).trim();
+
+                return (
+                  <>
+                    {renderMd(p1)}
+                    <div className="my-6 space-y-6">
+                      <TracomaHistoryTable ano={data.ano} />
+                      <TracomaMapSection ano={data.ano} />
+                    </div>
+                    {renderMd(p2)}
+                  </>
+                );
+              }
+
+              return renderMd(clean);
+            })()}
           </div>
 
           {/* Footer */}

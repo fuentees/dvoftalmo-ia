@@ -71,7 +71,7 @@ export async function GET(request: Request) {
       .select('"GVE_NOME", "TotalCaso"')
       .eq("ANO", ano)
       .eq("SemEpidemio", se)
-      .eq("Excluido", 0);
+      .or("Excluido.eq.0,Excluido.is.null");
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
