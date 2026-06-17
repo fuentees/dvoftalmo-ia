@@ -41,7 +41,7 @@ export async function POST(request: Request) {
   const force = Boolean(body?.force);
 
   if (agravo === "tracoma") {
-    const result = await generateTracomaBulletin({ ano: body?.ano, force });
+    const result = await generateTracomaBulletin({ ano: body?.ano, anoInicio: body?.anoInicio, force });
     return NextResponse.json(result, { status: result.ok ? 200 : 500 });
   }
 

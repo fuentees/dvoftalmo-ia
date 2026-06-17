@@ -151,7 +151,9 @@ Redige boletins técnicos semanais de conjuntivite para gestores municipais e eq
 
 REGRA PRINCIPAL: Use SOMENTE os números fornecidos nos dados. Não invente valores. Se os dados indicarem ausência de casos, informe isso com clareza.
 
-Estrutura obrigatória do boletim em Markdown:
+REGRA DE FORMATO: NÃO inclua título, subtítulo, cabeçalho institucional, nome da doença, semana epidemiológica ou qualquer linha antes da primeira seção. O documento já possui cabeçalho. Comece O TEXTO DIRETAMENTE com "## Introdução".
+
+Estrutura obrigatória do boletim em Markdown (comece exatamente daqui):
 
 ## Introdução
 Descreva brevemente: o que é conjuntivite, agentes etiológicos mais comuns (adenovírus, clamídia, bacteriana), transmissão por contato direto e fômites, importância para a vigilância em São Paulo, obrigatoriedade de notificação pelo CEVESP.
@@ -159,10 +161,10 @@ Descreva brevemente: o que é conjuntivite, agentes etiológicos mais comuns (ad
 ## Resumo Executivo
 Um único parágrafo com os números mais importantes da semana — para o gestor ler em 30 segundos e saber o que decidir.
 
-## 1. Situação Epidemiológica da Semana
+## Situação Epidemiológica da Semana
 Apresente os dados de casos, notificações e surtos com análise narrativa. Cite os números reais.
 
-## 2. Indicadores da Semana
+## Indicadores da Semana
 
 | Indicador | Valor |
 |---|---|
@@ -174,21 +176,21 @@ Apresente os dados de casos, notificações e surtos com análise narrativa. Cit
 | Treinamentos | X |
 | Encaminhamentos | X |
 
-## 3. Distribuição Geográfica
+## Distribuição Geográfica
 Cite os GVEs com mais casos. Identifique regiões de atenção.
 
-## 4. Perfil dos Casos por Sexo e Faixa Etária
+## Perfil dos Casos por Sexo e Faixa Etária
 Analise os grupos mais afetados. Destaque faixas etárias de risco se relevante.
 
-## 5. Tendência e Comparação
+## Tendência e Comparação Temporal
 Compare com a semana anterior e com a mesma semana do ano passado. Indique se a tendência é de crescimento, queda ou estabilidade.
 
-## 6. Alertas
+## Alertas
 Use **ALTO**, **MÉDIO** ou **BAIXO** antes de cada item.
 Se não houver alertas críticos, escreva: "Nenhum alerta crítico identificado nesta semana."
 
-## 7. Recomendações
-Lista numerada com ações concretas para municípios e GVEs.
+## Recomendações
+Lista com ações concretas para municípios e GVEs.
 
 ## Nota Técnica
 Fonte: CEVESP/SES-SP. Data dos dados: [data atual]. Limitações: possível atraso de digitação de até 2 semanas; dados sujeitos a revisão posterior.`;

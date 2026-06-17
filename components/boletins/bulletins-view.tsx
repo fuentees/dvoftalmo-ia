@@ -1,17 +1,20 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, Calendar, ChevronRight, Clipboard, Eye, Loader2,
   Newspaper, Plus, Printer, RefreshCw, RotateCcw
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ChoroplethMap } from "@/components/epidemiology/choropleth-map";
 
 type Agravo = "conjuntivite" | "tracoma";
+type AccentColor = "blue" | "teal";
 
 interface BulletinSummary {
   id: string;
@@ -24,6 +27,30 @@ interface BulletinSummary {
 
 interface BulletinDetail extends BulletinSummary {
   content: string;
+}
+
+interface MapDataRow {
+  municipio: string;
+  gve: string;
+  examinados: number;
+  positivos: number;
+  prevalencia: number;
+}
+
+interface GveMapRow {
+  gve: string;
+  casos: number;
+}
+
+interface SeHistoryRow {
+  se: number;
+  notificacoes: number;
+  casos: number;
+  surtos: number;
+  coletas: number;
+  acoes: number;
+  treinamentos: number;
+  encaminhamentos: number;
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -39,53 +66,86 @@ function lastCompleteWeek(now = new Date()) {
   return { ano, se: Math.max(1, week - 1) };
 }
 
-// ──── Markdown component map — blue institutional style ───────────────────────
-const mdComponents: React.ComponentProps<typeof ReactMarkdown>["components"] = {
-  h1: ({ children }) => (
-    <h1 className="mb-4 mt-8 text-lg font-bold text-blue-900 first:mt-0">{children}</h1>
-  ),
-  h2: ({ children }) => (
-    <h2 className="mb-3 mt-8 flex items-start gap-2 text-sm font-bold uppercase tracking-wide text-blue-900 first:mt-0">
-      <span className="mt-0.5 inline-block h-4 w-1.5 shrink-0 rounded-sm bg-blue-700" aria-hidden />
-      <span>{children}</span>
-    </h2>
-  ),
-  h3: ({ children }) => (
-    <h3 className="mb-2 mt-4 font-semibold text-blue-800">{children}</h3>
-  ),
-  p: ({ children }) => (
-    <p className="mb-3 text-[13px] leading-relaxed text-gray-700">{children}</p>
-  ),
-  ul: ({ children }) => (
-    <ul className="mb-3 list-disc space-y-1 pl-5 text-[13px] text-gray-700">{children}</ul>
-  ),
-  ol: ({ children }) => (
-    <ol className="mb-3 list-decimal space-y-1 pl-5 text-[13px] text-gray-700">{children}</ol>
-  ),
-  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-  strong: ({ children }) => <strong className="font-semibold text-gray-900">{children}</strong>,
-  em: ({ children }) => <em className="italic">{children}</em>,
-  blockquote: ({ children }) => (
-    <blockquote className="my-3 border-l-4 border-blue-500 bg-blue-50 px-4 py-3 text-[13px] italic text-blue-900">
-      {children}
-    </blockquote>
-  ),
-  hr: () => <hr className="my-6 border-t border-blue-100" />,
-  table: ({ children }) => (
-    <div className="mb-4 overflow-x-auto rounded border border-blue-100">
-      <table className="w-full border-collapse text-[13px]">{children}</table>
-    </div>
-  ),
-  th: ({ children }) => (
-    <th className="border-b border-blue-200 bg-blue-800 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-white">
-      {children}
-    </th>
-  ),
-  tr: ({ children }) => <tr className="even:bg-blue-50/30">{children}</tr>,
-  td: ({ children }) => (
-    <td className="border-b border-blue-50 px-3 py-2 text-gray-700">{children}</td>
-  ),
-};
+// Clean AI-generated content:
+//   1. Strip leading numbers from headings ("## 1. Título" → "## Título")
+//   2. Remove any preamble (AI-generated title, institutional header) before the first ## section
+function cleanContent(md: string): string {
+  let clean = md.replace(/^(#{1,6})\s+\d+[\.\-\)]\s*/gm, "$1 ");
+  const firstH2 = clean.search(/^##\s/m);
+  if (firstH2 > 0) clean = clean.slice(firstH2);
+  return clean.trim();
+}
+
+// ──── Markdown component factory — adapts to disease color theme ───────────────
+function makeMdComponents(accent: AccentColor): React.ComponentProps<typeof ReactMarkdown>["components"] {
+  const headingColor = accent === "blue" ? "text-blue-900" : "text-teal-900";
+  const barColor     = accent === "blue" ? "bg-blue-700"   : "bg-teal-600";
+  const h3Color      = accent === "blue" ? "text-blue-800" : "text-teal-800";
+  const thBg         = accent === "blue" ? "bg-blue-800"   : "bg-teal-800";
+  const thBorder     = accent === "blue" ? "border-blue-200" : "border-teal-200";
+  const tdBorder     = accent === "blue" ? "border-blue-50"  : "border-teal-50";
+  const evenRow      = accent === "blue" ? "even:bg-blue-50/40" : "even:bg-teal-50/40";
+  const tableBorder  = accent === "blue" ? "border-blue-100" : "border-teal-100";
+  const bqClasses    = accent === "blue"
+    ? "border-blue-500 bg-blue-50/60 text-blue-900"
+    : "border-teal-500 bg-teal-50/60 text-teal-900";
+  const hrColor = accent === "blue" ? "border-blue-100" : "border-teal-100";
+
+  return {
+    h1: ({ children }) => (
+      <h1 className={`mb-4 mt-8 text-base font-extrabold uppercase tracking-wide ${headingColor} first:mt-0`}>{children}</h1>
+    ),
+    h2: ({ children }) => (
+      <h2 className={`mb-3 mt-8 flex items-start gap-2 text-sm font-extrabold uppercase tracking-wider ${headingColor} first:mt-0`}>
+        <span className={`mt-0.5 inline-block h-4 w-1.5 shrink-0 rounded-sm ${barColor}`} aria-hidden />
+        <span>{children}</span>
+      </h2>
+    ),
+    h3: ({ children }) => (
+      <h3 className={`mb-2 mt-5 font-bold ${h3Color}`}>{children}</h3>
+    ),
+    p: ({ children }) => (
+      <p className="mb-3 text-[13px] leading-[1.75] text-gray-700 text-justify hyphens-auto">{children}</p>
+    ),
+    ul: ({ children }) => (
+      <ul className="mb-3 list-disc space-y-1.5 pl-5 text-[13px] text-gray-700">{children}</ul>
+    ),
+    ol: ({ children }) => (
+      <ol className="mb-3 list-decimal space-y-1.5 pl-5 text-[13px] text-gray-700">{children}</ol>
+    ),
+    li: ({ children }) => (
+      <li className="leading-[1.7] text-justify hyphens-auto">{children}</li>
+    ),
+    strong: ({ children }) => (
+      <strong className="font-semibold text-gray-900">{children}</strong>
+    ),
+    em: ({ children }) => <em className="italic">{children}</em>,
+    blockquote: ({ children }) => (
+      <blockquote className={`my-4 rounded-r-md border-l-4 px-4 py-3 text-[13px] leading-relaxed ${bqClasses}`}>
+        {children}
+      </blockquote>
+    ),
+    hr: () => <hr className={`my-6 border-t ${hrColor}`} />,
+    table: ({ children }) => (
+      <div className={`mb-5 overflow-x-auto rounded-lg border shadow-sm ${tableBorder}`}>
+        <table className="w-full border-collapse text-[13px]">{children}</table>
+      </div>
+    ),
+    thead: ({ children }) => <thead>{children}</thead>,
+    tbody: ({ children }) => <tbody>{children}</tbody>,
+    th: ({ children }) => (
+      <th className={`border-b ${thBorder} ${thBg} px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-white`}>
+        {children}
+      </th>
+    ),
+    tr: ({ children }) => (
+      <tr className={`transition-colors ${evenRow}`}>{children}</tr>
+    ),
+    td: ({ children }) => (
+      <td className={`border-b ${tdBorder} px-4 py-2.5 text-gray-700`}>{children}</td>
+    ),
+  };
+}
 
 // ──── Configs per disease ─────────────────────────────────────────────────────
 const AGRAVO_CONFIG = {
@@ -94,24 +154,377 @@ const AGRAVO_CONFIG = {
     subtitle: "Boletim semanal — CEVESP/SES-SP",
     divisionLabel: "Divisão de Doenças de Transmissão Respiratória e Ocular",
     headerClass: "bg-blue-900",
-    badgeClass: "bg-blue-700 text-white hover:bg-blue-700",
     accentClass: "bg-blue-700",
+    accent: "blue" as AccentColor,
+    badgeClass: "bg-blue-700 text-white hover:bg-blue-700",
     cardClass: "border-blue-100",
     seLabel: (se: number, ano: number) => `SE ${String(se).padStart(2, "0")}/${ano}`,
     seDisplay: (se: number) => String(se).padStart(2, "0"),
   },
   tracoma: {
     label: "Tracoma",
-    subtitle: "Boletim anual — SINAN/SES-SP",
+    subtitle: "Boletim anual/período — SINAN/SES-SP",
     divisionLabel: "Divisão de Doenças Oculares — Programa de Eliminação do Tracoma",
     headerClass: "bg-teal-900",
+    accentClass: "bg-teal-700",
+    accent: "teal" as AccentColor,
     badgeClass: "bg-teal-700 text-white hover:bg-teal-700",
-    accentClass: "bg-teal-600",
     cardClass: "border-teal-100",
-    seLabel: (_se: number, ano: number) => `Ano ${ano}`,
-    seDisplay: (_se: number) => "ANO",
+    seLabel: (se: number, ano: number) => se > 0 ? `Período ${se}–${ano}` : `Ano ${ano}`,
+    seDisplay: (se: number) => se > 0 ? "PER" : "ANO",
   },
 };
+
+// ──── TracomaMapSection ───────────────────────────────────────────────────────
+function TracomaMapSection({ ano }: { ano: number }) {
+  const { data: rows, isLoading } = useQuery<MapDataRow[]>({
+    queryKey: ["tracoma-map", ano],
+    queryFn: () => fetchJson(`/api/boletins/mapdata?agravo=tracoma&ano=${ano}`)
+  });
+
+  const valueMap = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const row of rows ?? []) {
+      if (row.municipio) m[row.municipio] = row.prevalencia;
+    }
+    return m;
+  }, [rows]);
+
+  const hotspots = useMemo(
+    () => [...(rows ?? [])].sort((a, b) => b.prevalencia - a.prevalencia).slice(0, 6),
+    [rows]
+  );
+
+  if (isLoading) {
+    return (
+      <div className="mb-6 flex h-32 items-center justify-center rounded-lg border border-dashed border-teal-200 text-sm text-teal-400">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        Carregando mapa...
+      </div>
+    );
+  }
+
+  if (!rows?.length) return null;
+
+  return (
+    <div className="mb-8 print:break-inside-avoid">
+      <div className="mb-3 flex items-start gap-2 text-sm font-extrabold uppercase tracking-wider text-teal-900">
+        <span className="mt-0.5 inline-block h-4 w-1.5 shrink-0 rounded-sm bg-teal-600" aria-hidden />
+        <span>Distribuição Geográfica — Prevalência de Tracoma por Município (%)</span>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-[3fr_1fr]">
+        {/* Map */}
+        <div className="overflow-hidden rounded-xl border border-teal-100 shadow-sm">
+          <ChoroplethMap
+            dataUrl="/api/geo/shapefiles?type=municipio"
+            valueMap={valueMap}
+            colorScheme={(v) => {
+              if (v === null || v === undefined) return "#e2e8f0";
+              if (v >= 5)   return "#dc2626";
+              if (v >= 2)   return "#f97316";
+              if (v >= 0.5) return "#fbbf24";
+              return "#6ee7b7";
+            }}
+            label="Prevalência de Tracoma (%)"
+          />
+        </div>
+
+        {/* Sidebar */}
+        <div className="flex flex-col gap-3 text-xs">
+          {/* Hotspots */}
+          <div className="rounded-xl border border-teal-100 bg-teal-50/60 p-3">
+            <p className="mb-2 font-bold uppercase tracking-wide text-teal-900">
+              Maiores prevalências
+            </p>
+            <div className="space-y-1.5">
+              {hotspots.map((row, i) => (
+                <div key={row.municipio} className="flex items-center justify-between gap-1">
+                  <span className="truncate text-gray-700">{i + 1}. {row.municipio}</span>
+                  <span className={`whitespace-nowrap font-bold ${row.prevalencia >= 5 ? "text-red-600" : "text-amber-600"}`}>
+                    {row.prevalencia.toFixed(1)}%
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Legend */}
+          <div className="rounded-xl border border-teal-100 p-3">
+            <p className="mb-2 font-bold uppercase tracking-wide text-teal-900">Legenda</p>
+            <div className="space-y-1.5 text-gray-600">
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-5 shrink-0 rounded-sm" style={{ background: "#dc2626" }} />
+                <span>≥ 5% — acima da meta OMS</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-5 shrink-0 rounded-sm" style={{ background: "#f97316" }} />
+                <span>2 – 5% — atenção</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-5 shrink-0 rounded-sm" style={{ background: "#fbbf24" }} />
+                <span>0,5 – 2% — baixa</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-5 shrink-0 rounded-sm" style={{ background: "#6ee7b7" }} />
+                <span>{"< 0,5%"} — muito baixa</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-5 shrink-0 rounded-sm bg-slate-200" />
+                <span>Sem dados</span>
+              </div>
+            </div>
+          </div>
+
+          <p className="px-1 text-[11px] leading-relaxed text-gray-400">
+            Meta OMS: TF {"< 5%"} em crianças de 1–9 anos para eliminação como problema de saúde pública.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ──── ConjuntiviteMapSection ──────────────────────────────────────────────────
+function ConjuntiviteMapSection({ se, ano }: { se: number; ano: number }) {
+  const { data: rows, isLoading } = useQuery<GveMapRow[]>({
+    queryKey: ["conjuntivite-map", se, ano],
+    queryFn: () => fetchJson(`/api/boletins/mapdata?agravo=conjuntivite&se=${se}&ano=${ano}`)
+  });
+
+  const valueMap = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const row of rows ?? []) {
+      if (row.gve) m[row.gve] = row.casos;
+    }
+    return m;
+  }, [rows]);
+
+  const topGves = useMemo(
+    () => [...(rows ?? [])].sort((a, b) => b.casos - a.casos).slice(0, 6),
+    [rows]
+  );
+
+  if (isLoading) {
+    return (
+      <div className="mb-6 flex h-32 items-center justify-center rounded-lg border border-dashed border-blue-200 text-sm text-blue-400">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        Carregando mapa...
+      </div>
+    );
+  }
+
+  if (!rows?.length) return null;
+
+  const maxCasos = Math.max(...(rows ?? []).map(r => r.casos), 1);
+
+  return (
+    <div className="mb-8 print:break-inside-avoid">
+      <div className="mb-3 flex items-start gap-2 text-sm font-extrabold uppercase tracking-wider text-blue-900">
+        <span className="mt-0.5 inline-block h-4 w-1.5 shrink-0 rounded-sm bg-blue-700" aria-hidden />
+        <span>Distribuição Geográfica — Casos de Conjuntivite por GVE</span>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-[3fr_1fr]">
+        {/* Map */}
+        <div className="overflow-hidden rounded-xl border border-blue-100 shadow-sm">
+          <ChoroplethMap
+            dataUrl="/api/geo/shapefiles?type=gve"
+            valueMap={valueMap}
+            colorScheme={(v) => {
+              if (v === null || v === undefined) return "#e2e8f0";
+              const ratio = v / maxCasos;
+              if (ratio >= 0.75) return "#1d4ed8";
+              if (ratio >= 0.5)  return "#3b82f6";
+              if (ratio >= 0.25) return "#93c5fd";
+              return "#dbeafe";
+            }}
+            label="Casos de Conjuntivite por GVE"
+          />
+        </div>
+
+        {/* Sidebar */}
+        <div className="flex flex-col gap-3 text-xs">
+          <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3">
+            <p className="mb-2 font-bold uppercase tracking-wide text-blue-900">GVEs com mais casos</p>
+            <div className="space-y-1.5">
+              {topGves.map((row, i) => (
+                <div key={row.gve} className="flex items-center justify-between gap-1">
+                  <span className="truncate text-gray-700">{i + 1}. {row.gve}</span>
+                  <span className="whitespace-nowrap font-bold text-blue-700">{row.casos}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-blue-100 p-3">
+            <p className="mb-2 font-bold uppercase tracking-wide text-blue-900">Legenda</p>
+            <div className="space-y-1.5 text-gray-600">
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-5 shrink-0 rounded-sm" style={{ background: "#1d4ed8" }} />
+                <span>Maior concentração</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-5 shrink-0 rounded-sm" style={{ background: "#3b82f6" }} />
+                <span>Alta</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-5 shrink-0 rounded-sm" style={{ background: "#93c5fd" }} />
+                <span>Moderada</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-5 shrink-0 rounded-sm" style={{ background: "#dbeafe" }} />
+                <span>Baixa</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-5 shrink-0 rounded-sm bg-slate-200" />
+                <span>Sem notificação</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ──── ConjuntiviteHistoryTable ────────────────────────────────────────────────
+function ConjuntiviteHistoryTable({ se: currentSe, ano }: { se: number; ano: number }) {
+  const { data: rows, isLoading } = useQuery<SeHistoryRow[]>({
+    queryKey: ["conjuntivite-history", ano],
+    queryFn: () => fetchJson(`/api/boletins/history?agravo=conjuntivite&ano=${ano}`)
+  });
+
+  const totals = useMemo(() => {
+    if (!rows?.length) return null;
+    return rows.reduce(
+      (acc, r) => ({
+        notificacoes: acc.notificacoes + r.notificacoes,
+        casos: acc.casos + r.casos,
+        surtos: acc.surtos + r.surtos,
+        coletas: acc.coletas + r.coletas,
+        acoes: acc.acoes + r.acoes,
+      }),
+      { notificacoes: 0, casos: 0, surtos: 0, coletas: 0, acoes: 0 }
+    );
+  }, [rows]);
+
+  function trend(rows: SeHistoryRow[], idx: number) {
+    if (idx === 0) return null;
+    const curr = rows[idx].casos;
+    const prev = rows[idx - 1].casos;
+    if (!prev && !curr) return null;
+    if (curr > prev) return "↑";
+    if (curr < prev) return "↓";
+    return "→";
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex h-20 items-center justify-center text-sm text-blue-400">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        Carregando histórico...
+      </div>
+    );
+  }
+
+  if (!rows?.length) return null;
+
+  return (
+    <div className="print:break-inside-avoid">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-start gap-2 text-sm font-extrabold uppercase tracking-wider text-blue-900">
+          <span className="mt-0.5 inline-block h-4 w-1.5 shrink-0 rounded-sm bg-blue-700" aria-hidden />
+          <span>Curva Epidêmica — Semanas Epidemiológicas {ano}</span>
+        </div>
+        <span className="text-xs text-muted-foreground">{rows.length} SE com dados</span>
+      </div>
+
+      <div className="overflow-x-auto rounded-xl border border-blue-100 shadow-sm">
+        <table className="w-full border-collapse text-[12px]">
+          <thead>
+            <tr className="bg-blue-800 text-white">
+              <th className="px-3 py-2.5 text-left font-semibold uppercase tracking-wide">SE</th>
+              <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Notificações</th>
+              <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Casos</th>
+              <th className="px-3 py-2.5 text-center font-semibold uppercase tracking-wide">Tendência</th>
+              <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Surtos</th>
+              <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Coletas</th>
+              <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Ações Ed.</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, idx) => {
+              const isCurrent = row.se === currentSe;
+              const t = trend(rows, idx);
+              return (
+                <tr
+                  key={row.se}
+                  className={`border-b transition-colors ${
+                    isCurrent
+                      ? "bg-blue-100 font-semibold"
+                      : idx % 2 === 0 ? "bg-white" : "bg-blue-50/40"
+                  }`}
+                >
+                  <td className="px-3 py-2">
+                    <span className={`inline-flex items-center gap-1.5 ${isCurrent ? "text-blue-800" : "text-gray-600"}`}>
+                      {isCurrent && (
+                        <span className="inline-block h-2 w-2 rounded-full bg-blue-600" />
+                      )}
+                      SE {String(row.se).padStart(2, "0")}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-right text-gray-700">
+                    {row.notificacoes > 0 ? row.notificacoes : <span className="text-gray-300">—</span>}
+                  </td>
+                  <td className="px-3 py-2 text-right font-medium text-gray-900">
+                    {row.casos > 0 ? row.casos.toLocaleString("pt-BR") : <span className="font-normal text-gray-300">—</span>}
+                  </td>
+                  <td className={`px-3 py-2 text-center font-bold ${
+                    t === "↑" ? "text-red-500" : t === "↓" ? "text-green-600" : "text-gray-400"
+                  }`}>
+                    {t ?? "—"}
+                  </td>
+                  <td className="px-3 py-2 text-right text-gray-700">
+                    {row.surtos > 0
+                      ? <span className="font-semibold text-amber-600">{row.surtos}</span>
+                      : <span className="text-gray-300">—</span>}
+                  </td>
+                  <td className="px-3 py-2 text-right text-gray-700">
+                    {row.coletas > 0 ? row.coletas : <span className="text-gray-300">—</span>}
+                  </td>
+                  <td className="px-3 py-2 text-right text-gray-700">
+                    {row.acoes > 0 ? row.acoes : <span className="text-gray-300">—</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+          {totals && (
+            <tfoot>
+              <tr className="border-t-2 border-blue-200 bg-blue-900 text-white text-[11px] font-semibold">
+                <td className="px-3 py-2.5 uppercase tracking-wide">Total {ano}</td>
+                <td className="px-3 py-2.5 text-right">{totals.notificacoes.toLocaleString("pt-BR")}</td>
+                <td className="px-3 py-2.5 text-right">{totals.casos.toLocaleString("pt-BR")}</td>
+                <td className="px-3 py-2.5 text-center text-blue-300">—</td>
+                <td className="px-3 py-2.5 text-right">{totals.surtos > 0 ? totals.surtos : "—"}</td>
+                <td className="px-3 py-2.5 text-right">{totals.coletas > 0 ? totals.coletas : "—"}</td>
+                <td className="px-3 py-2.5 text-right">{totals.acoes > 0 ? totals.acoes : "—"}</td>
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+
+      <p className="mt-1.5 text-[11px] text-gray-400">
+        ↑ aumento · ↓ redução · → estável · {" "}
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block h-2 w-2 rounded-full bg-blue-600" /> SE do boletim atual
+        </span>
+      </p>
+    </div>
+  );
+}
 
 // ──── BulletinDetail ──────────────────────────────────────────────────────────
 function BulletinDetail({ id, onBack }: { id: string; onBack: () => void }) {
@@ -148,6 +561,7 @@ function BulletinDetail({ id, onBack }: { id: string; onBack: () => void }) {
   }
 
   const cfg = data ? AGRAVO_CONFIG[data.agravo] : AGRAVO_CONFIG.conjuntivite;
+  const mdComponents = useMemo(() => makeMdComponents(cfg.accent), [cfg.accent]);
 
   return (
     <div className="mx-auto max-w-4xl p-4 md:p-6">
@@ -205,64 +619,98 @@ function BulletinDetail({ id, onBack }: { id: string; onBack: () => void }) {
       )}
 
       {data && (
-        <article className="overflow-hidden rounded-lg border border-blue-200 bg-white shadow-md print:shadow-none">
-          {/* Top strip */}
-          <div className={`flex flex-wrap items-center justify-between gap-2 bg-blue-950 px-5 py-2 text-[11px] text-blue-200`}>
+        <article className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg print:shadow-none print:border-none">
+
+          {/* Top strip — institutional identity */}
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-blue-950 px-5 py-2 text-[11px] text-blue-200">
             <div className="flex items-center gap-2 font-medium tracking-wide">
               <span className="text-white">ESTADO DE SÃO PAULO</span>
-              <span>·</span>
+              <span className="opacity-40">·</span>
               <span>Secretaria de Estado da Saúde</span>
             </div>
             <span>Centro de Vigilância Epidemiológica &quot;Prof. Alexandre Vranjac&quot;</span>
           </div>
 
           {/* Header */}
-          <div className={`relative overflow-hidden ${cfg.headerClass} px-6 pb-7 pt-5 text-white`}>
-            <div className="pointer-events-none absolute right-4 top-0 select-none text-[9rem] font-black leading-none text-white/10" aria-hidden>
+          <div className={`relative overflow-hidden ${cfg.headerClass} px-8 pb-8 pt-6 text-white`}>
+            {/* Watermark */}
+            <div
+              className="pointer-events-none absolute right-6 top-0 select-none text-[10rem] font-black leading-none text-white/10"
+              aria-hidden
+            >
               {cfg.seDisplay(data.se)}
             </div>
-            <div className="relative flex items-end justify-between gap-4">
+            <div className="relative flex flex-wrap items-end justify-between gap-6">
               <div>
-                <p className="mb-1 text-[11px] uppercase tracking-widest opacity-60">
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] opacity-55">
                   {cfg.divisionLabel}
                 </p>
-                <h1 className="text-3xl font-black leading-tight md:text-4xl">
+                <h1 className="text-4xl font-black leading-tight tracking-tight md:text-5xl">
                   Boletim<br />Epidemiológico
                 </h1>
-                <p className="mt-1 text-sm opacity-75">{cfg.subtitle}</p>
+                <p className="mt-2 text-[13px] font-medium opacity-65">{cfg.subtitle}</p>
               </div>
               <div className="text-right">
-                <div className="text-xs opacity-60">
-                  {data.agravo === "tracoma" ? "Ano de referência" : "Semana Epidemiológica"}
+                <div className="text-[11px] font-medium uppercase tracking-widest opacity-55">
+                  {data.agravo === "conjuntivite"
+                    ? "Semana Epidemiológica"
+                    : data.se > 0 ? "Período" : "Ano de referência"}
                 </div>
-                <div className="text-4xl font-black text-white/90">
-                  {data.agravo === "tracoma" ? data.ano : String(data.se).padStart(2, "0")}
+                <div className={`mt-0.5 font-black leading-none text-white/90 ${data.agravo === "tracoma" && data.se > 0 ? "text-3xl" : "text-5xl"}`}>
+                  {data.agravo === "conjuntivite"
+                    ? String(data.se).padStart(2, "0")
+                    : data.se > 0
+                      ? `${data.se}–${data.ano}`
+                      : data.ano}
                 </div>
                 {data.agravo === "conjuntivite" && (
-                  <div className="text-sm font-semibold opacity-75">{data.ano}</div>
+                  <div className="mt-1 text-sm font-semibold opacity-75">{data.ano}</div>
                 )}
-                <div className="mt-1 text-[11px] opacity-50">
+                <div className="mt-2 text-[11px] opacity-45">
                   Emitido em {new Date(data.created_at).toLocaleDateString("pt-BR")}
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Title strip */}
-          <div className={`${cfg.accentClass} border-b-4 border-opacity-80 px-6 py-4 text-white`}
-               style={{ borderBottomColor: "rgba(255,255,255,0.2)" }}>
+          {/* Title accent strip */}
+          <div
+            className={`${cfg.accentClass} px-8 py-4 text-white`}
+            style={{ borderBottom: "3px solid rgba(255,255,255,0.15)" }}
+          >
             <h2 className="text-base font-bold leading-snug md:text-lg">{data.title}</h2>
           </div>
 
-          {/* Content */}
-          <div className="px-6 pb-8 pt-6 md:px-8">
-            <ReactMarkdown components={mdComponents}>{data.content}</ReactMarkdown>
+          {/* Map — tracoma: municipality prevalence | conjuntivite: GVE cases */}
+          {data.agravo === "tracoma" && (
+            <div className="border-b border-teal-100 bg-teal-50/30 px-8 py-6">
+              <TracomaMapSection ano={data.ano} />
+            </div>
+          )}
+          {data.agravo === "conjuntivite" && data.se > 0 && (
+            <div className="border-b border-blue-100 bg-blue-50/30 px-8 py-6">
+              <ConjuntiviteMapSection se={data.se} ano={data.ano} />
+            </div>
+          )}
+
+          {/* Historical SE table — conjuntivite only */}
+          {data.agravo === "conjuntivite" && data.se > 0 && (
+            <div className="border-b border-blue-100 px-8 py-6">
+              <ConjuntiviteHistoryTable se={data.se} ano={data.ano} />
+            </div>
+          )}
+
+          {/* Markdown content */}
+          <div className="px-8 pb-10 pt-6">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+              {cleanContent(data.content)}
+            </ReactMarkdown>
           </div>
 
           {/* Footer */}
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-blue-100 bg-blue-50 px-6 py-3 text-[11px] text-blue-700">
+          <div className={`flex flex-wrap items-center justify-between gap-2 border-t ${data.agravo === "tracoma" ? "border-teal-100 bg-teal-50 text-teal-700" : "border-blue-100 bg-blue-50 text-blue-700"} px-8 py-3 text-[11px]`}>
             <span>Centro de Vigilância Epidemiológica &quot;Prof. Alexandre Vranjac&quot; | CCD/SES-SP</span>
-            <span className="text-blue-400">{cfg.seLabel(data.se, data.ano)}</span>
+            <span className="opacity-60">{cfg.seLabel(data.se, data.ano)}</span>
           </div>
         </article>
       )}
@@ -270,49 +718,164 @@ function BulletinDetail({ id, onBack }: { id: string; onBack: () => void }) {
   );
 }
 
-// ──── GenerateButton ──────────────────────────────────────────────────────────
-function GenerateButton({
-  agravo,
-  onSuccess
-}: {
-  agravo: Agravo;
-  onSuccess: (id: string) => void;
-}) {
+// ──── ConjuntiviteGenerateSection ─────────────────────────────────────────────
+function ConjuntiviteGenerateSection({ onSuccess }: { onSuccess: (id: string) => void }) {
   const queryClient = useQueryClient();
-  const nextSE = useMemo(() => lastCompleteWeek(), []);
+  const currentYear = new Date().getFullYear();
+
+  // Default: 2 weeks back (notifications from this week refer to last/2-weeks-ago SE)
+  const defaultSE = useMemo(() => {
+    const week = Math.ceil(
+      (Date.now() - new Date(currentYear, 0, 1).getTime()) / (7 * 864e5)
+    );
+    return Math.max(1, week - 2);
+  }, [currentYear]);
+
+  const [se, setSe]   = useState(defaultSE);
+  const [ano, setAno] = useState(currentYear);
   const [skipped, setSkipped] = useState(false);
+
+  const years = useMemo(() => Array.from({ length: 10 }, (_, i) => currentYear - i), [currentYear]);
+  const maxSE  = ano === currentYear ? Math.min(53, defaultSE + 2) : 53;
+  const seList = useMemo(() => Array.from({ length: maxSE }, (_, i) => i + 1), [maxSE]);
 
   const mutation = useMutation({
     mutationFn: () =>
       fetchJson<{ id?: string; skipped?: boolean; se: number; ano: number; agravo: Agravo }>(
         "/api/boletins",
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agravo }) }
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agravo: "conjuntivite", se, ano }) }
       ),
     onSuccess: async result => {
-      await queryClient.invalidateQueries({ queryKey: ["bulletins", agravo] });
+      await queryClient.invalidateQueries({ queryKey: ["bulletins", "conjuntivite"] });
       setSkipped(Boolean(result.skipped));
       if (result.id) onSuccess(result.id);
     }
   });
 
-  const cfg = AGRAVO_CONFIG[agravo];
-  const hint = agravo === "tracoma"
-    ? `Ano ${new Date().getFullYear()}`
-    : `Próxima SE: ${nextSE.se}/${nextSE.ano}`;
-
   return (
-    <div className="flex flex-col items-end gap-1">
+    <div className="flex flex-col items-end gap-2">
+      <div className="flex items-center gap-2 text-xs">
+        <label className="text-muted-foreground">Ano</label>
+        <select
+          value={ano}
+          onChange={e => { setAno(Number(e.target.value)); setSe(1); }}
+          className="rounded border border-blue-200 bg-white px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+        >
+          {years.map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+        <label className="text-muted-foreground">SE</label>
+        <select
+          value={se}
+          onChange={e => setSe(Number(e.target.value))}
+          className="rounded border border-blue-200 bg-white px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+        >
+          {seList.map(s => (
+            <option key={s} value={s}>
+              {String(s).padStart(2, "0")}{s === defaultSE && ano === currentYear ? " (padrão)" : ""}
+            </option>
+          ))}
+        </select>
+      </div>
+
       <Button
         onClick={() => { setSkipped(false); mutation.mutate(); }}
         disabled={mutation.isPending}
-        className={agravo === "tracoma" ? "bg-teal-700 hover:bg-teal-800" : "bg-blue-700 hover:bg-blue-800"}
+        className="bg-blue-700 hover:bg-blue-800"
       >
         {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-        Gerar boletim de {cfg.label}
+        Gerar SE {String(se).padStart(2, "0")}/{ano}
       </Button>
-      <span className="text-xs text-muted-foreground">
-        {mutation.isPending ? "Gerando…" : hint}
-      </span>
+
+      {mutation.error && (
+        <span className="text-xs text-red-600">
+          {mutation.error instanceof Error ? mutation.error.message : "Erro ao gerar"}
+        </span>
+      )}
+      {skipped && !mutation.isPending && (
+        <span className="text-xs text-amber-600">Boletim já existe — abrindo o existente…</span>
+      )}
+    </div>
+  );
+}
+
+// ──── TracomaGenerateSection ──────────────────────────────────────────────────
+function TracomaGenerateSection({ onSuccess }: { onSuccess: (id: string) => void }) {
+  const queryClient = useQueryClient();
+  const currentYear = new Date().getFullYear();
+  const [tipo, setTipo] = useState<"anual" | "periodo">("anual");
+  const [ano, setAno]         = useState(currentYear);
+  const [anoInicio, setAnoInicio] = useState(currentYear - 2);
+  const [skipped, setSkipped] = useState(false);
+
+  const mutation = useMutation({
+    mutationFn: () => {
+      const body: Record<string, unknown> = { agravo: "tracoma", ano };
+      if (tipo === "periodo") body.anoInicio = anoInicio;
+      return fetchJson<{ id?: string; skipped?: boolean; se: number; ano: number; agravo: Agravo }>(
+        "/api/boletins",
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+      );
+    },
+    onSuccess: async result => {
+      await queryClient.invalidateQueries({ queryKey: ["bulletins", "tracoma"] });
+      setSkipped(Boolean(result.skipped));
+      if (result.id) onSuccess(result.id);
+    }
+  });
+
+  const years = Array.from({ length: 15 }, (_, i) => currentYear - i);
+
+  return (
+    <div className="flex flex-col items-end gap-2">
+      {/* Tipo toggle */}
+      <div className="flex rounded-lg border border-teal-200 bg-white text-xs overflow-hidden">
+        {(["anual", "periodo"] as const).map(t => (
+          <button
+            key={t}
+            onClick={() => setTipo(t)}
+            className={`px-3 py-1.5 font-medium transition ${
+              tipo === t ? "bg-teal-700 text-white" : "text-teal-700 hover:bg-teal-50"
+            }`}
+          >
+            {t === "anual" ? "Anual" : "Período"}
+          </button>
+        ))}
+      </div>
+
+      {/* Year selectors */}
+      <div className="flex items-center gap-2 text-xs">
+        {tipo === "periodo" && (
+          <>
+            <label className="text-muted-foreground">De</label>
+            <select
+              value={anoInicio}
+              onChange={e => setAnoInicio(Number(e.target.value))}
+              className="rounded border border-teal-200 bg-white px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-teal-500"
+            >
+              {years.filter(y => y < ano).map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+            <label className="text-muted-foreground">até</label>
+          </>
+        )}
+        {tipo === "anual" && <label className="text-muted-foreground">Ano</label>}
+        <select
+          value={ano}
+          onChange={e => setAno(Number(e.target.value))}
+          className="rounded border border-teal-200 bg-white px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-teal-500"
+        >
+          {years.map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+      </div>
+
+      <Button
+        onClick={() => { setSkipped(false); mutation.mutate(); }}
+        disabled={mutation.isPending || (tipo === "periodo" && anoInicio >= ano)}
+        className="bg-teal-700 hover:bg-teal-800"
+      >
+        {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+        {tipo === "anual" ? `Gerar boletim ${ano}` : `Gerar período ${anoInicio}–${ano}`}
+      </Button>
+
       {mutation.error && (
         <span className="text-xs text-red-600">
           {mutation.error instanceof Error ? mutation.error.message : "Erro ao gerar"}
@@ -361,20 +924,26 @@ function BulletinList({ agravo, onSelect }: { agravo: Agravo; onSelect: (id: str
     );
   }
 
+  const isTeal = agravo === "tracoma";
+
   return (
     <div className="space-y-2">
       {bulletins.map(b => (
         <button
           key={b.id}
           onClick={() => onSelect(b.id)}
-          className={`grid w-full grid-cols-[auto_1fr_auto] items-center gap-3 rounded-md border bg-background p-3 text-left transition hover:border-${agravo === "tracoma" ? "teal" : "blue"}-500 hover:bg-${agravo === "tracoma" ? "teal" : "blue"}-50/50`}
+          className={`grid w-full grid-cols-[auto_1fr_auto] items-center gap-3 rounded-lg border bg-background p-3 text-left transition hover:shadow-sm ${
+            isTeal ? "hover:border-teal-400 hover:bg-teal-50/40" : "hover:border-blue-400 hover:bg-blue-50/40"
+          }`}
         >
-          <div className={`rounded-md px-3 py-2 text-center text-white ${agravo === "tracoma" ? "bg-teal-800" : "bg-blue-900"}`}>
-            <div className="text-[10px] font-medium tracking-widest opacity-60">
-              {agravo === "tracoma" ? "ANO" : "SE"}
+          <div className={`rounded-lg px-3 py-2 text-center text-white ${isTeal ? "bg-teal-800" : "bg-blue-900"}`}>
+            <div className="text-[10px] font-semibold tracking-widest opacity-60">
+              {isTeal ? (b.se > 0 ? "PER" : "ANO") : "SE"}
             </div>
-            <div className="text-lg font-bold leading-none">
-              {agravo === "tracoma" ? b.ano : String(b.se).padStart(2, "0")}
+            <div className={`font-black leading-none ${isTeal && b.se > 0 ? "text-sm" : "text-lg"}`}>
+              {isTeal
+                ? (b.se > 0 ? `${b.se}–${b.ano}` : b.ano)
+                : String(b.se).padStart(2, "0")}
             </div>
           </div>
           <div className="min-w-0">
@@ -388,7 +957,11 @@ function BulletinList({ agravo, onSelect }: { agravo: Agravo; onSelect: (id: str
         </button>
       ))}
       <div className="pt-1 text-right">
-        <Button variant="ghost" size="sm" onClick={() => queryClient.invalidateQueries({ queryKey: ["bulletins", agravo] })}>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => queryClient.invalidateQueries({ queryKey: ["bulletins", agravo] })}
+        >
           <RefreshCw className="h-3.5 w-3.5" />
           Atualizar
         </Button>
@@ -426,16 +999,16 @@ export function BulletinsView() {
       </div>
 
       {/* Disease tabs */}
-      <div className="flex gap-1 rounded-lg border bg-muted/30 p-1">
+      <div className="flex gap-1 rounded-xl border bg-muted/30 p-1">
         {tabs.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition ${
+            className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition ${
               activeTab === tab.id
                 ? tab.id === "tracoma"
-                  ? "bg-teal-800 text-white shadow"
-                  : "bg-blue-800 text-white shadow"
+                  ? "bg-teal-800 text-white shadow-sm"
+                  : "bg-blue-800 text-white shadow-sm"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
@@ -448,16 +1021,19 @@ export function BulletinsView() {
       {/* Content per tab */}
       <div className="space-y-4">
         {/* Header strip for active disease */}
-        <div className={`flex flex-wrap items-center justify-between gap-3 rounded-lg px-4 py-3 ${
+        <div className={`flex flex-wrap items-center justify-between gap-3 rounded-xl px-5 py-4 ${
           activeTab === "tracoma" ? "bg-teal-50 border border-teal-100" : "bg-blue-50 border border-blue-100"
         }`}>
           <div>
-            <div className={`text-sm font-semibold ${activeTab === "tracoma" ? "text-teal-900" : "text-blue-900"}`}>
+            <div className={`text-sm font-bold ${activeTab === "tracoma" ? "text-teal-900" : "text-blue-900"}`}>
               {AGRAVO_CONFIG[activeTab].label}
             </div>
             <div className="text-xs text-muted-foreground">{AGRAVO_CONFIG[activeTab].subtitle}</div>
           </div>
-          <GenerateButton agravo={activeTab} onSuccess={id => setSelectedId(id)} />
+          {activeTab === "conjuntivite"
+            ? <ConjuntiviteGenerateSection onSuccess={id => setSelectedId(id)} />
+            : <TracomaGenerateSection onSuccess={id => setSelectedId(id)} />
+          }
         </div>
 
         {/* Bulletin list */}
