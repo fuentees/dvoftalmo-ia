@@ -703,7 +703,7 @@ function BulletinDetail({ id, onBack }: { id: string; onBack: () => void }) {
       if (!data) throw new Error("Boletim não carregado");
       const body: Record<string, unknown> = { agravo: data.agravo, force: true };
       if (data.agravo === "conjuntivite") { body.se = data.se; body.ano = data.ano; }
-      else { body.ano = data.ano; }
+      else { body.ano = data.ano; if (data.se > 0) body.anoInicio = data.se; }
       return fetchJson<{ ok: boolean; error?: string }>(
         "/api/boletins",
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
