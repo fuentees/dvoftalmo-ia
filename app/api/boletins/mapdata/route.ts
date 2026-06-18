@@ -70,8 +70,7 @@ export async function GET(request: Request) {
       .from("cevesp_notificacoes")
       .select('"GVE_NOME", "TotalCaso"')
       .eq("ANO", ano)
-      .eq("SemEpidemio", se)
-      .or("Excluido.eq.0,Excluido.is.null");
+      .eq("SemEpidemio", se);
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 

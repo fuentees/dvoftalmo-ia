@@ -56,8 +56,7 @@ async function fetchCevespWeek(supabase: ReturnType<typeof createAdminClient>, s
       '"NuEncamimento"'
     ].join(","))
     .eq("ANO", ano)
-    .eq("SemEpidemio", se)
-    .or("Excluido.eq.0,Excluido.is.null");
+    .eq("SemEpidemio", se);
   return (data ?? []) as unknown as Record<string, unknown>[];
 }
 

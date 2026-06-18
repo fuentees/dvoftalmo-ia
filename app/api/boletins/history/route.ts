@@ -104,8 +104,7 @@ export async function GET(request: Request) {
       '"NuTreinamento"',
       '"NuEncamimento"',
     ].join(","))
-    .eq("ANO", ano)
-    .or("Excluido.eq.0,Excluido.is.null");
+    .eq("ANO", ano);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 

@@ -129,7 +129,7 @@ export async function GET(request: NextRequest) {
     const allRows: Record<string, unknown>[] = [];
     for (const ano of years) {
       const [rows] = await conn.query(
-        `SELECT * FROM \`${table}\` WHERE ANO = ? AND (Excluido = 0 OR Excluido IS NULL)`,
+        `SELECT * FROM \`${table}\` WHERE ANO = ?`,
         [ano]
       ) as [Array<Record<string, unknown>>, unknown];
       allRows.push(...rows.map(clean));
