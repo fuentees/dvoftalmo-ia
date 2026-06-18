@@ -3,12 +3,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
-function isSurto(row: Record<string, unknown>) {
-  return ["1", "s", "sim", "true", "x"].includes(
-    String(row["Surto"] ?? "").trim().toLowerCase()
-  );
-}
-
 function getValue(raw: Record<string, unknown>, candidates: string[]): unknown {
   const keys = Object.keys(raw);
   for (const c of candidates) {
@@ -37,8 +31,8 @@ export async function GET(request: Request) {
   // ── Tracoma: série histórica por ano (todos os dados disponíveis) ───────────
   if (agravo === "tracoma") {
     const [{ data: notData, error: notErr }, { data: tracData, error: tracErr }] = await Promise.all([
-      admin.from("sinan_tracoma_rows").select("ano, municipio, raw").eq("source_bank", "nottraconet"),
-      admin.from("sinan_tracoma_rows").select("ano, classificacao").eq("source_bank", "traconet"),
+      admin.from("sinan_tracoma_rows").select("ano, municipio, raw").eq("source_bank", "nottraconet").limit(200000),
+      admin.from("sinan_tracoma_rows").select("ano, classificacao").eq("source_bank", "traconet").limit(200000),
     ]);
 
     if (notErr) return NextResponse.json({ error: notErr.message }, { status: 500 });
