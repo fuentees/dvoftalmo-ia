@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generateCompletion } from "@/services/ai/provider";
+import { nomeMunicipio, gvePorCodigo } from "@/lib/municipios-sp";
 
 export interface TracomaBulletinOptions {
   ano?: number;
@@ -68,11 +69,11 @@ function processNottraconet(rows: NottraconetRow[]): AggResult {
     const trat = toNum(getValue(raw, FIELD.tratados));
     totalExam += exam; totalPos += pos; totalTrat += trat;
 
-    const muni = row.municipio ?? "Não informado";
+    const muni = nomeMunicipio(row.municipio);
     if (!muniMap[muni]) muniMap[muni] = { exam: 0, pos: 0, trat: 0 };
     muniMap[muni].exam += exam; muniMap[muni].pos += pos; muniMap[muni].trat += trat;
 
-    const gve = row.gve ?? "Não informado";
+    const gve = (row.gve ? String(row.gve).trim() : null) ?? gvePorCodigo(row.municipio) ?? "Não informado";
     if (!gveMap[gve]) gveMap[gve] = { exam: 0, pos: 0 };
     gveMap[gve].exam += exam; gveMap[gve].pos += pos;
   }

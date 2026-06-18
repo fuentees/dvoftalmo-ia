@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { nomeMunicipio, gvePorCodigo } from "@/lib/municipios-sp";
 
 // ── NOTTRACONET field lookup ──────────────────────────────────────────────────
 function getValue(raw: Record<string, unknown>, candidates: string[]): unknown {
@@ -43,8 +44,8 @@ export async function GET(request: Request) {
       const raw = (row.raw ?? {}) as Record<string, unknown>;
       const exam = toNum(getValue(raw, EXAM_FIELDS));
       const pos  = toNum(getValue(raw, POS_FIELDS));
-      const muni = String(row.municipio ?? "Não informado");
-      const gve  = String(row.gve ?? "");
+      const muni = nomeMunicipio(row.municipio);
+      const gve  = (row.gve ? String(row.gve).trim() : null) ?? gvePorCodigo(row.municipio) ?? "";
       if (!muniMap[muni]) muniMap[muni] = { exam: 0, pos: 0, gve };
       muniMap[muni].exam += exam;
       muniMap[muni].pos  += pos;
