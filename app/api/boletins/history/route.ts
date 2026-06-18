@@ -87,54 +87,44 @@ export async function GET(request: Request) {
     return NextResponse.json(result);
   }
 
-  // ── Conjuntivite: curva epidêmica por SE ────────────────────────────────────
+  // ── Conjuntivite: curva epidêmica por SE via cevesp_aggregate ───────────────
+  // Aggregate server-side to avoid Supabase's 1000-row default limit when the
+  // cache has tens of thousands of rows per year.
   if (agravo !== "conjuntivite" || ano < 2000) {
     return NextResponse.json([]);
   }
 
-  const { data, error } = await admin
-    .from("cevesp_notificacoes")
-    .select([
-      '"SemEpidemio"',
-      '"TotalCaso"',
-      '"Surto"',
-      '"NuSurto"',
-      '"NuColetaMaterialBio"',
-      '"NuAcaoEducativa"',
-      '"NuTreinamento"',
-      '"NuEncamimento"',
-    ].join(","))
-    .eq("ANO", ano);
+  const [casosRes, notifRes, surtosRes, coletasRes, acoesRes] = await Promise.all([
+    admin.rpc("cevesp_aggregate", { p_metric: "total_casos",      p_dimension: "se", p_ano_start: ano, p_ano_end: ano, p_lim: 53 }),
+    admin.rpc("cevesp_aggregate", { p_metric: "notificacoes",     p_dimension: "se", p_ano_start: ano, p_ano_end: ano, p_lim: 53 }),
+    admin.rpc("cevesp_aggregate", { p_metric: "surtos",           p_dimension: "se", p_ano_start: ano, p_ano_end: ano, p_lim: 53 }),
+    admin.rpc("cevesp_aggregate", { p_metric: "coletas",          p_dimension: "se", p_ano_start: ano, p_ano_end: ano, p_lim: 53 }),
+    admin.rpc("cevesp_aggregate", { p_metric: "acoes_educativas", p_dimension: "se", p_ano_start: ano, p_ano_end: ano, p_lim: 53 }),
+  ]);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (casosRes.error) return NextResponse.json({ error: casosRes.error.message }, { status: 500 });
 
-  type SeEntry = {
-    notificacoes: number;
-    casos: number;
-    surtos: number;
-    coletas: number;
-    acoes: number;
-    treinamentos: number;
-    encaminhamentos: number;
-  };
+  type AggRow = { label: string; valor: number };
 
-  const seMap: Record<number, SeEntry> = {};
+  const seMap: Record<number, { notificacoes: number; casos: number; surtos: number; coletas: number; acoes: number }> = {};
 
-  for (const row of (data ?? []) as unknown as Record<string, unknown>[]) {
-    const se = Number(row["SemEpidemio"] ?? 0);
-    if (!se || se > 53) continue;
-    if (!seMap[se]) seMap[se] = { notificacoes: 0, casos: 0, surtos: 0, coletas: 0, acoes: 0, treinamentos: 0, encaminhamentos: 0 };
-    seMap[se].notificacoes++;
-    seMap[se].casos       += Number(row["TotalCaso"] ?? 0);
-    seMap[se].surtos      += isSurto(row) ? 1 : 0;
-    seMap[se].coletas     += Number(row["NuColetaMaterialBio"] ?? 0);
-    seMap[se].acoes       += Number(row["NuAcaoEducativa"] ?? 0);
-    seMap[se].treinamentos += Number(row["NuTreinamento"] ?? 0);
-    seMap[se].encaminhamentos += Number(row["NuEncamimento"] ?? 0);
+  function mergeAgg(data: AggRow[] | null, field: "notificacoes" | "casos" | "surtos" | "coletas" | "acoes") {
+    for (const row of data ?? []) {
+      const se = Number(row.label);
+      if (!se || se > 53) continue;
+      if (!seMap[se]) seMap[se] = { notificacoes: 0, casos: 0, surtos: 0, coletas: 0, acoes: 0 };
+      seMap[se][field] = Number(row.valor ?? 0);
+    }
   }
 
+  mergeAgg(casosRes.data  as AggRow[], "casos");
+  mergeAgg(notifRes.data  as AggRow[], "notificacoes");
+  mergeAgg(surtosRes.data as AggRow[], "surtos");
+  mergeAgg(coletasRes.data as AggRow[], "coletas");
+  mergeAgg(acoesRes.data  as AggRow[], "acoes");
+
   const result = Object.entries(seMap)
-    .map(([se, d]) => ({ se: Number(se), ...d }))
+    .map(([se, d]) => ({ se: Number(se), ...d, treinamentos: 0, encaminhamentos: 0 }))
     .sort((a, b) => a.se - b.se);
 
   return NextResponse.json(result);
