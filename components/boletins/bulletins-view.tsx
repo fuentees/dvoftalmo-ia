@@ -549,21 +549,24 @@ function TracomaHistoryTable({ ano: currentAno }: { ano: number }) {
     return `${v.toFixed(1).replace(".", ",")}%`;
   }
 
+  // Show only years up to (and including) the bulletin's reference year
+  const filteredRows = useMemo(() => rows?.filter(r => r.ano <= currentAno) ?? [], [rows, currentAno]);
+
   const totals = useMemo(() => {
-    if (!rows?.length) return null;
-    const exam = rows.reduce((s, r) => s + r.examinados, 0);
-    const pos  = rows.reduce((s, r) => s + r.positivos, 0);
-    const trat = rows.reduce((s, r) => s + r.tratados, 0);
+    if (!filteredRows.length) return null;
+    const exam = filteredRows.reduce((s, r) => s + r.examinados, 0);
+    const pos  = filteredRows.reduce((s, r) => s + r.positivos, 0);
+    const trat = filteredRows.reduce((s, r) => s + r.tratados, 0);
     return {
       examinados: exam,
       positivos: pos,
       tratados: trat,
-      traconet: rows.reduce((s, r) => s + r.traconet, 0),
-      tt: rows.reduce((s, r) => s + r.tt, 0),
+      traconet: filteredRows.reduce((s, r) => s + r.traconet, 0),
+      tt: filteredRows.reduce((s, r) => s + r.tt, 0),
       prevalencia: exam > 0 ? (pos / exam) * 100 : 0,
       cobertura: pos > 0 ? (trat / pos) * 100 : 0,
     };
-  }, [rows]);
+  }, [filteredRows]);
 
   if (isLoading) {
     return (
@@ -574,7 +577,7 @@ function TracomaHistoryTable({ ano: currentAno }: { ano: number }) {
     );
   }
 
-  if (!rows?.length) return null;
+  if (!filteredRows.length) return null;
 
   return (
     <div className="print:break-inside-avoid">
@@ -583,7 +586,7 @@ function TracomaHistoryTable({ ano: currentAno }: { ano: number }) {
           <span className="mt-0.5 inline-block h-4 w-1.5 shrink-0 rounded-sm bg-teal-600" aria-hidden />
           <span>Série Histórica — Examinados e Casos por Ano</span>
         </div>
-        <span className="text-xs text-muted-foreground">{rows.length} anos com dados</span>
+        <span className="text-xs text-muted-foreground">{filteredRows.length} anos com dados</span>
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-teal-100 shadow-sm">
@@ -602,7 +605,7 @@ function TracomaHistoryTable({ ano: currentAno }: { ano: number }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, idx) => {
+            {filteredRows.map((row, idx) => {
               const isCurrent = row.ano === currentAno;
               const aboveMeta = row.prevalencia >= 5;
               return (
@@ -652,7 +655,7 @@ function TracomaHistoryTable({ ano: currentAno }: { ano: number }) {
               );
             })}
           </tbody>
-          {totals && rows.length > 1 && (
+          {totals && filteredRows.length > 1 && (
             <tfoot>
               <tr className="border-t-2 border-teal-200 bg-teal-900 text-white text-[11px] font-semibold">
                 <td className="px-3 py-2.5 uppercase tracking-wide">Total</td>
