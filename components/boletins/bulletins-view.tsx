@@ -407,9 +407,12 @@ function ConjuntiviteHistoryTable({ se: currentSe, ano }: { se: number; ano: num
     queryFn: () => fetchJson(`/api/boletins/history?agravo=conjuntivite&ano=${ano}`)
   });
 
+  // Only show SEs up to (and including) the bulletin's reference week
+  const filteredRows = useMemo(() => rows?.filter(r => r.se <= currentSe) ?? [], [rows, currentSe]);
+
   const totals = useMemo(() => {
-    if (!rows?.length) return null;
-    return rows.reduce(
+    if (!filteredRows.length) return null;
+    return filteredRows.reduce(
       (acc, r) => ({
         notificacoes: acc.notificacoes + r.notificacoes,
         casos: acc.casos + r.casos,
@@ -419,7 +422,7 @@ function ConjuntiviteHistoryTable({ se: currentSe, ano }: { se: number; ano: num
       }),
       { notificacoes: 0, casos: 0, surtos: 0, coletas: 0, acoes: 0 }
     );
-  }, [rows]);
+  }, [filteredRows]);
 
   function trend(rows: SeHistoryRow[], idx: number) {
     if (idx === 0) return null;
@@ -440,7 +443,7 @@ function ConjuntiviteHistoryTable({ se: currentSe, ano }: { se: number; ano: num
     );
   }
 
-  if (!rows?.length) return null;
+  if (!filteredRows.length) return null;
 
   return (
     <div className="print:break-inside-avoid">
@@ -449,7 +452,7 @@ function ConjuntiviteHistoryTable({ se: currentSe, ano }: { se: number; ano: num
           <span className="mt-0.5 inline-block h-4 w-1.5 shrink-0 rounded-sm bg-blue-700" aria-hidden />
           <span>Curva Epidêmica — Semanas Epidemiológicas {ano}</span>
         </div>
-        <span className="text-xs text-muted-foreground">{rows.length} SE com dados</span>
+        <span className="text-xs text-muted-foreground">{filteredRows.length} SE com dados</span>
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-blue-100 shadow-sm">
@@ -466,9 +469,9 @@ function ConjuntiviteHistoryTable({ se: currentSe, ano }: { se: number; ano: num
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, idx) => {
+            {filteredRows.map((row, idx) => {
               const isCurrent = row.se === currentSe;
-              const t = trend(rows, idx);
+              const t = trend(filteredRows, idx);
               return (
                 <tr
                   key={row.se}
