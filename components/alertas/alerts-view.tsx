@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, AlertTriangle, CheckCircle, Info } from "lucide-react";
+import { AlertCircle, AlertTriangle, CheckCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,25 +10,24 @@ import { Card, CardContent } from "@/components/ui/card";
 interface EpiAlert {
   id: string;
   gve: string;
-  se: number;
+  se_epidemiologica: number;
   ano: number;
-  cases: number;
-  moving_avg: number;
-  pct_increase: number;
-  severity: "low" | "medium" | "high";
+  cases_current: number;
+  cases_avg: number;
+  increase_pct: number;
+  severity: "warning" | "critical";
   acknowledged: boolean;
   created_at: string;
 }
 
 const severityConfig = {
-  high: { label: "Alta", icon: AlertCircle, cls: "border-red-200 bg-red-50 text-red-700" },
-  medium: { label: "Média", icon: AlertTriangle, cls: "border-amber-200 bg-amber-50 text-amber-700" },
-  low: { label: "Baixa", icon: Info, cls: "border-blue-200 bg-blue-50 text-blue-700" }
+  critical: { label: "Crítica", icon: AlertCircle, cls: "border-red-200 bg-red-50 text-red-700" },
+  warning:  { label: "Atenção", icon: AlertTriangle, cls: "border-amber-200 bg-amber-50 text-amber-700" },
 };
 
 export function AlertsView() {
   const qc = useQueryClient();
-  const [filter, setFilter] = useState<"pending" | "high" | "all">("pending");
+  const [filter, setFilter] = useState<"pending" | "critical" | "all">("pending");
 
   const { data: alerts = [], isLoading } = useQuery<EpiAlert[]>({
     queryKey: ["alerts"],
@@ -45,11 +44,11 @@ export function AlertsView() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["alerts"] })
   });
 
-  const pending = alerts.filter((alert) => !alert.acknowledged).length;
-  const high = alerts.filter((alert) => alert.severity === "high" && !alert.acknowledged).length;
-  const visible = useMemo(() => {
-    if (filter === "pending") return alerts.filter((alert) => !alert.acknowledged);
-    if (filter === "high") return alerts.filter((alert) => alert.severity === "high");
+  const pending  = alerts.filter((a) => !a.acknowledged).length;
+  const critical = alerts.filter((a) => a.severity === "critical" && !a.acknowledged).length;
+  const visible  = useMemo(() => {
+    if (filter === "pending")  return alerts.filter((a) => !a.acknowledged);
+    if (filter === "critical") return alerts.filter((a) => a.severity === "critical");
     return alerts;
   }, [alerts, filter]);
 
@@ -73,8 +72,8 @@ export function AlertsView() {
               <p className="text-lg font-semibold tabular-nums">{pending}</p>
             </div>
             <div className="rounded-md border bg-background px-3 py-2">
-              <p className="text-muted-foreground">Alta</p>
-              <p className="text-lg font-semibold tabular-nums text-red-600">{high}</p>
+              <p className="text-muted-foreground">Críticos</p>
+              <p className="text-lg font-semibold tabular-nums text-red-600">{critical}</p>
             </div>
             <div className="rounded-md border bg-background px-3 py-2">
               <p className="text-muted-foreground">Total</p>
@@ -87,9 +86,9 @@ export function AlertsView() {
       <div className="space-y-4 p-6">
         <div className="flex flex-wrap gap-2 rounded-md border bg-card p-1">
           {[
-            { id: "pending", label: "Pendentes" },
-            { id: "high", label: "Alta prioridade" },
-            { id: "all", label: "Todos" }
+            { id: "pending",  label: "Pendentes" },
+            { id: "critical", label: "Críticos" },
+            { id: "all",      label: "Todos" }
           ].map((item) => (
             <button
               key={item.id}
@@ -117,7 +116,7 @@ export function AlertsView() {
 
         <div className="grid gap-3">
           {visible.map((alert) => {
-            const cfg = severityConfig[alert.severity];
+            const cfg  = severityConfig[alert.severity] ?? severityConfig.warning;
             const Icon = cfg.icon;
             return (
               <Card key={alert.id} className={alert.acknowledged ? "opacity-60" : ""}>
@@ -129,12 +128,12 @@ export function AlertsView() {
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-semibold">{alert.gve}</p>
                       <Badge className={cfg.cls}>{cfg.label}</Badge>
-                      <span className="text-xs text-muted-foreground">SE {alert.se}/{alert.ano}</span>
+                      <span className="text-xs text-muted-foreground">SE {alert.se_epidemiologica}/{alert.ano}</span>
                     </div>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      <strong className="text-foreground">{alert.cases}</strong> casos registrados; média móvel de{" "}
-                      <strong className="text-foreground">{alert.moving_avg.toFixed(1)}</strong> e aumento de{" "}
-                      <strong className="text-foreground">{alert.pct_increase.toFixed(0)}%</strong>.
+                      <strong className="text-foreground">{alert.cases_current}</strong> casos registrados; média móvel de{" "}
+                      <strong className="text-foreground">{alert.cases_avg.toFixed(1)}</strong> e aumento de{" "}
+                      <strong className="text-foreground">{alert.increase_pct.toFixed(0)}%</strong>.
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">{new Date(alert.created_at).toLocaleString("pt-BR")}</p>
                   </div>

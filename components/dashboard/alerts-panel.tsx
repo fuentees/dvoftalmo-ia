@@ -7,18 +7,17 @@ import Link from "next/link";
 interface EpiAlert {
   id: string;
   gve: string;
-  se: number;
+  se_epidemiologica: number;
   ano: number;
-  pct_increase: number;
-  severity: "low" | "medium" | "high";
+  increase_pct: number;
+  severity: "warning" | "critical";
   acknowledged: boolean;
   created_at: string;
 }
 
 const severityIcon = {
-  high:   <AlertCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />,
-  medium: <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />,
-  low:    <Bell className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+  critical: <AlertCircle  className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />,
+  warning:  <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />,
 };
 
 export function AlertsPanel() {
@@ -58,9 +57,9 @@ export function AlertsPanel() {
       <div className="space-y-2">
         {pending.slice(0, 3).map(a => (
           <div key={a.id} className="flex items-start gap-2 text-sm text-red-800 dark:text-red-300">
-            {severityIcon[a.severity]}
+            {severityIcon[a.severity] ?? severityIcon.warning}
             <span className="flex-1">
-              <strong>{a.gve}</strong> — SE {a.se}/{a.ano} (+{a.pct_increase.toFixed(0)}%)
+              <strong>{a.gve}</strong> — SE {a.se_epidemiologica}/{a.ano} (+{a.increase_pct.toFixed(0)}%)
             </span>
             <button onClick={() => ack.mutate(a.id)} disabled={ack.isPending}
               className="shrink-0 ml-2 text-xs text-red-600 hover:text-red-700 dark:text-red-400">
