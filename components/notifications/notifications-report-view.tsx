@@ -273,13 +273,20 @@ function CevespRatesPanel({ data }: { data: CevespRatesData }) {
   );
 }
 
-const REPORT_YEARS = Array.from({ length: new Date().getFullYear() - 1999 }, (_, i) => new Date().getFullYear() - i);
-
 export function NotificationsReportView() {
   const [tab, setTab] = useState<HubTab>("situacao");
   const [question, setQuestion] = useState("Total de casos por GVE dos últimos 5 anos por mês");
   const [showEndemic, setShowEndemic] = useState(false);
   const [selectedYear, setSelectedYear] = useState<number | undefined>(undefined);
+
+  const anosQuery = useQuery<{ anos: number[] }>({
+    queryKey: ["cevesp-anos"],
+    queryFn: async () => {
+      const res = await fetch("/api/cevesp/anos");
+      return res.json() as Promise<{ anos: number[] }>;
+    },
+    staleTime: 10 * 60 * 1000
+  });
 
   const report = useQuery<ReportData>({
     queryKey: ["notifications-report", selectedYear],
@@ -397,9 +404,10 @@ export function NotificationsReportView() {
               value={selectedYear ?? ""}
               onChange={e => setSelectedYear(e.target.value ? Number(e.target.value) : undefined)}
               className="h-9 rounded-md border bg-background px-2 text-sm"
+              disabled={anosQuery.isLoading}
             >
               <option value="">Todos os anos</option>
-              {REPORT_YEARS.map(y => (
+              {(anosQuery.data?.anos ?? []).map(y => (
                 <option key={y} value={y}>{y}</option>
               ))}
             </select>
