@@ -712,8 +712,8 @@ function TracomaHistoryTable({ ano: currentAno }: { ano: number }) {
               <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Prevalência</th>
               <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Tratados</th>
               <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Cobertura</th>
-              <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">TRACONET</th>
-              <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">TT</th>
+              <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Notif. Individuais</th>
+              <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Triquíase</th>
             </tr>
           </thead>
           <tbody>
@@ -788,7 +788,7 @@ function TracomaHistoryTable({ ano: currentAno }: { ano: number }) {
       <p className="mt-1.5 text-[11px] text-gray-400">
         Prevalência ≥ 5%{" "}
         <span className="font-semibold text-red-600">vermelha</span>{" "}
-        (acima da meta OMS) · TT = cirurgia trichiasis indicada ·{" "}
+        (acima da meta OMS) · Triquíase = casos com indicação de cirurgia ·{" "}
         <span className="inline-flex items-center gap-1">
           <span className="inline-block h-2 w-2 rounded-full bg-teal-600" /> Ano do boletim
         </span>

@@ -110,16 +110,15 @@ function processTraconet(rows: TraconetRow[]): TraconetAgg {
 function buildAnnualSummary(ano: number, agg: AggResult, trac: TraconetAgg): string {
   const hasData = agg.totalExam > 0 || agg.totalPos > 0 || trac.total > 0;
   if (!hasData) {
-    return `AVISO: Não foram encontrados dados de tracoma no sistema SINAN (TRACONET/NOTTRACONET) para o ano ${ano}. Informe isso com clareza e oriente sobre o envio dos dados.`;
+    return `AVISO: Não há dados de tracoma registrados para o ano ${ano}. Informe ao leitor, de forma clara, que não há dados disponíveis para este período. Não mencione sistemas internos. Oriente sobre a importância do envio regular de dados pelos municípios.`;
   }
   const prevalencia = pct(agg.totalPos, agg.totalExam);
   const elimTF = agg.totalPos / Math.max(agg.totalExam, 1) < 0.05 ? "ATINGIDA" : "NÃO ATINGIDA";
   const elimTT = trac.tt / Math.max(agg.totalExam, 1) < 0.002 ? "ATINGIDA" : "NÃO ATINGIDA";
 
-  return `DADOS REAIS DO SINAN — TRACOMA — ANO ${ano}
-Estado de São Paulo
+  return `DADOS DE TRACOMA — ANO ${ano} — ESTADO DE SÃO PAULO
 
-━━━ NOTTRACONET — DADOS CONSOLIDADOS MUNICIPAIS ━━━
+━━━ DADOS CONSOLIDADOS MUNICIPAIS ━━━
 Total de municípios com dados: ${agg.muniCount}
 Total de pessoas examinadas: ${agg.totalExam}
 Total de casos positivos (TF+TI): ${agg.totalPos} (prevalência: ${prevalencia})
@@ -133,13 +132,18 @@ ${agg.topMuni.map(([m, d]) => `${m} | ${d.exam} | ${d.pos} (${pct(d.pos, d.exam)
 GVE | Examinados | Positivos (prevalência)
 ${agg.topGve.map(([g, d]) => `${g} | ${d.exam} | ${d.pos} (${pct(d.pos, d.exam)})`).join("\n")}
 
-━━━ TRACONET — CASOS INDIVIDUAIS ━━━
-Total: ${trac.total}  TF: ${trac.tf} (${pct(trac.tf, trac.total)})  TI: ${trac.ti} (${pct(trac.ti, trac.total)})  TS: ${trac.ts}  TT: ${trac.tt}  CO: ${trac.co}
-Casos com tratamento: ${trac.comTrat} (${pct(trac.comTrat, trac.total)})
+━━━ CASOS INDIVIDUAIS NOTIFICADOS ━━━
+Total de casos individuais: ${trac.total}
+TF (Folicular): ${trac.tf} (${pct(trac.tf, trac.total)})
+TI (Inflamatório Intenso): ${trac.ti} (${pct(trac.ti, trac.total)})
+TS (Cicatricial): ${trac.ts}
+TT (Triquíase — cirurgia indicada): ${trac.tt}
+CO (Opacificação Corneana): ${trac.co}
+Casos com tratamento registrado: ${trac.comTrat} (${pct(trac.comTrat, trac.total)})
 
 ━━━ LIMIARES OMS ━━━
 TF <5%: ${elimTF} (atual: ${prevalencia})
-TT <0,2%: ${elimTT} (${trac.tt} casos TT em ${agg.totalExam} examinados)`;
+TT <0,2%: ${elimTT} (${trac.tt} casos com triquíase em ${agg.totalExam} examinados)`;
 }
 
 // ── Period summary (multi-year) ───────────────────────────────────────────────
@@ -150,14 +154,14 @@ function buildPeriodSummary(
 ): string {
   const hasAny = perYear.some(y => y.agg.totalExam > 0 || y.trac.total > 0);
   if (!hasAny) {
-    return `AVISO: Não foram encontrados dados de tracoma para o período ${anoInicio}–${anoFim}. Informe isso explicitamente.`;
+    return `AVISO: Não há dados de tracoma registrados para o período ${anoInicio}–${anoFim}. Informe ao leitor que não há dados disponíveis para este período. Não mencione sistemas internos.`;
   }
 
   const trendLines = perYear
     .map(y => {
       const prev = pct(y.agg.totalPos, y.agg.totalExam);
       const cob  = pct(y.agg.totalTrat, y.agg.totalPos);
-      return `${y.ano} | ${y.agg.muniCount} municípios | ${y.agg.totalExam} examinados | ${y.agg.totalPos} positivos (${prev}) | ${y.agg.totalTrat} tratados (${cob}) | TRACONET: ${y.trac.total} casos`;
+      return `${y.ano} | ${y.agg.muniCount} municípios | ${y.agg.totalExam} examinados | ${y.agg.totalPos} positivos (${prev}) | ${y.agg.totalTrat} tratados (${cob}) | ${y.trac.total} notificações individuais`;
     })
     .join("\n");
 
@@ -166,8 +170,7 @@ function buildPeriodSummary(
   const elimTF = last.agg.totalPos / Math.max(last.agg.totalExam, 1) < 0.05 ? "ATINGIDA" : "NÃO ATINGIDA";
   const elimTT = last.trac.tt / Math.max(last.agg.totalExam, 1) < 0.002 ? "ATINGIDA" : "NÃO ATINGIDA";
 
-  return `DADOS REAIS DO SINAN — TRACOMA — PERÍODO ${anoInicio}–${anoFim}
-Estado de São Paulo
+  return `DADOS DE TRACOMA — PERÍODO ${anoInicio}–${anoFim} — ESTADO DE SÃO PAULO
 
 ━━━ TENDÊNCIA POR ANO ━━━
 Ano | Municípios | Examinados | Positivos (prev.) | Tratados (cob.) | Notif. individuais
@@ -178,7 +181,8 @@ Municípios com dados: ${last.agg.muniCount}
 Pessoas examinadas: ${last.agg.totalExam}
 Positivos (TF+TI): ${last.agg.totalPos} (${pct(last.agg.totalPos, last.agg.totalExam)})
 Tratados: ${last.agg.totalTrat} (${pct(last.agg.totalTrat, last.agg.totalPos)})
-Casos individuais TRACONET: ${last.trac.total}  TT (cirurgia indicada): ${last.trac.tt}
+Casos individuais notificados: ${last.trac.total}
+Casos de triquíase (cirurgia indicada): ${last.trac.tt}
 
 ━━━ LIMIARES OMS EM ${anoFim} ━━━
 TF <5%: ${elimTF} (${pct(last.agg.totalPos, last.agg.totalExam)})
@@ -189,10 +193,14 @@ ${last.agg.topMuni.map(([m, d]) => `${m} | ${d.exam} exam. | ${d.pos} pos. (${pc
 }
 
 // ── System prompts ─────────────────────────────────────────────────────────────
-const SYSTEM_PROMPT_ANNUAL = `Você é epidemiologista do Centro de Vigilância Epidemiológica "Prof. Alexandre Vranjac" (CVE/CCD/SES-SP), especialista em doenças oculares e no Programa de Eliminação do Tracoma.
-Redige boletins anuais de tracoma para gestores municipais, equipes de vigilância e coordenadores do programa.
+const SYSTEM_PROMPT_ANNUAL = `Você é epidemiologista do Centro de Oftalmologia Sanitária / Centro de Vigilância Epidemiológica "Prof. Alexandre Vranjac" (CVE/CCD/SES-SP), especialista em doenças oculares e no Programa de Eliminação do Tracoma.
+Redige boletins anuais de tracoma para a população, gestores municipais, equipes de vigilância e coordenadores do programa.
 
-REGRA PRINCIPAL: Use SOMENTE os números fornecidos nos dados. Não invente valores. Se os dados indicarem ausência ou insuficiência de dados, informe isso com clareza e urgência.
+REGRA PRINCIPAL: Use SOMENTE os números fornecidos nos dados. Não invente valores. Se os dados indicarem ausência de dados, informe isso de forma clara e objetiva para o leitor, sem mencionar sistemas internos.
+
+REGRA DE SISTEMAS: Nunca mencione sistemas de informação internos pelo nome (ex: SINAN, TRACONET, NOTTRACONET). Use apenas expressões como "dados de vigilância estadual", "registros do programa" ou "sistema de notificação".
+
+REGRA DE ANOS: Nunca mencione anos futuros, projeções ou estimativas para além do ano de referência dos dados. Atenha-se estritamente ao período informado.
 
 REGRA DE FORMATO: NÃO inclua título, subtítulo, cabeçalho institucional, nome da doença, ano de referência ou qualquer linha antes da primeira seção. O documento já possui cabeçalho. Comece O TEXTO DIRETAMENTE com "## Introdução".
 
@@ -237,12 +245,16 @@ Use **ALTO**, **MÉDIO** ou **BAIXO** antes de cada item. Se não houver alertas
 Lista com ações concretas para municípios, GVEs e coordenadores do programa estadual.
 
 ## Nota Técnica
-Fonte: SINAN/TRACONET e NOTTRACONET/SES-SP. Ano de referência dos dados: [ano]. Limitações: cobertura de digitação pode ser incompleta; dados sujeitos a revisão.`;
+Fonte: Sistema Estadual de Vigilância Epidemiológica/SES-SP. Ano de referência: [ano]. Os dados apresentados refletem os registros disponíveis no momento da geração deste boletim.`;
 
-const SYSTEM_PROMPT_PERIOD = `Você é epidemiologista do Centro de Vigilância Epidemiológica "Prof. Alexandre Vranjac" (CVE/CCD/SES-SP), especialista em doenças oculares e no Programa de Eliminação do Tracoma.
-Redige boletins de ANÁLISE DE PERÍODO de tracoma para gestores municipais e coordenadores do programa.
+const SYSTEM_PROMPT_PERIOD = `Você é epidemiologista do Centro de Oftalmologia Sanitária / Centro de Vigilância Epidemiológica "Prof. Alexandre Vranjac" (CVE/CCD/SES-SP), especialista em doenças oculares e no Programa de Eliminação do Tracoma.
+Redige boletins de análise de período de tracoma para a população, gestores municipais e coordenadores do programa.
 
-REGRA PRINCIPAL: Use SOMENTE os números fornecidos nos dados. Não invente valores.
+REGRA PRINCIPAL: Use SOMENTE os números fornecidos nos dados. Não invente valores. Se não houver dados para algum ano, diga que não há registros disponíveis, sem mencionar sistemas internos.
+
+REGRA DE SISTEMAS: Nunca mencione sistemas de informação internos pelo nome (ex: SINAN, TRACONET, NOTTRACONET). Use apenas "dados de vigilância estadual", "registros do programa" ou "sistema de notificação".
+
+REGRA DE ANOS: Nunca mencione anos além do período informado nos dados. Atenha-se estritamente ao intervalo fornecido.
 
 REGRA DE FORMATO: NÃO inclua título, cabeçalho institucional ou qualquer linha antes da primeira seção. Comece DIRETAMENTE com "## Introdução".
 
@@ -279,7 +291,7 @@ Use **ALTO**, **MÉDIO** ou **BAIXO** antes de cada item.
 Ações concretas considerando a tendência do período inteiro, não apenas o último ano.
 
 ## Nota Técnica
-Fonte: SINAN/TRACONET e NOTTRACONET/SES-SP. Período de análise: [anoInicio]–[anoFim]. Dados sujeitos a revisão.`;
+Fonte: Sistema Estadual de Vigilância Epidemiológica/SES-SP. Período de análise: [anoInicio]–[anoFim]. Os dados refletem os registros disponíveis no momento da geração deste boletim.`;
 
 // ── Main generator ─────────────────────────────────────────────────────────────
 export async function generateTracomaBulletin(
