@@ -46,7 +46,7 @@ const FIELD = {
 };
 
 type NottraconetRow = { municipio: string | null; gve: string | null; raw: Record<string, unknown>; ano?: number };
-type TraconetRow   = { municipio: string | null; gve: string | null; classificacao: string | null; tratamento: string | null; ano?: number };
+type TraconetRow   = { municipio: string | null; gve: string | null; raw: Record<string, unknown> | null; ano?: number };
 
 interface AggResult {
   totalExam: number;
@@ -93,15 +93,19 @@ interface TraconetAgg {
 function processTraconet(rows: TraconetRow[]): TraconetAgg {
   let tf = 0, ti = 0, ts = 0, tt = 0, co = 0, semForma = 0, comTrat = 0;
   for (const row of rows) {
-    const cl = (row.classificacao ?? "").toUpperCase();
-    if (cl.includes("TF")) tf++;
-    if (cl.includes("TI")) ti++;
-    if (cl.includes("TS")) ts++;
-    if (cl.includes("TT")) tt++;
-    if (cl.includes("CO")) co++;
-    if (!cl || cl === "SEM FORMA POSITIVA") semForma++;
-    const trat = String(row.tratamento ?? "").toLowerCase();
-    if (trat && trat !== "" && trat !== "não" && trat !== "2") comTrat++;
+    const raw = (row.raw ?? {}) as Record<string, unknown>;
+    const fTF = raw["FORMA_TF"] === "1";
+    const fTI = raw["FORMA_TI"] === "1";
+    const fTS = raw["FORMA_TS"] === "1";
+    const fTT = raw["FORMA_TT"] === "1";
+    const fCO = raw["FORMA_CO"] === "1";
+    if (fTF) tf++;
+    if (fTI) ti++;
+    if (fTS) ts++;
+    if (fTT) tt++;
+    if (fCO) co++;
+    if (!fTF && !fTI && !fTS && !fTT && !fCO) semForma++;
+    if (raw["ENCAMINHA"] === "1") comTrat++;
   }
   return { total: rows.length, tf, ti, ts, tt, co, semForma, comTrat };
 }
@@ -385,7 +389,7 @@ export async function generateTracomaBulletin(
       anos.map(async (ano) => {
         const [{ data: rawNot }, { data: rawTrac }] = await Promise.all([
           supabase.from("sinan_tracoma_rows").select("municipio, gve, raw").eq("source_bank", "nottraconet").eq("ano", ano),
-          supabase.from("sinan_tracoma_rows").select("municipio, gve, classificacao, tratamento").eq("source_bank", "traconet").eq("ano", ano),
+          supabase.from("sinan_tracoma_rows").select("municipio, gve, raw").eq("source_bank", "traconet").eq("ano", ano),
         ]);
         perYear.push({
           ano,

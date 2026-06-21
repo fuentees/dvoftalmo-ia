@@ -31,12 +31,16 @@ LANGUAGE sql SECURITY DEFINER AS $$
 $$;
 
 CREATE OR REPLACE FUNCTION traconet_history_by_year()
-RETURNS TABLE(ano int, total bigint, tt bigint)
+RETURNS TABLE(ano int, total bigint, tf bigint, ti bigint, ts bigint, tt bigint, co bigint)
 LANGUAGE sql SECURITY DEFINER AS $$
   SELECT
     s.ano::int,
     COUNT(*)::bigint AS total,
-    SUM(CASE WHEN UPPER(COALESCE(s.classificacao, '')) LIKE '%TT%' THEN 1 ELSE 0 END)::bigint AS tt
+    SUM(CASE WHEN s.raw->>'FORMA_TF' = '1' THEN 1 ELSE 0 END)::bigint AS tf,
+    SUM(CASE WHEN s.raw->>'FORMA_TI' = '1' THEN 1 ELSE 0 END)::bigint AS ti,
+    SUM(CASE WHEN s.raw->>'FORMA_TS' = '1' THEN 1 ELSE 0 END)::bigint AS ts,
+    SUM(CASE WHEN s.raw->>'FORMA_TT' = '1' THEN 1 ELSE 0 END)::bigint AS tt,
+    SUM(CASE WHEN s.raw->>'FORMA_CO' = '1' THEN 1 ELSE 0 END)::bigint AS co
   FROM sinan_tracoma_rows s
   WHERE s.source_bank = 'traconet'
     AND s.ano IS NOT NULL
