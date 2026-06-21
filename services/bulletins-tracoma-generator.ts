@@ -408,7 +408,7 @@ export async function generateTracomaBulletin(
     // Annual
     const [{ data: rawNot }, { data: rawTrac }] = await Promise.all([
       supabase.from("sinan_tracoma_rows").select("municipio, gve, raw").eq("source_bank", "nottraconet").eq("ano", anoFim),
-      supabase.from("sinan_tracoma_rows").select("municipio, gve, classificacao, tratamento").eq("source_bank", "traconet").eq("ano", anoFim),
+      supabase.from("sinan_tracoma_rows").select("municipio, gve, raw").eq("source_bank", "traconet").eq("ano", anoFim),
     ]);
     const agg  = processNottraconet((rawNot ?? []) as NottraconetRow[]);
     const trac = processTraconet((rawTrac ?? []) as TraconetRow[]);

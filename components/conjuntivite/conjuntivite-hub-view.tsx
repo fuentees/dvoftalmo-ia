@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { Activity, ShieldAlert } from "lucide-react";
 import { NotificationsReportView } from "@/components/notifications/notifications-report-view";
@@ -13,7 +14,9 @@ const outerTabs: Array<{ id: OuterTab; label: string; icon: React.ElementType }>
 ];
 
 export function ConjuntiviteHubView() {
-  const [tab, setTab] = useState<OuterTab>("analise");
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get("tab") === "qualidade" ? "qualidade" : "analise";
+  const [tab, setTab] = useState<OuterTab>(initialTab);
 
   return (
     <div className="flex flex-col">
