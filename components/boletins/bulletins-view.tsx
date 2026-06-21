@@ -42,6 +42,12 @@ interface GveMapRow {
   casos: number;
 }
 
+interface MuniMapRow {
+  municipio: string;
+  gve: string;
+  casos: number;
+}
+
 interface SeHistoryRow {
   se: number;
   notificacoes: number;
@@ -164,7 +170,7 @@ const AGRAVO_CONFIG = {
   conjuntivite: {
     label: "Conjuntivite",
     subtitle: "Boletim semanal — CEVESP/SES-SP",
-    divisionLabel: "Divisão de Doenças de Transmissão Respiratória e Ocular",
+    divisionLabel: "Centro de Oftalmologia Sanitária",
     headerClass: "bg-blue-900",
     accentClass: "bg-blue-700",
     accent: "blue" as AccentColor,
@@ -176,7 +182,7 @@ const AGRAVO_CONFIG = {
   tracoma: {
     label: "Tracoma",
     subtitle: "Boletim anual/período — SINAN/SES-SP",
-    divisionLabel: "Divisão de Doenças Oculares — Programa de Eliminação do Tracoma",
+    divisionLabel: "Centro de Oftalmologia Sanitária — Programa de Eliminação do Tracoma",
     headerClass: "bg-teal-900",
     accentClass: "bg-teal-700",
     accent: "teal" as AccentColor,
@@ -291,6 +297,109 @@ function TracomaMapSection({ ano }: { ano: number }) {
           <p className="px-1 text-[11px] leading-relaxed text-gray-400">
             Meta OMS: TF {"< 5%"} em crianças de 1–9 anos para eliminação como problema de saúde pública.
           </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ──── ConjuntiviteMuniMapSection ─────────────────────────────────────────────
+function ConjuntiviteMuniMapSection({ se, ano }: { se: number; ano: number }) {
+  const { data: rows, isLoading } = useQuery<MuniMapRow[]>({
+    queryKey: ["conjuntivite-muni-map", se, ano],
+    queryFn: () => fetchJson(`/api/boletins/mapdata?agravo=conjuntivite&level=municipio&se=${se}&ano=${ano}`)
+  });
+
+  const valueMap = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const row of rows ?? []) {
+      if (row.municipio) m[row.municipio] = row.casos;
+    }
+    return m;
+  }, [rows]);
+
+  const topMunis = useMemo(
+    () => [...(rows ?? [])].sort((a, b) => b.casos - a.casos).slice(0, 8),
+    [rows]
+  );
+
+  if (isLoading) {
+    return (
+      <div className="mb-6 flex h-32 items-center justify-center rounded-lg border border-dashed border-blue-200 text-sm text-blue-400">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        Carregando mapa de municípios...
+      </div>
+    );
+  }
+
+  if (!rows?.length) return null;
+
+  const maxCasos = Math.max(...(rows ?? []).map(r => r.casos), 1);
+
+  return (
+    <div className="mb-8 print:break-inside-avoid">
+      <div className="mb-3 flex items-start gap-2 text-sm font-extrabold uppercase tracking-wider text-blue-900">
+        <span className="mt-0.5 inline-block h-4 w-1.5 shrink-0 rounded-sm bg-blue-700" aria-hidden />
+        <span>Distribuição por Município — Casos de Conjuntivite</span>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-[3fr_1fr]">
+        {/* Map */}
+        <div className="overflow-hidden rounded-xl border border-blue-100 shadow-sm">
+          <ChoroplethMap
+            dataUrl="/api/geo/shapefiles?type=municipio"
+            valueMap={valueMap}
+            colorScheme={(v) => {
+              if (v === null || v === undefined) return "#e2e8f0";
+              const ratio = v / maxCasos;
+              if (ratio >= 0.75) return "#1d4ed8";
+              if (ratio >= 0.5)  return "#3b82f6";
+              if (ratio >= 0.25) return "#93c5fd";
+              return "#dbeafe";
+            }}
+            label="Casos de Conjuntivite por Município"
+          />
+        </div>
+
+        {/* Sidebar */}
+        <div className="flex flex-col gap-3 text-xs">
+          <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3">
+            <p className="mb-2 font-bold uppercase tracking-wide text-blue-900">Municípios com mais casos</p>
+            <div className="space-y-1.5">
+              {topMunis.map((row, i) => (
+                <div key={row.municipio} className="flex items-center justify-between gap-1">
+                  <span className="truncate text-gray-700">{i + 1}. {row.municipio}</span>
+                  <span className="whitespace-nowrap font-bold text-blue-700">{row.casos}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-blue-100 p-3">
+            <p className="mb-2 font-bold uppercase tracking-wide text-blue-900">Legenda</p>
+            <div className="space-y-1.5 text-gray-600">
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-5 shrink-0 rounded-sm" style={{ background: "#1d4ed8" }} />
+                <span>Maior concentração</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-5 shrink-0 rounded-sm" style={{ background: "#3b82f6" }} />
+                <span>Alta</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-5 shrink-0 rounded-sm" style={{ background: "#93c5fd" }} />
+                <span>Moderada</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-5 shrink-0 rounded-sm" style={{ background: "#dbeafe" }} />
+                <span>Baixa</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-5 shrink-0 rounded-sm bg-slate-200" />
+                <span>Sem notificação</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -773,9 +882,9 @@ function BulletinDetail({ id, onBack }: { id: string; onBack: () => void }) {
       )}
 
       {error && (
-        <Card className="border-red-200 bg-red-50 text-red-900">
-          <CardContent className="py-4 text-sm">
-            {error instanceof Error ? error.message : "Erro ao carregar boletim."}
+        <Card className="border-gray-200 bg-gray-50 text-gray-600">
+          <CardContent className="py-10 text-center text-sm">
+            Não foi possível carregar o boletim. Tente novamente mais tarde.
           </CardContent>
         </Card>
       )}
@@ -873,6 +982,7 @@ function BulletinDetail({ id, onBack }: { id: string; onBack: () => void }) {
                       {renderMd(clean)}
                       {data.se > 0 && (
                         <div className="mt-6 space-y-6">
+                          <ConjuntiviteMuniMapSection se={data.se} ano={data.ano} />
                           <ConjuntiviteMapSection se={data.se} ano={data.ano} />
                           <ConjuntiviteHistoryTable se={data.se} ano={data.ano} />
                         </div>
@@ -897,7 +1007,8 @@ function BulletinDetail({ id, onBack }: { id: string; onBack: () => void }) {
                   <>
                     {renderMd(p1)}
                     {data.se > 0 && (
-                      <div className="my-6">
+                      <div className="my-6 space-y-6">
+                        <ConjuntiviteMuniMapSection se={data.se} ano={data.ano} />
                         <ConjuntiviteMapSection se={data.se} ano={data.ano} />
                       </div>
                     )}

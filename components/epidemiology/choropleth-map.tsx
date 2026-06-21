@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import type { Feature, FeatureCollection, Geometry } from "geojson";
 
 type GeoProperties = Record<string, unknown>;
@@ -192,13 +192,7 @@ export function ChoroplethMap({
   }
 
   if (error || !geoData) {
-    return (
-      <div className={`flex flex-col items-center justify-center rounded-lg border border-dashed p-8 text-amber-600 ${className}`}>
-        <AlertTriangle className="h-5 w-5" />
-        <p className="mt-2 text-sm font-medium">{error || "Não foi possível carregar o mapa"}</p>
-        {dataUrl && <p className="mt-1 break-all text-xs text-amber-500">{dataUrl}</p>}
-      </div>
-    );
+    return null;
   }
 
   return (

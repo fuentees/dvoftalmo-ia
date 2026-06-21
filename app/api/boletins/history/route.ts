@@ -59,8 +59,10 @@ export async function GET(request: Request) {
       if ((row.classificacao ?? "").toUpperCase().includes("TT")) tracByYear[a].tt++;
     }
 
+    const currentYear = new Date().getFullYear();
     const allYears = new Set([...Object.keys(notByYear), ...Object.keys(tracByYear)].map(Number));
     const result = Array.from(allYears)
+      .filter(a => a >= 1990 && a <= currentYear)
       .sort((a, b) => a - b)
       .map(a => {
         const not  = notByYear[a]  ?? { munis: new Set(), exam: 0, pos: 0, trat: 0 };

@@ -65,6 +65,33 @@ export async function GET(request: Request) {
     );
   }
 
+  // ── Conjuntivite: municipality-level case count ──────────────────────────
+  if (agravo === "conjuntivite" && searchParams.get("level") === "municipio" && se > 0 && ano >= 2000) {
+    const { data, error } = await admin
+      .from("cevesp_notificacoes")
+      .select('"MunicipioNotificacao", "GVE_NOME", "TotalCaso"')
+      .eq("ANO", ano)
+      .eq("SemEpidemio", se);
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    const muniMap: Record<string, { casos: number; gve: string }> = {};
+    for (const row of (data ?? []) as Record<string, unknown>[]) {
+      const municipio = String(row["MunicipioNotificacao"] ?? "Não informado").trim();
+      const gve = String(row["GVE_NOME"] ?? "").trim();
+      const casos = Number(row["TotalCaso"] ?? 0);
+      if (!muniMap[municipio]) muniMap[municipio] = { casos: 0, gve };
+      muniMap[municipio].casos += casos;
+    }
+
+    return NextResponse.json(
+      Object.entries(muniMap)
+        .map(([municipio, d]) => ({ municipio, gve: d.gve, casos: d.casos }))
+        .filter(r => r.casos > 0)
+        .sort((a, b) => b.casos - a.casos)
+    );
+  }
+
   // ── Conjuntivite: GVE-level case count ───────────────────────────────────
   if (agravo === "conjuntivite" && se > 0 && ano >= 2000) {
     const { data, error } = await admin
