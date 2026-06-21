@@ -697,8 +697,8 @@ export function NotificationsReportView() {
                       <tbody>
                         {(quality.data?.records ?? []).map((r) => (
                           <tr key={r.recordId} className="border-b last:border-0 hover:bg-muted/30">
-                            <td className="px-3 py-2 font-mono font-medium">{r.recordId}</td>
-                            <td className="px-3 py-2 font-mono font-medium text-primary">{r.controlaSubmit ?? "—"}</td>
+                            <td className="px-3 py-2 font-mono font-medium whitespace-nowrap">{r.recordId}</td>
+                            <td className="px-3 py-2 font-mono font-medium whitespace-nowrap text-primary">{r.controlaSubmit ?? "—"}</td>
                             <td className="px-3 py-2 tabular-nums">{r.dtNotificacao ?? "—"}</td>
                             <td className="px-3 py-2 tabular-nums">{r.semEpidemio ?? "—"}</td>
                             <td className="px-3 py-2 max-w-[120px] truncate" title={r.municipio ?? undefined}>{r.municipio ?? "—"}</td>

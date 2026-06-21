@@ -27,7 +27,9 @@ export async function createNotificationConnection() {
     user: requireEnv("NOTIFY_DB_USER"),
     password: requireEnv("NOTIFY_DB_PASSWORD"),
     charset: "utf8mb4",
-    connectTimeout: 10000
+    connectTimeout: 10000,
+    supportBigNumbers: true,
+    bigNumberStrings: true
   });
 }
 
