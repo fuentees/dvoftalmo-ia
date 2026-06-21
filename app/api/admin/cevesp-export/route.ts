@@ -41,6 +41,8 @@ function clean(row: Record<string, unknown>): Record<string, unknown> {
 
   return {
     row_key:              rowKey(row),
+    ID:                   row.ID           != null ? String(row.ID)          : null,
+    ControlaSubmit:       row.ControlaSubmit != null ? String(row.ControlaSubmit) : null,
     ANO:                  row.ANO         != null ? Number(row.ANO)         : null,
     Mes:                  row.Mes         != null ? Number(row.Mes)         : null,
     SemEpidemio:          row.SemEpidemio != null ? Number(row.SemEpidemio) : null,

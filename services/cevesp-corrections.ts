@@ -116,8 +116,8 @@ export function mapInvalidCacheRow(r: Record<string, unknown>): InvalidRecord | 
 
   const DATA_TEMPO = new Set(["data_futura", "ano_impossivel", "se_alta", "se_baixa", "se_futura"]);
   return {
-    recordId: String(r.id ?? r.row_key ?? `${r.DtNotificacao ?? ""}-${r.MunicipioNotificacao ?? ""}`),
-    pkColumn: "id",
+    recordId: String(r["ID"] ?? r.id ?? r.row_key ?? `${r.DtNotificacao ?? ""}-${r.MunicipioNotificacao ?? ""}`),
+    pkColumn: "ID",
     controlaSubmit: r.ControlaSubmit != null ? String(r.ControlaSubmit) : null,
     dtNotificacao: rawDt,
     semEpidemio: se,
@@ -140,7 +140,7 @@ async function findInvalidRecordsFromCache(limit?: number): Promise<InvalidRecor
   for (let from = 0; ; from += pageSize) {
     const { data, error } = await supabase
       .from("cevesp_notificacoes")
-      .select('id,row_key,"ControlaSubmit","DtNotificacao","SemEpidemio","MunicipioNotificacao","GVE_NOME","ANO","TotalCaso","FxMenorUmAno","FxUmQuatro","FxCincoNove","FxDezQuatorze","FxQuizeOuMais","SexMasc","SexFem"')
+      .select('id,row_key,"ID","ControlaSubmit","DtNotificacao","SemEpidemio","MunicipioNotificacao","GVE_NOME","ANO","TotalCaso","FxMenorUmAno","FxUmQuatro","FxCincoNove","FxDezQuatorze","FxQuizeOuMais","SexMasc","SexFem"')
       .range(from, from + pageSize - 1);
     if (error) throw new Error(`Erro ao consultar cache CEVESP: ${error.message}`);
 
