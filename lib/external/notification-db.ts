@@ -38,11 +38,11 @@ export function isNotificationConnectionError(error: unknown) {
   return /ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EHOSTUNREACH|fetch failed|connect/i.test(msg);
 }
 
-async function readNotificationRowsFromCache(limit?: number) {
+async function readNotificationRowsFromCache(ano?: number, limit?: number) {
   const supabase = createAdminClient();
-  const { count, error: countError } = await supabase
-    .from("cevesp_notificacoes")
-    .select("id", { count: "exact", head: true });
+  let q = supabase.from("cevesp_notificacoes").select("id", { count: "exact", head: true });
+  if (ano) q = q.eq('"ANO"', ano) as typeof q;
+  const { count, error: countError } = await q;
   if (countError) throw new Error(`Erro ao consultar cache CEVESP: ${countError.message}`);
 
   const pageSize = 1000;
@@ -51,10 +51,9 @@ async function readNotificationRowsFromCache(limit?: number) {
 
   for (let from = 0; from < maxRows; from += pageSize) {
     const to = Math.min(from + pageSize - 1, maxRows - 1);
-    const { data, error } = await supabase
-      .from("cevesp_notificacoes")
-      .select("*")
-      .range(from, to);
+    let dq = supabase.from("cevesp_notificacoes").select("*").range(from, to);
+    if (ano) dq = dq.eq('"ANO"', ano) as typeof dq;
+    const { data, error } = await dq;
     if (error) throw new Error(`Erro ao ler cache CEVESP: ${error.message}`);
     rows.push(...((data ?? []) as Array<Record<string, unknown>>));
     if (!data || data.length < pageSize) break;
@@ -68,7 +67,7 @@ async function readNotificationRowsFromCache(limit?: number) {
   };
 }
 
-export async function readNotificationRows(limit?: number) {
+export async function readNotificationRows(ano?: number, limit?: number) {
   let table: string;
   let connection: Awaited<ReturnType<typeof createNotificationConnection>>;
   try {
@@ -76,16 +75,21 @@ export async function readNotificationRows(limit?: number) {
     connection = await createNotificationConnection();
   } catch (error) {
     if (isNotificationConnectionError(error) || !process.env.NOTIFY_DB_HOST) {
-      return readNotificationRowsFromCache(limit);
+      return readNotificationRowsFromCache(ano, limit);
     }
     throw error;
   }
 
+  const whereClause = ano ? "WHERE ANO = ?" : "";
+  const params = ano ? [ano] : [];
+
   try {
-    const [countRows] = await connection.query<Array<RowDataPacket & { total: number }>>(`select count(*) as total from ${table}`);
+    const [countRows] = await connection.query<Array<RowDataPacket & { total: number }>>(
+      `SELECT count(*) as total FROM ${table} ${whereClause}`, params
+    );
     const [rows] = limit
-      ? await connection.query(`select * from ${table} limit ?`, [limit])
-      : await connection.query(`select * from ${table}`);
+      ? await connection.query(`SELECT * FROM ${table} ${whereClause} LIMIT ?`, [...params, limit])
+      : await connection.query(`SELECT * FROM ${table} ${whereClause}`, params);
     const total = Number(countRows[0]?.total ?? 0);
 
     return {
@@ -96,7 +100,7 @@ export async function readNotificationRows(limit?: number) {
     };
   } catch (error) {
     if (isNotificationConnectionError(error)) {
-      return readNotificationRowsFromCache(limit);
+      return readNotificationRowsFromCache(ano, limit);
     }
     throw error;
   } finally {

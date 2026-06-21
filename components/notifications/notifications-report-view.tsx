@@ -273,15 +273,19 @@ function CevespRatesPanel({ data }: { data: CevespRatesData }) {
   );
 }
 
+const REPORT_YEARS = Array.from({ length: new Date().getFullYear() - 1999 }, (_, i) => new Date().getFullYear() - i);
+
 export function NotificationsReportView() {
   const [tab, setTab] = useState<HubTab>("situacao");
   const [question, setQuestion] = useState("Total de casos por GVE dos últimos 5 anos por mês");
   const [showEndemic, setShowEndemic] = useState(false);
+  const [selectedYear, setSelectedYear] = useState<number | undefined>(undefined);
 
   const report = useQuery<ReportData>({
-    queryKey: ["notifications-report"],
+    queryKey: ["notifications-report", selectedYear],
     queryFn: async () => {
-      const response = await fetch("/api/notificacoes/relatorio");
+      const url = selectedYear ? `/api/notificacoes/relatorio?ano=${selectedYear}` : "/api/notificacoes/relatorio";
+      const response = await fetch(url);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Erro ao gerar relatorio");
       return data as ReportData;
@@ -378,7 +382,9 @@ export function NotificationsReportView() {
               <Badge className="border-primary/30 bg-primary/10 text-primary">Análise por agravo</Badge>
               <Badge className={risk.cls}>{risk.label}</Badge>
             </div>
-            <h1 className="mt-2 text-lg font-semibold leading-tight">Conjuntivites - CEVESP</h1>
+            <h1 className="mt-2 text-lg font-semibold leading-tight">
+              Conjuntivites - CEVESP{selectedYear ? ` · ${selectedYear}` : ""}
+            </h1>
             <p className="mt-0.5 text-sm text-muted-foreground">
               Aprofundamento da Sala de Situação: consulta ao banco, canal endêmico, qualidade e saídas técnicas.
             </p>
@@ -386,7 +392,17 @@ export function NotificationsReportView() {
               Voltar para a Sala de Situação
             </Link>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={selectedYear ?? ""}
+              onChange={e => setSelectedYear(e.target.value ? Number(e.target.value) : undefined)}
+              className="h-9 rounded-md border bg-background px-2 text-sm"
+            >
+              <option value="">Todos os anos</option>
+              {REPORT_YEARS.map(y => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
             <Button variant="outline" onClick={() => void report.refetch()} disabled={report.isFetching}>
               <RefreshCw className={`h-4 w-4 ${report.isFetching ? "animate-spin" : ""}`} />
               Atualizar
