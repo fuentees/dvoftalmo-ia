@@ -53,12 +53,16 @@ interface SyncStatus {
 
 type Msg = { type: "success" | "error"; text: string };
 
+const currentYear = new Date().getFullYear();
+const EXPORT_YEARS = Array.from({ length: currentYear - 1999 }, (_, i) => currentYear - i);
+
 export function CevespSyncCard() {
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [msg, setMsg] = useState<Msg | null>(null);
+  const [exportYear, setExportYear] = useState<string>(String(currentYear));
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -74,11 +78,13 @@ export function CevespSyncCard() {
     }
   }
 
-  async function handleExport(full: boolean) {
+  async function handleExport(mode: "year" | "full") {
     setExporting(true);
     setMsg(null);
     try {
-      const url = `/api/admin/cevesp-export${full ? "?full=true" : ""}`;
+      const url = mode === "full"
+        ? "/api/admin/cevesp-export?full=true"
+        : `/api/admin/cevesp-export?year=${exportYear}`;
       const response = await fetch(url);
       if (!response.ok) {
         const err = await response.json().catch(() => ({})) as { error?: string };
@@ -88,7 +94,7 @@ export function CevespSyncCard() {
       const blob = await response.blob();
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
-      link.download = "cevesp-export.json";
+      link.download = mode === "full" ? "cevesp-export-completo.json" : `cevesp-export-${exportYear}.json`;
       link.click();
       URL.revokeObjectURL(link.href);
       setMsg({
@@ -235,16 +241,29 @@ export function CevespSyncCard() {
             <span className="mr-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] text-primary-foreground">1</span>
             No escritório (rede SES-SP) - exporte o MySQL
           </p>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => handleExport(false)} disabled={exporting || importing}>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={exportYear}
+              onChange={e => setExportYear(e.target.value)}
+              disabled={exporting || importing}
+              className="h-8 rounded-md border bg-background px-2 text-xs"
+            >
+              {EXPORT_YEARS.map(y => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => handleExport("year")} disabled={exporting || importing}>
               <Download className="mr-1.5 h-3.5 w-3.5" />
-              {exporting ? "Exportando..." : "Exportar ano atual"}
+              {exporting ? "Exportando..." : `Exportar ${exportYear}`}
             </Button>
-            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => handleExport(true)} disabled={exporting || importing}>
+            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => handleExport("full")} disabled={exporting || importing}>
               <Download className="mr-1.5 h-3.5 w-3.5" />
-              Exportar tudo
+              Exportar todos os anos
             </Button>
           </div>
+          <p className="text-[11px] text-muted-foreground">
+            Exporte ano por ano para arquivos menores, ou todos os anos de uma vez.
+          </p>
         </div>
 
         <div className="space-y-2">
