@@ -19,6 +19,7 @@ function csvEscape(value: unknown) {
 function recordsToCsv(records: InvalidRecord[]) {
   const headers: Array<keyof InvalidRecord> = [
     "recordId",
+    "controlaSubmit",
     "dtNotificacao",
     "semEpidemio",
     "ano",
@@ -32,6 +33,7 @@ function recordsToCsv(records: InvalidRecord[]) {
   ];
   const labels = [
     "ID",
+    "ControlaSubmit",
     "Data notificacao",
     "Semana epidemiologica",
     "Ano",

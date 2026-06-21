@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 export interface InvalidRecord {
   recordId: string;
   pkColumn: string;
+  controlaSubmit: string | null;
   dtNotificacao: string | null;
   semEpidemio: number | null;
   municipio: string | null;
@@ -117,6 +118,7 @@ export function mapInvalidCacheRow(r: Record<string, unknown>): InvalidRecord | 
   return {
     recordId: String(r.id ?? r.row_key ?? `${r.DtNotificacao ?? ""}-${r.MunicipioNotificacao ?? ""}`),
     pkColumn: "id",
+    controlaSubmit: r.ControlaSubmit != null ? String(r.ControlaSubmit) : null,
     dtNotificacao: rawDt,
     semEpidemio: se,
     municipio: r.MunicipioNotificacao ? String(r.MunicipioNotificacao) : null,
@@ -138,7 +140,7 @@ async function findInvalidRecordsFromCache(limit?: number): Promise<InvalidRecor
   for (let from = 0; ; from += pageSize) {
     const { data, error } = await supabase
       .from("cevesp_notificacoes")
-      .select('id,row_key,"DtNotificacao","SemEpidemio","MunicipioNotificacao","GVE_NOME","ANO","TotalCaso","FxMenorUmAno","FxUmQuatro","FxCincoNove","FxDezQuatorze","FxQuizeOuMais","SexMasc","SexFem"')
+      .select('id,row_key,"ControlaSubmit","DtNotificacao","SemEpidemio","MunicipioNotificacao","GVE_NOME","ANO","TotalCaso","FxMenorUmAno","FxUmQuatro","FxCincoNove","FxDezQuatorze","FxQuizeOuMais","SexMasc","SexFem"')
       .range(from, from + pageSize - 1);
     if (error) throw new Error(`Erro ao consultar cache CEVESP: ${error.message}`);
 
@@ -199,7 +201,7 @@ export async function findInvalidRecords(limit?: number): Promise<InvalidRecord[
       ((now.getTime() - startOfYear.getTime()) / 86_400_000 + startOfYear.getDay() + 1) / 7
     );
 
-    const sql = `SELECT \`${pkCol}\`,
+    const sql = `SELECT \`${pkCol}\`, ControlaSubmit,
               DtNotificacao, SemEpidemio, MunicipioNotificacao,
               GVE_NOME, ANO, TotalCaso,
               COALESCE(FxMenorUmAno,0)+COALESCE(FxUmQuatro,0)+COALESCE(FxCincoNove,0)+COALESCE(FxDezQuatorze,0)+COALESCE(FxQuizeOuMais,0) AS total_faixa,
@@ -314,13 +316,14 @@ export async function findInvalidRecords(limit?: number): Promise<InvalidRecord[
       }
 
       return {
-        recordId:      String(r[pkCol]),
-        pkColumn:      pkCol,
-        dtNotificacao: rawDt,
-        semEpidemio:   se,
-        municipio:     r.MunicipioNotificacao ? String(r.MunicipioNotificacao) : null,
-        gve:           r.GVE_NOME            ? String(r.GVE_NOME)             : null,
-        ano:           r.ANO                 ? Number(r.ANO)                  : null,
+        recordId:       String(r[pkCol]),
+        pkColumn:       pkCol,
+        controlaSubmit: r.ControlaSubmit != null ? String(r.ControlaSubmit) : null,
+        dtNotificacao:  rawDt,
+        semEpidemio:    se,
+        municipio:      r.MunicipioNotificacao ? String(r.MunicipioNotificacao) : null,
+        gve:            r.GVE_NOME            ? String(r.GVE_NOME)             : null,
+        ano:            r.ANO                 ? Number(r.ANO)                  : null,
         totalCaso,
         issue,
         issueType: (DATA_TEMPO.has(problema) ? "data_tempo" : "conteudo") as "data_tempo" | "conteudo",

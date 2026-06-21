@@ -693,6 +693,7 @@ export function CevespQualidadeView() {
                             />
                           </th>
                           <th className="px-3 py-2 text-left font-medium">ID</th>
+                          <th className="px-3 py-2 text-left font-medium">ControlaSubmit</th>
                           <th className="px-3 py-2 text-left font-medium">Data</th>
                           <th className="px-3 py-2 text-left font-medium">SE</th>
                           <th className="px-3 py-2 text-left font-medium">Município</th>
@@ -721,6 +722,7 @@ export function CevespQualidadeView() {
                                 />
                               </td>
                               <td className="px-3 py-2 font-mono font-medium">{r.recordId}</td>
+                              <td className="px-3 py-2 font-mono font-medium text-primary">{r.controlaSubmit ?? "—"}</td>
                               <td className="px-3 py-2 tabular-nums">{r.dtNotificacao ?? "—"}</td>
                               <td className="px-3 py-2 tabular-nums">{r.semEpidemio ?? "—"}</td>
                               <td className="px-3 py-2 max-w-[120px] truncate" title={r.municipio ?? undefined}>
