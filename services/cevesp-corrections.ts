@@ -140,7 +140,7 @@ async function findInvalidRecordsFromCache(limit?: number): Promise<InvalidRecor
   for (let from = 0; ; from += pageSize) {
     const { data, error } = await supabase
       .from("cevesp_notificacoes")
-      .select('id,row_key,"ControlaSubmit","DtNotificacao","SemEpidemio","MunicipioNotificacao","GVE_NOME","ANO","TotalCaso","FxMenorUmAno","FxUmQuatro","FxCincoNove","FxDezQuatorze","FxQuizeOuMais","SexMasc","SexFem"')
+      .select('id,row_key,"DtNotificacao","SemEpidemio","MunicipioNotificacao","GVE_NOME","ANO","TotalCaso","FxMenorUmAno","FxUmQuatro","FxCincoNove","FxDezQuatorze","FxQuizeOuMais","SexMasc","SexFem"')
       .range(from, from + pageSize - 1);
     if (error) throw new Error(`Erro ao consultar cache CEVESP: ${error.message}`);
 
