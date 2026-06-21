@@ -65,8 +65,6 @@ interface YearHistoryRow {
   examinados: number;
   positivos: number;
   prevalencia: number;
-  tratados: number;
-  cobertura: number;
   traconet: number;
   tt: number;
 }
@@ -745,15 +743,12 @@ function TracomaHistoryTable({ ano: currentAno }: { ano: number }) {
     if (!filteredRows.length) return null;
     const exam = filteredRows.reduce((s, r) => s + r.examinados, 0);
     const pos  = filteredRows.reduce((s, r) => s + r.positivos, 0);
-    const trat = filteredRows.reduce((s, r) => s + r.tratados, 0);
     return {
       examinados: exam,
       positivos: pos,
-      tratados: trat,
       traconet: filteredRows.reduce((s, r) => s + r.traconet, 0),
       tt: filteredRows.reduce((s, r) => s + r.tt, 0),
       prevalencia: exam > 0 ? (pos / exam) * 100 : 0,
-      cobertura: pos > 0 ? (trat / pos) * 100 : 0,
     };
   }, [filteredRows]);
 
@@ -787,8 +782,6 @@ function TracomaHistoryTable({ ano: currentAno }: { ano: number }) {
               <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Examinados</th>
               <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Positivos</th>
               <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Prevalência</th>
-              <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Tratados</th>
-              <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Cobertura</th>
               <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">TT</th>
             </tr>
           </thead>
@@ -825,12 +818,6 @@ function TracomaHistoryTable({ ano: currentAno }: { ano: number }) {
                   }`}>
                     {row.examinados > 0 ? fmtPct(row.prevalencia) : <span className="font-normal text-gray-300">—</span>}
                   </td>
-                  <td className="px-3 py-2 text-right text-gray-700">
-                    {row.tratados > 0 ? row.tratados.toLocaleString("pt-BR") : <span className="text-gray-300">—</span>}
-                  </td>
-                  <td className="px-3 py-2 text-right text-gray-700">
-                    {row.tratados > 0 ? fmtPct(row.cobertura) : <span className="text-gray-300">—</span>}
-                  </td>
                   <td className="px-3 py-2 text-right">
                     {row.tt > 0
                       ? <span className="font-semibold text-red-600">{row.tt}</span>
@@ -848,8 +835,6 @@ function TracomaHistoryTable({ ano: currentAno }: { ano: number }) {
                 <td className="px-3 py-2.5 text-right">{totals.examinados.toLocaleString("pt-BR")}</td>
                 <td className="px-3 py-2.5 text-right">{totals.positivos.toLocaleString("pt-BR")}</td>
                 <td className="px-3 py-2.5 text-right text-teal-300">{fmtPct(totals.prevalencia)}</td>
-                <td className="px-3 py-2.5 text-right">{totals.tratados > 0 ? totals.tratados.toLocaleString("pt-BR") : "—"}</td>
-                <td className="px-3 py-2.5 text-right text-teal-300">{totals.tratados > 0 ? fmtPct(totals.cobertura) : "—"}</td>
                 <td className="px-3 py-2.5 text-right text-red-300">{totals.tt > 0 ? totals.tt.toLocaleString("pt-BR") : "—"}</td>
               </tr>
             </tfoot>

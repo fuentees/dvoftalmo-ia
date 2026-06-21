@@ -1,8 +1,10 @@
 -- Aggregate tracoma history by year on the DB side to avoid row-limit issues
 -- when pulling individual rows (table can have 200k+ rows from older years).
 
+-- nottraconet has only NU_CASOEXA (examinados) and NU_CASOPOS (positivos).
+-- There is no treatment field in this source bank.
 CREATE OR REPLACE FUNCTION nottraconet_history_by_year()
-RETURNS TABLE(ano int, munis bigint, exam bigint, pos bigint, trat bigint)
+RETURNS TABLE(ano int, munis bigint, exam bigint, pos bigint)
 LANGUAGE sql SECURITY DEFINER AS $$
   SELECT
     s.ano::int,
@@ -19,12 +21,7 @@ LANGUAGE sql SECURITY DEFINER AS $$
       CASE WHEN s.raw->>'CASOPOS'    ~ '^\d+(\.\d+)?$' THEN (s.raw->>'CASOPOS')::numeric    END,
       CASE WHEN s.raw->>'POSITIVOS'  ~ '^\d+(\.\d+)?$' THEN (s.raw->>'POSITIVOS')::numeric   END,
       0
-    ))::bigint AS pos,
-    SUM(COALESCE(
-      CASE WHEN s.raw->>'NU_TRATAD'  ~ '^\d+(\.\d+)?$' THEN (s.raw->>'NU_TRATAD')::numeric  END,
-      CASE WHEN s.raw->>'TRATADOS'   ~ '^\d+(\.\d+)?$' THEN (s.raw->>'TRATADOS')::numeric    END,
-      0
-    ))::bigint AS trat
+    ))::bigint AS pos
   FROM sinan_tracoma_rows s
   WHERE s.source_bank = 'nottraconet'
     AND s.ano IS NOT NULL

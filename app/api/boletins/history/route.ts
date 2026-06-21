@@ -20,7 +20,7 @@ export async function GET(request: Request) {
     if (notRes.error) return NextResponse.json({ error: notRes.error.message }, { status: 500 });
     if (tracRes.error) return NextResponse.json({ error: tracRes.error.message }, { status: 500 });
 
-    type NotRow  = { ano: number; munis: number; exam: number; pos: number; trat: number };
+    type NotRow  = { ano: number; munis: number; exam: number; pos: number };
     type TracRow = { ano: number; total: number; tt: number };
 
     const notByYear: Record<number, NotRow>  = {};
@@ -35,7 +35,7 @@ export async function GET(request: Request) {
       .filter(a => a >= 1990 && a <= currentYear)
       .sort((a, b) => a - b)
       .map(a => {
-        const not  = notByYear[a]  ?? { munis: 0, exam: 0, pos: 0, trat: 0 };
+        const not  = notByYear[a]  ?? { munis: 0, exam: 0, pos: 0 };
         const trac = tracByYear[a] ?? { total: 0, tt: 0 };
         return {
           ano: a,
@@ -43,8 +43,6 @@ export async function GET(request: Request) {
           examinados: Number(not.exam),
           positivos: Number(not.pos),
           prevalencia: Number(not.exam) > 0 ? (Number(not.pos) / Number(not.exam)) * 100 : 0,
-          tratados: Number(not.trat),
-          cobertura: Number(not.pos) > 0 ? (Number(not.trat) / Number(not.pos)) * 100 : 0,
           traconet: Number(trac.total),
           tt: Number(trac.tt),
         };
