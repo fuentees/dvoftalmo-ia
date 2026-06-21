@@ -77,9 +77,9 @@ function buildCevespSummary(
 ): string {
   if (!current.length) {
     return (
-      `AVISO: Não foram encontradas notificações de conjuntivite no sistema CEVESP para a SE ${se}/${ano}. ` +
-      `Os dados podem estar em processamento ou ainda não terem sido digitados. ` +
-      `Gere o boletim com essa informação de forma explícita.`
+      `AVISO: Não há registros de casos de conjuntivite para a SE ${se}/${ano}. ` +
+      `Os dados podem ainda estar em processamento. ` +
+      `Informe ao leitor de forma clara que não há dados disponíveis para esta semana. Não mencione sistemas internos.`
     );
   }
 
@@ -112,87 +112,69 @@ function buildCevespSummary(
     .map(([gve, casos]) => `${gve}: ${casos} casos`)
     .join("\n");
 
-  return `DADOS REAIS DO CEVESP — CONJUNTIVITE — SE ${se}/${ano}
-Estado de São Paulo | Semana Epidemiológica ${se} de ${ano}
+  return `DADOS DE CONJUNTIVITE — SE ${se}/${ano} — ESTADO DE SÃO PAULO
 
-━━━ RESUMO DA SEMANA (SE ${se}/${ano}) ━━━
-Notificações recebidas: ${totalNotif}
-Total de casos notificados: ${totalCasos}
-Notificações com surto: ${totalSurtos} (${pct(totalSurtos, totalNotif)} das notificações)
+━━━ RESUMO DA SEMANA ━━━
+Total de casos: ${totalCasos}
+Ocorrências com surto: ${totalSurtos}
 
-━━━ DISTRIBUIÇÃO POR GVE — TOP 10 ━━━
+━━━ REGIÕES COM MAIS CASOS ━━━
 ${topGves}
 
-━━━ SEXO ━━━
+━━━ DISTRIBUIÇÃO POR SEXO ━━━
 Masculino: ${totalMasc} (${pct(totalMasc, totalCasos)})
 Feminino: ${totalFem} (${pct(totalFem, totalCasos)})
 
-━━━ FAIXA ETÁRIA ━━━
-< 1 ano: ${fx0} (${pct(fx0, totalCasos)})
+━━━ DISTRIBUIÇÃO POR FAIXA ETÁRIA ━━━
+Menos de 1 ano: ${fx0} (${pct(fx0, totalCasos)})
 1–4 anos: ${fx14} (${pct(fx14, totalCasos)})
 5–9 anos: ${fx59} (${pct(fx59, totalCasos)})
 10–14 anos: ${fx1014} (${pct(fx1014, totalCasos)})
 15 anos ou mais: ${fx15} (${pct(fx15, totalCasos)})
 
-━━━ AÇÕES DE VIGILÂNCIA NA SEMANA ━━━
-Coletas biológicas: ${coletas}
-Ações educativas: ${acoesEd}
-Treinamentos: ${trein}
-Encaminhamentos especializados: ${encam}
-
 ━━━ COMPARAÇÃO TEMPORAL ━━━
-SE anterior (SE ${se > 1 ? se - 1 : 52}/${se > 1 ? ano : ano - 1}): ${prevCasos} casos — ${delta(totalCasos, prevCasos)}
-Mesma SE ano anterior (SE ${se}/${ano - 1}): ${agoAnosCasos} casos — ${delta(totalCasos, agoAnosCasos)}`;
+Semana anterior (SE ${se > 1 ? se - 1 : 52}/${se > 1 ? ano : ano - 1}): ${prevCasos} casos — ${delta(totalCasos, prevCasos)}
+Mesma semana do ano passado (SE ${se}/${ano - 1}): ${agoAnosCasos} casos — ${delta(totalCasos, agoAnosCasos)}`;
 }
 
-const SYSTEM_PROMPT = `Você é epidemiologista do Centro de Vigilância Epidemiológica "Prof. Alexandre Vranjac" (CVE/CCD/SES-SP).
-Redige boletins técnicos semanais de conjuntivite para gestores municipais e equipes de vigilância epidemiológica.
+const SYSTEM_PROMPT = `Você é comunicador em saúde do Centro de Oftalmologia Sanitária / CVE/SES-SP.
+Redige boletins semanais de conjuntivite para a POPULAÇÃO GERAL — cidadãos e famílias, não gestores ou profissionais de saúde.
 
-REGRA PRINCIPAL: Use SOMENTE os números fornecidos nos dados. Não invente valores. Se os dados indicarem ausência de casos, informe isso com clareza.
+REGRA DE LINGUAGEM: Clara, acessível e humana. Sem jargões técnicos. Explique qualquer termo médico que usar. Não use siglas sem explicação.
 
-REGRA DE FORMATO: NÃO inclua título, subtítulo, cabeçalho institucional, nome da doença, semana epidemiológica ou qualquer linha antes da primeira seção. O documento já possui cabeçalho. Comece O TEXTO DIRETAMENTE com "## Introdução".
+REGRA PRINCIPAL: Use SOMENTE os números fornecidos nos dados. Não invente valores.
 
-Estrutura obrigatória do boletim em Markdown (comece exatamente daqui):
+REGRA DE SISTEMAS: Nunca mencione sistemas internos (CEVESP, GVE, SINAN, SES-SP, CVE). Use apenas "vigilância estadual de saúde", "dados de São Paulo" ou similar. Onde houver "GVE + nome", use apenas o nome geográfico da região.
 
-## Introdução
-Descreva brevemente: o que é conjuntivite, agentes etiológicos mais comuns (adenovírus, clamídia, bacteriana), transmissão por contato direto e fômites, importância para a vigilância em São Paulo, obrigatoriedade de notificação pelo CEVESP.
+REGRA DE PÚBLICO: Escreva para o cidadão. Nada de "recomendações para municípios", "GVEs prioritários" ou ações para gestores.
 
-## Resumo Executivo
-Um único parágrafo com os números mais importantes da semana — para o gestor ler em 30 segundos e saber o que decidir.
+REGRA DE FORMATO: Comece DIRETAMENTE com "## O que é Conjuntivite?" sem nenhuma linha antes.
 
-## Situação Epidemiológica da Semana
-Apresente os dados de casos, notificações e surtos com análise narrativa. Cite os números reais.
+Estrutura obrigatória em Markdown:
 
-## Indicadores da Semana
+## O que é Conjuntivite?
+2–3 frases simples: o que é, como se pega (contato com secreções, mãos sujas, objetos compartilhados), que é contagiosa mas tratável.
 
-| Indicador | Valor |
-|---|---|
-| Total de casos | X |
-| Total de notificações | X |
-| Notificações com surto | X (Y%) |
-| Coletas biológicas | X |
-| Ações educativas | X |
-| Treinamentos | X |
-| Encaminhamentos | X |
+## O que Aconteceu esta Semana em São Paulo
+Quantos casos foram registrados, se houve aumento ou queda em relação à semana anterior e ao mesmo período do ano passado. Em linguagem simples e empática.
 
-## Distribuição Geográfica
-Cite os GVEs com mais casos. Identifique regiões de atenção.
+## Regiões com Mais Casos
+Mencione as regiões/cidades com maior número de casos usando nomes geográficos que o público reconheça. Não use siglas.
 
-## Perfil dos Casos por Sexo e Faixa Etária
-Analise os grupos mais afetados. Destaque faixas etárias de risco se relevante.
+## Quem Foi Mais Afetado
+Faixa etária e sexo em linguagem acessível. Ex: "a maioria dos casos ocorreu em adultos acima de 15 anos".
 
-## Tendência e Comparação Temporal
-Compare com a semana anterior e com a mesma semana do ano passado. Indique se a tendência é de crescimento, queda ou estabilidade.
+## Sintomas
+Lista clara: olho vermelho, lacrimejamento, secreção, sensação de areia. Quando é mais grave.
 
-## Alertas
-Use **ALTO**, **MÉDIO** ou **BAIXO** antes de cada item.
-Se não houver alertas críticos, escreva: "Nenhum alerta crítico identificado nesta semana."
+## Como se Prevenir
+Higiene das mãos, não compartilhar toalhas/colírios/travesseiros, evitar coçar os olhos.
 
-## Recomendações
-Lista com ações concretas para municípios e GVEs.
+## Quando Buscar Atendimento
+Orientação direta: procure um médico ou unidade de saúde se tiver os sintomas, especialmente se persistirem por mais de 2 dias ou em crianças pequenas.
 
-## Nota Técnica
-Fonte: CEVESP/SES-SP. Data dos dados: [data atual]. Limitações: possível atraso de digitação de até 2 semanas; dados sujeitos a revisão posterior.`;
+## Nota
+Dados de vigilância epidemiológica do Estado de São Paulo, Semana Epidemiológica [SE]/[ano].`;
 
 export async function generateConjuntiviteBulletin(
   options: ConjuntiviteBulletinOptions = {}

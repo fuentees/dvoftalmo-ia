@@ -661,8 +661,11 @@ function TracomaHistoryTable({ ano: currentAno }: { ano: number }) {
     return `${v.toFixed(1).replace(".", ",")}%`;
   }
 
-  // Show only years up to (and including) the bulletin's reference year
-  const filteredRows = useMemo(() => rows?.filter(r => r.ano <= currentAno) ?? [], [rows, currentAno]);
+  // Only show years with actual data, up to and including the bulletin's reference year
+  const filteredRows = useMemo(
+    () => rows?.filter(r => r.ano <= currentAno && (r.examinados > 0 || r.traconet > 0)) ?? [],
+    [rows, currentAno]
+  );
 
   const totals = useMemo(() => {
     if (!filteredRows.length) return null;
