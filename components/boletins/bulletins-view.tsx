@@ -735,11 +735,10 @@ function TracomaHistoryTable({ ano: currentAno }: { ano: number }) {
     return `${v.toFixed(1).replace(".", ",")}%`;
   }
 
-  // Show all years with meaningful data. currentAno is used only for highlighting, not filtering —
-  // the series histórica should always reflect the complete available dataset.
+  // Only show years up to and including the bulletin year. currentAno also drives highlighting.
   const filteredRows = useMemo(
-    () => rows?.filter(r => r.examinados >= 10 || r.traconet > 0) ?? [],
-    [rows]
+    () => rows?.filter(r => r.ano <= currentAno && (r.examinados >= 10 || r.traconet > 0)) ?? [],
+    [rows, currentAno]
   );
 
   const totals = useMemo(() => {
