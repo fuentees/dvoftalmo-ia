@@ -3,24 +3,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
-function getValue(raw: Record<string, unknown>, candidates: string[]): unknown {
-  const keys = Object.keys(raw);
-  for (const c of candidates) {
-    const key = keys.find(k => k.toLowerCase() === c.toLowerCase());
-    if (key !== undefined && raw[key] != null && String(raw[key]).trim() !== "") return raw[key];
-  }
-  return null;
-}
-
-function toNum(v: unknown): number {
-  const n = Number(String(v ?? "").replace(/[^\d.-]/g, ""));
-  return Number.isFinite(n) ? n : 0;
-}
-
-const EXAM_FIELDS = ["NU_CASOEXA", "CASOEXA", "CASOS_EXAM", "NU_EXAM", "EXAMINADOS", "EXAMINA", "QT_EXAM", "TOT_EXAM", "NU_ALUNOS", "ALUNOS"];
-const POS_FIELDS  = ["NU_CASOPOS", "CASOPOS", "CASOS_POS", "NU_POSITIV", "POSITIVOS", "QT_POS", "TOT_POS"];
-const TRAT_FIELDS = ["NU_TRATAD", "TRATADOS", "QT_TRAT", "TOTAL_TRAT"];
-
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const agravo = searchParams.get("agravo");
@@ -28,36 +10,24 @@ export async function GET(request: Request) {
 
   const admin = createAdminClient();
 
-  // ── Tracoma: série histórica por ano (todos os dados disponíveis) ───────────
+  // ── Tracoma: série histórica por ano — agrega no banco para evitar row-limit ──
   if (agravo === "tracoma") {
-    const [{ data: notData, error: notErr }, { data: tracData, error: tracErr }] = await Promise.all([
-      admin.from("sinan_tracoma_rows").select("ano, municipio, raw").eq("source_bank", "nottraconet").gte("ano", 1990).order("ano", { ascending: true }).limit(200000),
-      admin.from("sinan_tracoma_rows").select("ano, classificacao").eq("source_bank", "traconet").gte("ano", 1990).order("ano", { ascending: true }).limit(200000),
+    const [notRes, tracRes] = await Promise.all([
+      admin.rpc("nottraconet_history_by_year"),
+      admin.rpc("traconet_history_by_year"),
     ]);
 
-    if (notErr) return NextResponse.json({ error: notErr.message }, { status: 500 });
-    if (tracErr) return NextResponse.json({ error: tracErr.message }, { status: 500 });
+    if (notRes.error) return NextResponse.json({ error: notRes.error.message }, { status: 500 });
+    if (tracRes.error) return NextResponse.json({ error: tracRes.error.message }, { status: 500 });
 
-    const notByYear: Record<number, { munis: Set<string>; exam: number; pos: number; trat: number }> = {};
-    for (const row of (notData ?? []) as { ano: number | null; municipio: string | null; raw: Record<string, unknown> | null }[]) {
-      const a = row.ano ?? 0;
-      if (!a) continue;
-      if (!notByYear[a]) notByYear[a] = { munis: new Set(), exam: 0, pos: 0, trat: 0 };
-      const raw = (row.raw ?? {}) as Record<string, unknown>;
-      notByYear[a].munis.add(String(row.municipio ?? ""));
-      notByYear[a].exam += toNum(getValue(raw, EXAM_FIELDS));
-      notByYear[a].pos  += toNum(getValue(raw, POS_FIELDS));
-      notByYear[a].trat += toNum(getValue(raw, TRAT_FIELDS));
-    }
+    type NotRow  = { ano: number; munis: number; exam: number; pos: number; trat: number };
+    type TracRow = { ano: number; total: number; tt: number };
 
-    const tracByYear: Record<number, { total: number; tt: number }> = {};
-    for (const row of (tracData ?? []) as { ano: number | null; classificacao: string | null }[]) {
-      const a = row.ano ?? 0;
-      if (!a) continue;
-      if (!tracByYear[a]) tracByYear[a] = { total: 0, tt: 0 };
-      tracByYear[a].total++;
-      if ((row.classificacao ?? "").toUpperCase().includes("TT")) tracByYear[a].tt++;
-    }
+    const notByYear: Record<number, NotRow>  = {};
+    for (const r of (notRes.data ?? []) as NotRow[])  notByYear[r.ano]  = r;
+
+    const tracByYear: Record<number, TracRow> = {};
+    for (const r of (tracRes.data ?? []) as TracRow[]) tracByYear[r.ano] = r;
 
     const currentYear = new Date().getFullYear();
     const allYears = new Set([...Object.keys(notByYear), ...Object.keys(tracByYear)].map(Number));
@@ -65,18 +35,18 @@ export async function GET(request: Request) {
       .filter(a => a >= 1990 && a <= currentYear)
       .sort((a, b) => a - b)
       .map(a => {
-        const not  = notByYear[a]  ?? { munis: new Set(), exam: 0, pos: 0, trat: 0 };
+        const not  = notByYear[a]  ?? { munis: 0, exam: 0, pos: 0, trat: 0 };
         const trac = tracByYear[a] ?? { total: 0, tt: 0 };
         return {
           ano: a,
-          munis: not.munis.size,
-          examinados: not.exam,
-          positivos: not.pos,
-          prevalencia: not.exam > 0 ? (not.pos / not.exam) * 100 : 0,
-          tratados: not.trat,
-          cobertura: not.pos > 0 ? (not.trat / not.pos) * 100 : 0,
-          traconet: trac.total,
-          tt: trac.tt,
+          munis: Number(not.munis),
+          examinados: Number(not.exam),
+          positivos: Number(not.pos),
+          prevalencia: Number(not.exam) > 0 ? (Number(not.pos) / Number(not.exam)) * 100 : 0,
+          tratados: Number(not.trat),
+          cobertura: Number(not.pos) > 0 ? (Number(not.trat) / Number(not.pos)) * 100 : 0,
+          traconet: Number(trac.total),
+          tt: Number(trac.tt),
         };
       });
 
