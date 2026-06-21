@@ -650,6 +650,80 @@ function ConjuntiviteHistoryTable({ se: currentSe, ano }: { se: number; ano: num
   );
 }
 
+// ──── TracomaPrevalenciaChart ─────────────────────────────────────────────────
+function TracomaPrevalenciaChart({ rows, currentAno }: { rows: YearHistoryRow[]; currentAno: number }) {
+  const dataRows = rows.filter(r => r.examinados >= 10);
+  if (dataRows.length < 2) return null;
+
+  const W = 760, H = 170, PL = 44, PR = 52, PT = 14, PB = 32;
+  const cW = W - PL - PR, cH = H - PT - PB;
+
+  const years = dataRows.map(r => r.ano);
+  const minY = Math.min(...years), maxY = Math.max(...years);
+  const yRange = Math.max(maxY - minY, 1);
+
+  const maxPrev = Math.max(...dataRows.map(r => r.prevalencia), 6);
+  const yMax = Math.ceil(maxPrev / 2) * 2;
+
+  const xOf = (ano: number) => PL + ((ano - minY) / yRange) * cW;
+  const yOf = (v: number) => PT + cH - (v / yMax) * cH;
+
+  const linePath = dataRows
+    .map((r, i) => `${i === 0 ? "M" : "L"} ${xOf(r.ano).toFixed(1)} ${yOf(r.prevalencia).toFixed(1)}`)
+    .join(" ");
+
+  const omsY = yOf(5);
+  const yTicks = Array.from({ length: Math.floor(yMax / 2) + 1 }, (_, i) => i * 2);
+  const xLabels = years.filter((y, i) => i === 0 || i === years.length - 1 || y % 5 === 0);
+
+  return (
+    <div className="mb-5 print:break-inside-avoid">
+      <div className="mb-2 flex items-start gap-2 text-sm font-extrabold uppercase tracking-wider text-teal-900">
+        <span className="mt-0.5 inline-block h-4 w-1.5 shrink-0 rounded-sm bg-teal-600" aria-hidden />
+        <span>Tendência da Prevalência — Série Histórica</span>
+      </div>
+      <div className="overflow-hidden rounded-xl border border-teal-100 bg-white p-2 shadow-sm">
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Gráfico de tendência da prevalência de tracoma">
+          {yTicks.map(v => (
+            <line key={v} x1={PL} x2={PL + cW} y1={yOf(v)} y2={yOf(v)} stroke="#e2e8f0" strokeWidth="0.8" />
+          ))}
+          <line x1={PL} x2={PL + cW} y1={omsY} y2={omsY} stroke="#dc2626" strokeWidth="1.2" strokeDasharray="6 3" />
+          <text x={PL + cW + 4} y={omsY + 4} fill="#dc2626" fontSize="10" fontWeight="600">5% (OMS)</text>
+          <path d={linePath} fill="none" stroke="#0f766e" strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" />
+          {dataRows.map(r => (
+            <g key={r.ano}>
+              <circle
+                cx={xOf(r.ano)}
+                cy={yOf(r.prevalencia)}
+                r={r.ano === currentAno ? 5.5 : 3.5}
+                fill={r.prevalencia >= 5 ? "#dc2626" : "#0f766e"}
+                stroke="white"
+                strokeWidth="1.5"
+              />
+              <title>{`${r.ano}: ${r.prevalencia.toFixed(1).replace(".", ",")}%`}</title>
+            </g>
+          ))}
+          {yTicks.map(v => (
+            <text key={v} x={PL - 5} y={yOf(v) + 3.5} fill="#64748b" fontSize="9.5" textAnchor="end">{v}%</text>
+          ))}
+          {xLabels.map(y => (
+            <text key={y} x={xOf(y)} y={H - PB + 14} fill="#64748b" fontSize="9.5" textAnchor="middle">{y}</text>
+          ))}
+          <line x1={PL} x2={PL} y1={PT} y2={PT + cH} stroke="#94a3b8" strokeWidth="1" />
+          <line x1={PL} x2={PL + cW} y1={PT + cH} y2={PT + cH} stroke="#94a3b8" strokeWidth="1" />
+        </svg>
+      </div>
+      <p className="mt-1 text-[11px] text-gray-400">
+        Linha tracejada vermelha = meta OMS (TF &lt;5%) ·{" "}
+        <span className="font-semibold text-red-600">pontos vermelhos</span> = anos acima da meta ·{" "}
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block h-2.5 w-2.5 rounded-full border-2 border-white bg-teal-600 shadow-sm" /> ponto maior = ano do boletim
+        </span>
+      </p>
+    </div>
+  );
+}
+
 // ──── TracomaHistoryTable ─────────────────────────────────────────────────────
 function TracomaHistoryTable({ ano: currentAno }: { ano: number }) {
   const { data: rows, isLoading } = useQuery<YearHistoryRow[]>({
@@ -716,6 +790,7 @@ function TracomaHistoryTable({ ano: currentAno }: { ano: number }) {
               <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Prevalência</th>
               <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Tratados</th>
               <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Cobertura</th>
+              <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">TT</th>
             </tr>
           </thead>
           <tbody>
@@ -757,6 +832,11 @@ function TracomaHistoryTable({ ano: currentAno }: { ano: number }) {
                   <td className="px-3 py-2 text-right text-gray-700">
                     {row.tratados > 0 ? fmtPct(row.cobertura) : <span className="text-gray-300">—</span>}
                   </td>
+                  <td className="px-3 py-2 text-right">
+                    {row.tt > 0
+                      ? <span className="font-semibold text-red-600">{row.tt}</span>
+                      : <span className="text-gray-300">—</span>}
+                  </td>
                 </tr>
               );
             })}
@@ -771,6 +851,7 @@ function TracomaHistoryTable({ ano: currentAno }: { ano: number }) {
                 <td className="px-3 py-2.5 text-right text-teal-300">{fmtPct(totals.prevalencia)}</td>
                 <td className="px-3 py-2.5 text-right">{totals.tratados > 0 ? totals.tratados.toLocaleString("pt-BR") : "—"}</td>
                 <td className="px-3 py-2.5 text-right text-teal-300">{totals.tratados > 0 ? fmtPct(totals.cobertura) : "—"}</td>
+                <td className="px-3 py-2.5 text-right text-red-300">{totals.tt > 0 ? totals.tt.toLocaleString("pt-BR") : "—"}</td>
               </tr>
             </tfoot>
           )}
@@ -780,11 +861,15 @@ function TracomaHistoryTable({ ano: currentAno }: { ano: number }) {
       <p className="mt-1.5 text-[11px] text-gray-400">
         Prevalência ≥ 5%{" "}
         <span className="font-semibold text-red-600">vermelha</span>{" "}
-        (acima da meta OMS) ·{" "}
+        (acima da meta OMS) · TT = casos de triquíase (cirurgia indicada) ·{" "}
         <span className="inline-flex items-center gap-1">
           <span className="inline-block h-2 w-2 rounded-full bg-teal-600" /> Ano do boletim
         </span>
       </p>
+
+      <div className="mt-6">
+        <TracomaPrevalenciaChart rows={filteredRows} currentAno={currentAno} />
+      </div>
     </div>
   );
 }

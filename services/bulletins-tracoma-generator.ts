@@ -116,7 +116,9 @@ function buildAnnualSummary(ano: number, agg: AggResult, trac: TraconetAgg): str
   const elimTF = agg.totalPos / Math.max(agg.totalExam, 1) < 0.05 ? "ATINGIDA" : "NÃO ATINGIDA";
   const elimTT = trac.tt / Math.max(agg.totalExam, 1) < 0.002 ? "ATINGIDA" : "NÃO ATINGIDA";
 
+  const consolidacao = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
   return `DADOS DE TRACOMA — ANO ${ano} — ESTADO DE SÃO PAULO
+Data de consolidação: ${consolidacao}
 
 ━━━ DADOS CONSOLIDADOS MUNICIPAIS ━━━
 Total de municípios com dados: ${agg.muniCount}
@@ -170,7 +172,9 @@ function buildPeriodSummary(
   const elimTF = last.agg.totalPos / Math.max(last.agg.totalExam, 1) < 0.05 ? "ATINGIDA" : "NÃO ATINGIDA";
   const elimTT = last.trac.tt / Math.max(last.agg.totalExam, 1) < 0.002 ? "ATINGIDA" : "NÃO ATINGIDA";
 
+  const consolidacao = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
   return `DADOS DE TRACOMA — PERÍODO ${anoInicio}–${anoFim} — ESTADO DE SÃO PAULO
+Data de consolidação: ${consolidacao}
 
 ━━━ TENDÊNCIA POR ANO ━━━
 Ano | Municípios | Examinados | Positivos (prev.) | Tratados (cob.) | Notif. individuais
@@ -202,12 +206,15 @@ REGRA DE SISTEMAS: Não mencione nomes de sistemas internos de banco de dados. P
 
 REGRA DE ANOS: Use somente o ano de referência informado. Não faça projeções para anos futuros.
 
+REGRA OMS: Quando menos de 50% dos municípios do estado enviaram dados, NÃO afirme categoricamente que "São Paulo atingiu a meta OMS". Escreva: "Considerando os municípios com dados disponíveis em [ano], os indicadores permaneceram abaixo dos limiares da OMS. A cobertura parcial de notificação não permite uma conclusão definitiva sobre o estado como um todo."
+
 REGRA DE FORMATO: NÃO inclua título, subtítulo, cabeçalho institucional ou qualquer linha antes da primeira seção. Comece O TEXTO DIRETAMENTE com "## Introdução".
 
 Estrutura obrigatória em Markdown:
 
 ## Introdução
-O que é tracoma, agente etiológico (Chlamydia trachomatis), transmissão, classificação clínica (TF — folicular, TI — inflamatório intenso, TS — cicatricial, TT — triquíase, CO — opacificação corneana), importância como doença tropical negligenciada, meta OMS de eliminação até 2030 (TF <5% em escolares e TT <0,2% na população), papel histórico de São Paulo.
+Inclua como primeiro parágrafo a origem dos dados: "Os dados apresentados referem-se às notificações registradas no Sistema de Informação de Agravos de Notificação (Sinan) e às atividades coletivas encaminhadas ao Programa Estadual de Eliminação do Tracoma, consolidados até [data de consolidação fornecida nos dados]."
+Em seguida: o que é tracoma, agente etiológico (Chlamydia trachomatis), transmissão, classificação clínica (TF — folicular, TI — inflamatório intenso, TS — cicatricial, TT — triquíase, CO — opacificação corneana), importância como doença tropical negligenciada, meta OMS de eliminação até 2030 (TF <5% em escolares e TT <0,2% na população), papel histórico de São Paulo.
 
 ## Resumo Executivo
 Parágrafo único com os indicadores mais críticos do ano — prevalência, cobertura de tratamento e status de eliminação. Síntese para tomada de decisão rápida.
@@ -227,23 +234,49 @@ Análise dos dados de examinados, positivos e prevalência. Comparação com os 
 | Notificações individuais | X |
 
 ## Distribuição Geográfica
-Municípios e GVEs com maior prevalência. Áreas prioritárias para intensificação das ações do programa.
+Tabela dos municípios com maiores prevalências observadas. Use exatamente os dados fornecidos:
+
+| Município | Examinados | Positivos | Prevalência |
+|---|---|---|---|
+
+Acrescente asterisco (*) e rodapé "* amostra pequena — interpretar com cautela (n<30)" para municípios com menos de 30 examinados. Identifique GVEs prioritárias para intensificação das ações.
 
 ## Formas Clínicas
-Distribuição dos casos por forma clínica (TF, TI, TS, TT, CO). Destaque para TT — indica necessidade de intervenção cirúrgica imediata.
+
+| Forma Clínica | Descrição | Casos |
+|---|---|---|
+| TF | Tracoma Folicular | X |
+| TI | Inflamatório Intenso | X |
+| TS | Cicatricial | X |
+| TT | Triquíase (cirurgia indicada) | X |
+| CO | Opacificação Corneana | X |
+
+Use os valores exatos dos dados. Use "0" (não "—") para formas sem casos registrados. Destaque TT — casos com triquíase indicam necessidade de encaminhamento cirúrgico imediato.
 
 ## Cobertura de Tratamento
-Avaliação da cobertura (meta: 100% dos positivos tratados). Municípios com lacunas relevantes.
+Avaliação da cobertura (meta: 100% dos positivos tratados). Inclua a nota: "Conforme o protocolo do Programa Nacional de Eliminação do Tracoma, todos os casos positivos devem receber tratamento com azitromicina." Identifique municípios com lacunas relevantes.
 
 ## Status de Eliminação — Limiares OMS
-Avaliação objetiva: o estado atingiu TF <5% e TT <0,2%? Quais municípios ainda apresentam prevalência acima da meta?
+Avaliação objetiva: o estado atingiu TF <5% e TT <0,2%? Aplique a REGRA OMS (veja acima). Quais municípios ainda apresentam prevalência acima da meta?
 
 ## Alertas
-Use **ALTO**, **MÉDIO** ou **BAIXO** antes de cada item.
+Use os seguintes prefixos antes de cada item:
+🔴 para situações críticas que requerem ação imediata
+🟠 para situações que requerem atenção e monitoramento intensificado
+🟡 para situações que requerem acompanhamento e observação
 Se não houver alertas críticos, escreva: "Nenhum alerta crítico identificado para o ano de referência."
 
 ## Recomendações
-Ações concretas e prioritárias para municípios, GVEs e coordenadores do Programa de Eliminação do Tracoma.
+Divida em três subseções:
+
+### Ações Imediatas
+Ações para a semana seguinte: investigar casos pendentes, iniciar tratamento dos positivos, garantir encaminhamento cirúrgico dos casos de TT.
+
+### Ações de Curto Prazo (próximos 3 meses)
+Ampliação da cobertura de exame, revisão e qualificação das notificações, articulação com serviços cirúrgicos para casos de TT.
+
+### Ações Permanentes
+Educação permanente das equipes de vigilância, busca ativa nas escolas e comunidades endêmicas, qualificação do registro e envio regular de dados ao estado.
 
 ## Nota Técnica
 Fonte: SINAN/SES-SP. Ano de referência: [ano]. Dados sujeitos a revisão — a cobertura pode ser parcial conforme o período de envio das informações pelos municípios.`;
@@ -257,12 +290,15 @@ REGRA DE SISTEMAS: Não mencione nomes de sistemas internos de banco de dados. U
 
 REGRA DE ANOS: Use somente os anos do intervalo fornecido. Não faça projeções futuras.
 
+REGRA OMS: Quando menos de 50% dos municípios do estado enviaram dados, NÃO afirme categoricamente que "São Paulo atingiu a meta OMS". Escreva: "Considerando os municípios com dados disponíveis, os indicadores permaneceram abaixo dos limiares da OMS. A cobertura parcial de notificação não permite uma conclusão definitiva sobre o estado como um todo."
+
 REGRA DE FORMATO: NÃO inclua título, cabeçalho institucional ou qualquer linha antes da primeira seção. Comece DIRETAMENTE com "## Introdução".
 
 Estrutura obrigatória em Markdown:
 
 ## Introdução
-Contextualização do tracoma em São Paulo, importância do monitoramento multianual, metas OMS de eliminação até 2030 (TF <5%, TT <0,2%) e relevância histórica do estado no controle da doença.
+Inclua como primeiro parágrafo a origem dos dados: "Os dados apresentados referem-se às notificações registradas no Sistema de Informação de Agravos de Notificação (Sinan) e às atividades coletivas encaminhadas ao Programa Estadual de Eliminação do Tracoma, consolidados até [data de consolidação fornecida nos dados]."
+Em seguida: contextualização do tracoma em São Paulo, importância do monitoramento multianual, metas OMS de eliminação até 2030 (TF <5%, TT <0,2%) e relevância histórica do estado no controle da doença.
 
 ## Resumo do Período
 Parágrafo síntese: tendência geral do período, se a prevalência melhorou, piorou ou estabilizou, e status de eliminação no ano mais recente.
@@ -280,16 +316,31 @@ Análise ano a ano: identificar inflexões, anos de piora ou melhora, e possíve
 Detalhe epidemiológico do último ano do período: municípios, formas clínicas, cobertura de tratamento, áreas prioritárias.
 
 ## Municípios Prioritários
-Municípios com maior prevalência no último ano disponível — foco para intensificação das ações do programa.
+Tabela com municípios de maior prevalência no último ano. Inclua coluna Examinados; acrescente asterisco (*) para n<30 com rodapé "* amostra pequena — interpretar com cautela":
+
+| Município | Examinados | Positivos | Prevalência |
+|---|---|---|---|
 
 ## Status de Eliminação — Limiares OMS
-Avaliação do progresso ao longo do período em direção às metas TF <5% e TT <0,2%. O estado está convergindo?
+Avaliação do progresso ao longo do período em direção às metas TF <5% e TT <0,2%. Aplique a REGRA OMS (veja acima). O estado está convergindo?
 
 ## Alertas
-Use **ALTO**, **MÉDIO** ou **BAIXO** antes de cada item.
+Use os seguintes prefixos antes de cada item:
+🔴 para situações críticas que requerem ação imediata
+🟠 para situações que requerem atenção e monitoramento intensificado
+🟡 para situações que requerem acompanhamento e observação
 
 ## Recomendações
-Ações concretas considerando a tendência do período inteiro, não apenas o último ano.
+Divida em três subseções considerando a tendência do período inteiro, não apenas o último ano:
+
+### Ações Imediatas
+Ações para a semana seguinte: investigar casos pendentes, tratar positivos, encaminhar casos de TT para cirurgia.
+
+### Ações de Curto Prazo (próximos 3 meses)
+Ampliação de cobertura, revisão de notificações, engajamento de municípios silenciosos.
+
+### Ações Permanentes
+Educação permanente, busca ativa, qualificação do registro e monitoramento da tendência histórica.
 
 ## Nota Técnica
 Fonte: SINAN/SES-SP. Período de análise: [anoInicio]–[anoFim]. Dados sujeitos a revisão conforme consolidação das informações municipais.`;
