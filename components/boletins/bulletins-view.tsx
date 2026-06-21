@@ -661,9 +661,10 @@ function TracomaHistoryTable({ ano: currentAno }: { ano: number }) {
     return `${v.toFixed(1).replace(".", ",")}%`;
   }
 
-  // Only show years with actual data, up to and including the bulletin's reference year
+  // Only show years with meaningful data (min 10 examinados avoids 100%-prevalence artifacts),
+  // up to and including the bulletin's reference year.
   const filteredRows = useMemo(
-    () => rows?.filter(r => r.ano <= currentAno && (r.examinados > 0 || r.traconet > 0)) ?? [],
+    () => rows?.filter(r => r.ano <= currentAno && (r.examinados >= 10 || r.traconet > 0)) ?? [],
     [rows, currentAno]
   );
 
@@ -715,8 +716,6 @@ function TracomaHistoryTable({ ano: currentAno }: { ano: number }) {
               <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Prevalência</th>
               <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Tratados</th>
               <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Cobertura</th>
-              <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Notif. Individuais</th>
-              <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Triquíase</th>
             </tr>
           </thead>
           <tbody>
@@ -756,15 +755,7 @@ function TracomaHistoryTable({ ano: currentAno }: { ano: number }) {
                     {row.tratados > 0 ? row.tratados.toLocaleString("pt-BR") : <span className="text-gray-300">—</span>}
                   </td>
                   <td className="px-3 py-2 text-right text-gray-700">
-                    {row.positivos > 0 ? fmtPct(row.cobertura) : <span className="text-gray-300">—</span>}
-                  </td>
-                  <td className="px-3 py-2 text-right text-gray-700">
-                    {row.traconet > 0 ? row.traconet.toLocaleString("pt-BR") : <span className="text-gray-300">—</span>}
-                  </td>
-                  <td className="px-3 py-2 text-right text-gray-700">
-                    {row.tt > 0
-                      ? <span className="font-semibold text-red-600">{row.tt}</span>
-                      : <span className="text-gray-300">—</span>}
+                    {row.tratados > 0 ? fmtPct(row.cobertura) : <span className="text-gray-300">—</span>}
                   </td>
                 </tr>
               );
@@ -778,10 +769,8 @@ function TracomaHistoryTable({ ano: currentAno }: { ano: number }) {
                 <td className="px-3 py-2.5 text-right">{totals.examinados.toLocaleString("pt-BR")}</td>
                 <td className="px-3 py-2.5 text-right">{totals.positivos.toLocaleString("pt-BR")}</td>
                 <td className="px-3 py-2.5 text-right text-teal-300">{fmtPct(totals.prevalencia)}</td>
-                <td className="px-3 py-2.5 text-right">{totals.tratados.toLocaleString("pt-BR")}</td>
-                <td className="px-3 py-2.5 text-right text-teal-300">{fmtPct(totals.cobertura)}</td>
-                <td className="px-3 py-2.5 text-right">{totals.traconet.toLocaleString("pt-BR")}</td>
-                <td className="px-3 py-2.5 text-right">{totals.tt > 0 ? totals.tt : "—"}</td>
+                <td className="px-3 py-2.5 text-right">{totals.tratados > 0 ? totals.tratados.toLocaleString("pt-BR") : "—"}</td>
+                <td className="px-3 py-2.5 text-right text-teal-300">{totals.tratados > 0 ? fmtPct(totals.cobertura) : "—"}</td>
               </tr>
             </tfoot>
           )}
@@ -791,7 +780,7 @@ function TracomaHistoryTable({ ano: currentAno }: { ano: number }) {
       <p className="mt-1.5 text-[11px] text-gray-400">
         Prevalência ≥ 5%{" "}
         <span className="font-semibold text-red-600">vermelha</span>{" "}
-        (acima da meta OMS) · Triquíase = casos com indicação de cirurgia ·{" "}
+        (acima da meta OMS) ·{" "}
         <span className="inline-flex items-center gap-1">
           <span className="inline-block h-2 w-2 rounded-full bg-teal-600" /> Ano do boletim
         </span>
@@ -824,6 +813,10 @@ function BulletinDetail({ id, onBack }: { id: string; onBack: () => void }) {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["bulletin", id] });
       await queryClient.invalidateQueries({ queryKey: ["bulletins", data?.agravo] });
+      if (data?.agravo === "tracoma") {
+        await queryClient.invalidateQueries({ queryKey: ["tracoma-history"] });
+        await queryClient.invalidateQueries({ queryKey: ["tracoma-map", data.ano] });
+      }
     }
   });
 
