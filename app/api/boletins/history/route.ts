@@ -31,8 +31,8 @@ export async function GET(request: Request) {
   // ── Tracoma: série histórica por ano (todos os dados disponíveis) ───────────
   if (agravo === "tracoma") {
     const [{ data: notData, error: notErr }, { data: tracData, error: tracErr }] = await Promise.all([
-      admin.from("sinan_tracoma_rows").select("ano, municipio, raw").eq("source_bank", "nottraconet").limit(200000),
-      admin.from("sinan_tracoma_rows").select("ano, classificacao").eq("source_bank", "traconet").limit(200000),
+      admin.from("sinan_tracoma_rows").select("ano, municipio, raw").eq("source_bank", "nottraconet").gte("ano", 1990).order("ano", { ascending: true }).limit(200000),
+      admin.from("sinan_tracoma_rows").select("ano, classificacao").eq("source_bank", "traconet").gte("ano", 1990).order("ano", { ascending: true }).limit(200000),
     ]);
 
     if (notErr) return NextResponse.json({ error: notErr.message }, { status: 500 });
