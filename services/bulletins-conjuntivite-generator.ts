@@ -114,67 +114,79 @@ function buildCevespSummary(
 
   return `DADOS DE CONJUNTIVITE — SE ${se}/${ano} — ESTADO DE SÃO PAULO
 
-━━━ RESUMO DA SEMANA ━━━
-Total de casos: ${totalCasos}
-Ocorrências com surto: ${totalSurtos}
+━━━ RESUMO DA SEMANA (SE ${se}/${ano}) ━━━
+Notificações recebidas: ${totalNotif}
+Total de casos notificados: ${totalCasos}
+Ocorrências com surto: ${totalSurtos} (${pct(totalSurtos, totalNotif)} das notificações)
 
-━━━ REGIÕES COM MAIS CASOS ━━━
+━━━ DISTRIBUIÇÃO POR GVE — TOP 10 ━━━
 ${topGves}
 
-━━━ DISTRIBUIÇÃO POR SEXO ━━━
+━━━ SEXO ━━━
 Masculino: ${totalMasc} (${pct(totalMasc, totalCasos)})
 Feminino: ${totalFem} (${pct(totalFem, totalCasos)})
 
-━━━ DISTRIBUIÇÃO POR FAIXA ETÁRIA ━━━
-Menos de 1 ano: ${fx0} (${pct(fx0, totalCasos)})
+━━━ FAIXA ETÁRIA ━━━
+< 1 ano: ${fx0} (${pct(fx0, totalCasos)})
 1–4 anos: ${fx14} (${pct(fx14, totalCasos)})
 5–9 anos: ${fx59} (${pct(fx59, totalCasos)})
 10–14 anos: ${fx1014} (${pct(fx1014, totalCasos)})
 15 anos ou mais: ${fx15} (${pct(fx15, totalCasos)})
 
+━━━ AÇÕES DE VIGILÂNCIA NA SEMANA ━━━
+Coletas de material biológico: ${coletas}
+Ações educativas: ${acoesEd}
+Treinamentos: ${trein}
+Encaminhamentos especializados: ${encam}
+
 ━━━ COMPARAÇÃO TEMPORAL ━━━
-Semana anterior (SE ${se > 1 ? se - 1 : 52}/${se > 1 ? ano : ano - 1}): ${prevCasos} casos — ${delta(totalCasos, prevCasos)}
-Mesma semana do ano passado (SE ${se}/${ano - 1}): ${agoAnosCasos} casos — ${delta(totalCasos, agoAnosCasos)}`;
+SE anterior (SE ${se > 1 ? se - 1 : 52}/${se > 1 ? ano : ano - 1}): ${prevCasos} casos — ${delta(totalCasos, prevCasos)}
+Mesma SE ano anterior (SE ${se}/${ano - 1}): ${agoAnosCasos} casos — ${delta(totalCasos, agoAnosCasos)}`;
 }
 
-const SYSTEM_PROMPT = `Você é comunicador em saúde do Centro de Oftalmologia Sanitária / CVE/SES-SP.
-Redige boletins semanais de conjuntivite para a POPULAÇÃO GERAL — cidadãos e famílias, não gestores ou profissionais de saúde.
+const SYSTEM_PROMPT = `Você é epidemiologista do Centro de Oftalmologia Sanitária / Centro de Vigilância Epidemiológica "Prof. Alexandre Vranjac" (CVE/CCD/SES-SP).
+Redige boletins epidemiológicos semanais de conjuntivite destinados a gestores municipais de saúde, equipes de vigilância epidemiológica e profissionais de saúde pública.
 
-REGRA DE LINGUAGEM: Clara, acessível e humana. Sem jargões técnicos. Explique qualquer termo médico que usar. Não use siglas sem explicação.
+REGRA PRINCIPAL: Use SOMENTE os números fornecidos nos dados. Não invente valores. Se não houver dados para a semana, informe com clareza.
 
-REGRA PRINCIPAL: Use SOMENTE os números fornecidos nos dados. Não invente valores.
-
-REGRA DE SISTEMAS: Nunca mencione sistemas internos (CEVESP, GVE, SINAN, SES-SP, CVE). Use apenas "vigilância estadual de saúde", "dados de São Paulo" ou similar. Onde houver "GVE + nome", use apenas o nome geográfico da região.
-
-REGRA DE PÚBLICO: Escreva para o cidadão. Nada de "recomendações para municípios", "GVEs prioritários" ou ações para gestores.
-
-REGRA DE FORMATO: Comece DIRETAMENTE com "## O que é Conjuntivite?" sem nenhuma linha antes.
+REGRA DE FORMATO: NÃO inclua título, subtítulo, cabeçalho institucional ou qualquer linha antes da primeira seção. O documento já possui cabeçalho. Comece O TEXTO DIRETAMENTE com "## Introdução".
 
 Estrutura obrigatória em Markdown:
 
-## O que é Conjuntivite?
-2–3 frases simples: o que é, como se pega (contato com secreções, mãos sujas, objetos compartilhados), que é contagiosa mas tratável.
+## Introdução
+Contextualização breve: o que é conjuntivite, principais agentes etiológicos (adenovírus, Chlamydia trachomatis, bacteriana), mecanismo de transmissão, importância para a vigilância epidemiológica em São Paulo.
 
-## O que Aconteceu esta Semana em São Paulo
-Quantos casos foram registrados, se houve aumento ou queda em relação à semana anterior e ao mesmo período do ano passado. Em linguagem simples e empática.
+## Situação Epidemiológica da Semana
+Análise narrativa dos casos, notificações e surtos com os números reais. Contextualize a magnitude em relação ao período.
 
-## Regiões com Mais Casos
-Mencione as regiões/cidades com maior número de casos usando nomes geográficos que o público reconheça. Não use siglas.
+## Indicadores da Semana
 
-## Quem Foi Mais Afetado
-Faixa etária e sexo em linguagem acessível. Ex: "a maioria dos casos ocorreu em adultos acima de 15 anos".
+| Indicador | Valor |
+|---|---|
+| Total de casos | X |
+| Total de notificações | X |
+| Ocorrências com surto | X |
+| Coletas de material biológico | X |
+| Ações educativas realizadas | X |
 
-## Sintomas
-Lista clara: olho vermelho, lacrimejamento, secreção, sensação de areia. Quando é mais grave.
+## Distribuição Geográfica
+Análise por região: identifique os GVEs (Grupos de Vigilância Epidemiológica) com maior número de casos e regiões de atenção prioritária.
 
-## Como se Prevenir
-Higiene das mãos, não compartilhar toalhas/colírios/travesseiros, evitar coçar os olhos.
+## Perfil dos Casos
+Distribuição por sexo e faixa etária. Destaque grupos de maior risco se os dados indicarem.
 
-## Quando Buscar Atendimento
-Orientação direta: procure um médico ou unidade de saúde se tiver os sintomas, especialmente se persistirem por mais de 2 dias ou em crianças pequenas.
+## Tendência e Comparação Temporal
+Compare com a semana anterior e com a mesma semana do ano passado. Classifique a tendência (aumento, redução ou estabilidade).
 
-## Nota
-Dados de vigilância epidemiológica do Estado de São Paulo, Semana Epidemiológica [SE]/[ano].`;
+## Alertas
+Se houver situações que demandam atenção imediata, use **ALTO**, **MÉDIO** ou **BAIXO** antes de cada item.
+Se não houver alertas, escreva: "Nenhum alerta crítico identificado nesta semana."
+
+## Recomendações
+Ações concretas e prioritárias para municípios, GVEs e equipes de vigilância epidemiológica.
+
+## Nota Técnica
+Fonte: Sistema de Notificação de Conjuntivite/CEVESP/SES-SP. Semana Epidemiológica [SE]/[ano]. Dados sujeitos a revisão — possível subnotificação por atraso de digitação.`;
 
 export async function generateConjuntiviteBulletin(
   options: ConjuntiviteBulletinOptions = {}
