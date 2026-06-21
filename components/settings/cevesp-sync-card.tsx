@@ -73,42 +73,60 @@ export function CevespSyncCard() {
     setImporting(true);
     setMsg(null);
     setProgress(null);
+    const isCsv = file.name.toLowerCase().endsWith(".csv");
     try {
-      const text = await file.text();
-      const rows = JSON.parse(text) as Record<string, unknown>[];
-      if (!Array.isArray(rows) || rows.length === 0) throw new Error("Arquivo vazio ou formato inválido.");
-
-      const batchSize = 500;
-      let done = 0;
-      let duplicateRows = 0;
-      const importId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      setProgress({ done: 0, total: rows.length });
-
-      for (let index = 0; index < rows.length; index += batchSize) {
-        const batch = rows.slice(index, index + batchSize);
-        const isLastBatch = index + batchSize >= rows.length;
-        const response = await fetch("/api/admin/cevesp-import", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ rows: batch, importId, totalRows: rows.length, isLastBatch })
+      if (isCsv) {
+        setProgress({ done: 0, total: 1 });
+        const formData = new FormData();
+        formData.append("file", file);
+        const response = await fetch("/api/admin/cevesp-import-csv", { method: "POST", body: formData });
+        const data = await response.json() as { upserted?: number; received?: number; duplicateRows?: number; error?: string };
+        if (!response.ok) throw new Error(data.error ?? "Erro ao importar CSV.");
+        const skippedText = (data.duplicateRows ?? 0) > 0
+          ? ` ${(data.duplicateRows ?? 0).toLocaleString("pt-BR")} linha(s) duplicadas ignoradas.`
+          : "";
+        setMsg({
+          type: "success",
+          text: `${(data.upserted ?? 0).toLocaleString("pt-BR")} registros gravados de ${(data.received ?? 0).toLocaleString("pt-BR")} lidos.${skippedText} O agente agora usa dados reais do CEVESP.`
         });
-        if (!response.ok) {
-          const err = await response.json().catch(() => ({})) as { error?: string };
-          throw new Error(err.error ?? "Erro ao importar.");
-        }
-        const data = await response.json() as { upserted: number; duplicateRows?: number };
-        done += data.upserted;
-        duplicateRows += data.duplicateRows ?? 0;
-        setProgress({ done, total: rows.length });
-      }
+        setProgress({ done: 1, total: 1 });
+      } else {
+        const text = await file.text();
+        const rows = JSON.parse(text) as Record<string, unknown>[];
+        if (!Array.isArray(rows) || rows.length === 0) throw new Error("Arquivo vazio ou formato inválido.");
 
-      const skippedText = duplicateRows > 0
-        ? ` ${duplicateRows.toLocaleString("pt-BR")} linha(s) duplicada(s) no arquivo foram ignoradas no lote.`
-        : "";
-      setMsg({
-        type: "success",
-        text: `${done.toLocaleString("pt-BR")} registros gravados de ${rows.length.toLocaleString("pt-BR")} linha(s) lida(s).${skippedText} O agente agora usa dados reais do CEVESP.`
-      });
+        const batchSize = 500;
+        let done = 0;
+        let duplicateRows = 0;
+        const importId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        setProgress({ done: 0, total: rows.length });
+
+        for (let index = 0; index < rows.length; index += batchSize) {
+          const batch = rows.slice(index, index + batchSize);
+          const isLastBatch = index + batchSize >= rows.length;
+          const response = await fetch("/api/admin/cevesp-import", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ rows: batch, importId, totalRows: rows.length, isLastBatch })
+          });
+          if (!response.ok) {
+            const err = await response.json().catch(() => ({})) as { error?: string };
+            throw new Error(err.error ?? "Erro ao importar.");
+          }
+          const data = await response.json() as { upserted: number; duplicateRows?: number };
+          done += data.upserted;
+          duplicateRows += data.duplicateRows ?? 0;
+          setProgress({ done, total: rows.length });
+        }
+
+        const skippedText = duplicateRows > 0
+          ? ` ${duplicateRows.toLocaleString("pt-BR")} linha(s) duplicada(s) no arquivo foram ignoradas no lote.`
+          : "";
+        setMsg({
+          type: "success",
+          text: `${done.toLocaleString("pt-BR")} registros gravados de ${rows.length.toLocaleString("pt-BR")} linha(s) lida(s).${skippedText} O agente agora usa dados reais do CEVESP.`
+        });
+      }
       await loadStatus();
     } catch (error) {
       setMsg({ type: "error", text: (error as Error).message });
@@ -189,7 +207,7 @@ export function CevespSyncCard() {
           <input
             ref={fileRef}
             type="file"
-            accept=".json"
+            accept=".json,.csv"
             className="hidden"
             onChange={event => {
               const file = event.target.files?.[0];
@@ -198,7 +216,7 @@ export function CevespSyncCard() {
           />
           <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => fileRef.current?.click()} disabled={importing || exporting}>
             <Upload className="mr-1.5 h-3.5 w-3.5" />
-            {importing ? "Importando..." : "Selecionar cevesp-export.json"}
+            {importing ? "Importando..." : "Selecionar arquivo (.json ou .csv)"}
           </Button>
 
           {progress && (
