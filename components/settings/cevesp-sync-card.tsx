@@ -5,6 +5,39 @@ import { AlertCircle, CheckCircle2, Database, Download, Upload } from "lucide-re
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
+function parseCsvClient(text: string): Record<string, unknown>[] {
+  const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+  if (lines.length < 2) return [];
+  const sep = lines[0].includes(";") ? ";" : ",";
+  function splitLine(line: string): string[] {
+    const result: string[] = [];
+    let cur = "", inQuote = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') { if (inQuote && line[i + 1] === '"') { cur += '"'; i++; } else inQuote = !inQuote; }
+      else if (ch === sep && !inQuote) { result.push(cur); cur = ""; }
+      else cur += ch;
+    }
+    result.push(cur);
+    return result;
+  }
+  const headers = splitLine(lines[0]);
+  const rows: Record<string, unknown>[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const values = splitLine(line);
+    const row: Record<string, unknown> = {};
+    for (let j = 0; j < headers.length; j++) {
+      const key = headers[j].trim().replace(/^"|"$/g, "");
+      const val = (values[j] ?? "").trim().replace(/^"|"$/g, "");
+      row[key] = val === "" ? null : val;
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
 interface SyncStatus {
   hasData: boolean;
   lastSync: string | null;
@@ -76,20 +109,35 @@ export function CevespSyncCard() {
     const isCsv = file.name.toLowerCase().endsWith(".csv");
     try {
       if (isCsv) {
-        setProgress({ done: 0, total: 1 });
-        const formData = new FormData();
-        formData.append("file", file);
-        const response = await fetch("/api/admin/cevesp-import-csv", { method: "POST", body: formData });
-        const data = await response.json() as { upserted?: number; received?: number; duplicateRows?: number; error?: string };
-        if (!response.ok) throw new Error(data.error ?? "Erro ao importar CSV.");
-        const skippedText = (data.duplicateRows ?? 0) > 0
-          ? ` ${(data.duplicateRows ?? 0).toLocaleString("pt-BR")} linha(s) duplicadas ignoradas.`
+        const text = await file.text();
+        const rows = parseCsvClient(text);
+        if (rows.length === 0) throw new Error("Arquivo CSV vazio ou formato inválido.");
+        const batchSize = 500;
+        let done = 0;
+        let duplicateRows = 0;
+        const importId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        setProgress({ done: 0, total: rows.length });
+        for (let index = 0; index < rows.length; index += batchSize) {
+          const batch = rows.slice(index, index + batchSize);
+          const isLastBatch = index + batchSize >= rows.length;
+          const response = await fetch("/api/admin/cevesp-import-csv", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ rows: batch, importId, totalRows: rows.length, isLastBatch })
+          });
+          const data = await response.json() as { upserted?: number; duplicateRows?: number; error?: string };
+          if (!response.ok) throw new Error(data.error ?? "Erro ao importar CSV.");
+          done += data.upserted ?? 0;
+          duplicateRows += data.duplicateRows ?? 0;
+          setProgress({ done, total: rows.length });
+        }
+        const skippedText = duplicateRows > 0
+          ? ` ${duplicateRows.toLocaleString("pt-BR")} linha(s) duplicadas ignoradas.`
           : "";
         setMsg({
           type: "success",
-          text: `${(data.upserted ?? 0).toLocaleString("pt-BR")} registros gravados de ${(data.received ?? 0).toLocaleString("pt-BR")} lidos.${skippedText} O agente agora usa dados reais do CEVESP.`
+          text: `${done.toLocaleString("pt-BR")} registros gravados de ${rows.length.toLocaleString("pt-BR")} lidos.${skippedText} O agente agora usa dados reais do CEVESP.`
         });
-        setProgress({ done: 1, total: 1 });
       } else {
         const text = await file.text();
         const rows = JSON.parse(text) as Record<string, unknown>[];
