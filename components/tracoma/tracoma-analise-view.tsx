@@ -120,6 +120,8 @@ export function TracomaAnaliseView() {
   // Stable GVE list — persists when a GVE filter is applied
   const [knownGves, setKnownGves] = useState<string[]>([]);
 
+  const [mapView, setMapView] = useState<"municipio" | "gve">("municipio");
+
   function applyFilters() {
     setGve(pendingGve);
     setMunicipio(pendingMunicipio);
@@ -418,27 +420,47 @@ export function TracomaAnaliseView() {
             />
           </div>
 
+          {/* ── Toggle Município / GVE ── */}
+          {byGveData.length > 0 && (
+            <div className="flex w-fit gap-1 rounded-lg border bg-muted/30 p-1">
+              <button
+                onClick={() => setMapView("municipio")}
+                className={`rounded px-3 py-1 text-xs font-medium transition-colors ${mapView === "municipio" ? "bg-background text-foreground shadow" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                Por Município
+              </button>
+              <button
+                onClick={() => setMapView("gve")}
+                className={`rounded px-3 py-1 text-xs font-medium transition-colors ${mapView === "gve" ? "bg-background text-foreground shadow" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                Por GVE
+              </button>
+            </div>
+          )}
+
           {/* ── Mapa de prevalência ── */}
-          <RateMap
-            title={`Prevalência de tracoma por município (TF)${gve ? ` — ${gve}` : ""}`}
-            description={`Positivos / examinados × 100. Meta OMS de eliminação: TF < 5%.${rates.data!.populationYear ? ` Pop. IBGE ${rates.data!.populationYear}.` : ""}`}
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            rows={(rates.data!.mapRows ?? rates.data!.byMunicipality ?? []) as any}
-            valueKey="prevalencia"
-            valueLabel="%"
-            missingPopulation={false}
-            tableColumns={[
-              { key: "municipio", label: "Município" },
-              { key: "gve", label: "GVE" },
-              { key: "examinados", label: "Examinados" },
-              { key: "positivos", label: "Positivos" },
-              { key: "prevalencia", label: "Prevalência (%)", decimals: 2 },
-              { key: "coberturaExame", label: "Cobertura (%)", decimals: 2 }
-            ]}
-          />
+          {mapView === "municipio" && (
+            <RateMap
+              title={`Prevalência de tracoma por município (TF)${gve ? ` — ${gve}` : ""}`}
+              description={`Positivos / examinados × 100. Meta OMS de eliminação: TF < 5%.${rates.data!.populationYear ? ` Pop. IBGE ${rates.data!.populationYear}.` : ""}`}
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              rows={(rates.data!.mapRows ?? rates.data!.byMunicipality ?? []) as any}
+              valueKey="prevalencia"
+              valueLabel="%"
+              missingPopulation={false}
+              tableColumns={[
+                { key: "municipio", label: "Município" },
+                { key: "gve", label: "GVE" },
+                { key: "examinados", label: "Examinados" },
+                { key: "positivos", label: "Positivos" },
+                { key: "prevalencia", label: "Prevalência (%)", decimals: 2 },
+                { key: "coberturaExame", label: "Cobertura (%)", decimals: 2 }
+              ]}
+            />
+          )}
 
           {/* ── Tabela por GVE ── */}
-          {byGveData.length > 0 && (
+          {byGveData.length > 0 && mapView === "gve" && (
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">Situação por GVE</CardTitle>

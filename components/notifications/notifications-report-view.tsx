@@ -248,25 +248,46 @@ function ResultTable({ title, columns, rows, limit = 80 }: {
 }
 
 function CevespRatesPanel({ data }: { data: CevespRatesData }) {
+  const hasGve = (data.byGve?.length ?? 0) > 0;
+  const [view, setView] = useState<"municipio" | "gve">("municipio");
+
   return (
-    <div className="space-y-4">
-      <RateMap
-        title={`Mapa operacional de incidencia municipal${data.analysisYear ? ` - ${data.analysisYear}` : ""}`}
-        description={`Casos de conjuntivite por 100 mil habitantes. Populacao IBGE ${data.populationYear ?? "-"}.`}
-        rows={data.mapRows ?? data.byMunicipality ?? []}
-        valueKey="incidencia100k"
-        valueLabel="por 100 mil"
-        missingPopulation={data.missingPopulation}
-        message={data.message}
-        tableColumns={[
-          { key: "municipio", label: "Municipio" },
-          { key: "gve", label: "GVE" },
-          { key: "casos", label: "Casos" },
-          { key: "populacao", label: "Populacao" },
-          { key: "incidencia100k", label: "Incidencia/100 mil", decimals: 2 }
-        ]}
-      />
-      {(data.byGve?.length ?? 0) > 0 && (
+    <div className="space-y-3">
+      {hasGve && (
+        <div className="flex w-fit gap-1 rounded-lg border bg-muted/30 p-1">
+          <button
+            onClick={() => setView("municipio")}
+            className={`rounded px-3 py-1 text-xs font-medium transition-colors ${view === "municipio" ? "bg-background text-foreground shadow" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            Por Município
+          </button>
+          <button
+            onClick={() => setView("gve")}
+            className={`rounded px-3 py-1 text-xs font-medium transition-colors ${view === "gve" ? "bg-background text-foreground shadow" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            Por GVE
+          </button>
+        </div>
+      )}
+      {view === "municipio" && (
+        <RateMap
+          title={`Mapa operacional de incidencia municipal${data.analysisYear ? ` - ${data.analysisYear}` : ""}`}
+          description={`Casos de conjuntivite por 100 mil habitantes. Populacao IBGE ${data.populationYear ?? "-"}.`}
+          rows={data.mapRows ?? data.byMunicipality ?? []}
+          valueKey="incidencia100k"
+          valueLabel="por 100 mil"
+          missingPopulation={data.missingPopulation}
+          message={data.message}
+          tableColumns={[
+            { key: "municipio", label: "Municipio" },
+            { key: "gve", label: "GVE" },
+            { key: "casos", label: "Casos" },
+            { key: "populacao", label: "Populacao" },
+            { key: "incidencia100k", label: "Incidencia/100 mil", decimals: 2 }
+          ]}
+        />
+      )}
+      {hasGve && view === "gve" && (
         <ResultTable
           title="Incidencia por GVE"
           columns={["gve", "casos", "populacao", "incidencia100k"]}
@@ -718,11 +739,7 @@ export function NotificationsReportView() {
 
             {rates.data && <CevespRatesPanel data={rates.data} />}
 
-            <div className="grid gap-4 lg:grid-cols-3">
-              <RankingList title="Municípios prioritários" items={report.data.indicators.topMunicipalities ?? []} />
-              <RankingList title="GVEs prioritários" items={report.data.indicators.topGves ?? []} />
-              <RankingList title="Unidades notificadoras" items={report.data.indicators.topUnits ?? []} />
-            </div>
+            <RankingList title="Unidades notificadoras" items={report.data.indicators.topUnits ?? []} />
           </div>
         )}
 
