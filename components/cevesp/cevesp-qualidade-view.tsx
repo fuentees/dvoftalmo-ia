@@ -433,6 +433,12 @@ export function CevespQualidadeView() {
   const [selected, setSelected]   = useState<Set<string>>(new Set());
   const [proposeMsg, setProposeMsg] = useState<{ type: "ok" | "error"; text: string } | null>(null);
   const [crossGve, setCrossGve]   = useState<string | undefined>(undefined);
+  const [sortKeyRec, setSortKeyRec] = useState<string | null>(null);
+  const [sortDirRec, setSortDirRec] = useState<SortDir>("asc");
+  const handleSortRec = (key: string) => {
+    setSortDirRec((d) => sortKeyRec === key ? (d === "asc" ? "desc" : "asc") : "asc");
+    setSortKeyRec(key);
+  };
   const pageSize = 100;
 
   function handleSelectAno(ano: number) {
@@ -489,7 +495,8 @@ export function CevespQualidadeView() {
   });
 
   const records = data?.records ?? [];
-  const visible = records;
+  const sortedRecords = useSortedRows(records, sortKeyRec as keyof (typeof records)[0] | null, sortDirRec);
+  const visible = sortedRecords;
 
   const types = data ? Object.keys(data.byType) : [];
 
@@ -741,15 +748,15 @@ export function CevespQualidadeView() {
                               className="cursor-pointer"
                             />
                           </th>
-                          <th className="px-3 py-2 text-left font-medium">ID</th>
-                          <th className="px-3 py-2 text-left font-medium">ControlaSubmit</th>
-                          <th className="px-3 py-2 text-left font-medium">Data</th>
-                          <th className="px-3 py-2 text-left font-medium">SE</th>
-                          <th className="px-3 py-2 text-left font-medium">Município</th>
-                          <th className="px-3 py-2 text-left font-medium">GVE</th>
-                          <th className="px-3 py-2 text-left font-medium">Total Casos</th>
-                          <th className="px-3 py-2 text-left font-medium">Problema</th>
-                          <th className="px-3 py-2 text-left font-medium">Sugestão</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium">ID</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium">ControlaSubmit</th>
+                          <SortTh label="Data" sortKey="dtNotificacao" currentKey={sortKeyRec} dir={sortDirRec} onSort={handleSortRec} className="px-3 py-2 text-left text-xs font-medium" />
+                          <SortTh label="SE" sortKey="semEpidemio" currentKey={sortKeyRec} dir={sortDirRec} onSort={handleSortRec} className="px-3 py-2 text-left text-xs font-medium" />
+                          <SortTh label="Município" sortKey="municipio" currentKey={sortKeyRec} dir={sortDirRec} onSort={handleSortRec} className="px-3 py-2 text-left text-xs font-medium" />
+                          <SortTh label="GVE" sortKey="gve" currentKey={sortKeyRec} dir={sortDirRec} onSort={handleSortRec} className="px-3 py-2 text-left text-xs font-medium" />
+                          <SortTh label="Total Casos" sortKey="totalCaso" currentKey={sortKeyRec} dir={sortDirRec} onSort={handleSortRec} className="px-3 py-2 text-left text-xs font-medium" />
+                          <SortTh label="Problema" sortKey="issue" currentKey={sortKeyRec} dir={sortDirRec} onSort={handleSortRec} className="px-3 py-2 text-left text-xs font-medium" />
+                          <th className="px-3 py-2 text-left text-xs font-medium">Sugestão</th>
                         </tr>
                       </thead>
                       <tbody>

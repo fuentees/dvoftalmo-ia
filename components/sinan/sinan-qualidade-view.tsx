@@ -74,22 +74,6 @@ function sumRows(rows: Array<{ traconet: number; nottraconet: number }>) {
   return { traconet: tc, nottraconet: ntc, diff: ntc - tc };
 }
 
-function PctBar({ pct, label }: { pct: number; label: string }) {
-  const color = pct >= 90 ? "bg-green-500" : pct >= 70 ? "bg-amber-400" : "bg-red-500";
-  const textColor = pct >= 90 ? "text-green-700" : pct >= 70 ? "text-amber-700" : "text-red-700";
-  return (
-    <div>
-      <div className="mb-1 flex justify-between text-xs">
-        <span className="text-muted-foreground">{label}</span>
-        <span className={`font-semibold tabular-nums ${textColor}`}>{pct.toFixed(0)}%</span>
-      </div>
-      <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-        <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${pct}%` }} />
-      </div>
-    </div>
-  );
-}
-
 // ── KPI card no topo ──────────────────────────────────────────────────────────
 
 function KpiCard({
