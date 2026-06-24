@@ -52,3 +52,37 @@
     font-family: Arial, Helvetica, sans-serif;
   }
 }
+
+@media print {
+  /* Hide navigation, tabs, buttons and sidebar when printing */
+  nav,
+  aside,
+  header:not(.print-header),
+  [data-print-hide],
+  .print-hide {
+    display: none !important;
+  }
+
+  /* Show only the situacao tab content */
+  .print-show {
+    display: block !important;
+  }
+
+  /* Reset colors so charts and badges print properly */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  body {
+    background: white !important;
+    color: black !important;
+    font-size: 11pt;
+  }
+
+  /* Avoid page breaks inside cards */
+  .card, [class*="rounded"] {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

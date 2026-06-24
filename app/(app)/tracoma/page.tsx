@@ -1,7 +1,12 @@
-import { SinanQualidadeView } from "@/components/sinan/sinan-qualidade-view";
+import { Suspense } from "react";
+import { TracomaHubView } from "@/components/tracoma/tracoma-hub-view";
 
 export const metadata = { title: "Tracoma — SINAN" };
 
 export default function TracomaPage() {
-  return <SinanQualidadeView />;
+  return (
+    <Suspense>
+      <TracomaHubView />
+    </Suspense>
+  );
 }

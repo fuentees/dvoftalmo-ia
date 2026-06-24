@@ -1,14 +1,14 @@
 "use client";
 
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "next/navigation";
 import {
   ArrowLeft, Calendar, ChevronRight, Clipboard, Eye, Loader2,
   Newspaper, Plus, Printer, RefreshCw, RotateCcw
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChoroplethMap } from "@/components/epidemiology/choropleth-map";
@@ -74,12 +74,6 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload?.error ?? "Não foi possível concluir a operação.");
   return payload;
-}
-
-function lastCompleteWeek(now = new Date()) {
-  const ano = now.getFullYear();
-  const week = Math.ceil((now.getTime() - new Date(ano, 0, 1).getTime()) / (7 * 864e5));
-  return { ano, se: Math.max(1, week - 1) };
 }
 
 // Clean AI-generated content:
@@ -1394,8 +1388,16 @@ function BulletinList({ agravo, onSelect }: { agravo: Agravo; onSelect: (id: str
 
 // ──── BulletinsView (main export) ─────────────────────────────────────────────
 export function BulletinsView() {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<Agravo>("conjuntivite");
+  const searchParams = useSearchParams();
+  const [selectedId, setSelectedId] = useState<string | null>(searchParams.get("id"));
+  const [activeTab, setActiveTab] = useState<Agravo>(
+    (searchParams.get("agravo") as Agravo | null) ?? "conjuntivite"
+  );
+
+  useEffect(() => {
+    const id = searchParams.get("id");
+    if (id) setSelectedId(id);
+  }, [searchParams]);
 
   if (selectedId) {
     return <BulletinDetail id={selectedId} onBack={() => setSelectedId(null)} />;

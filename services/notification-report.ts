@@ -220,6 +220,9 @@ export function summarizeNotificationRows(rows: Row[], total: number) {
     sampledRows: rows.length,
     totalRowsInDatabase: total,
     totalCases,
+    reportingMunicipalities: new Set(
+      rows.map((row) => String(row.MunicipioNotificacao ?? "").trim()).filter(Boolean)
+    ).size,
     topMunicipalities: groupSum(rows, "MunicipioNotificacao", "TotalCaso", 10),
     topGves: groupSum(rows, "GVE_NOME", "TotalCaso", 10),
     topUnits: groupSum(rows, "Unid_notificacao", "TotalCaso", 10),

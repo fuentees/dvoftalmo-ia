@@ -13,3 +13,4 @@ WHERE source_bank = 'traconet'
   AND tratamento IS NULL
   AND raw IS NOT NULL
   AND raw->>'ENCAMINHA' IS NOT NULL;
+

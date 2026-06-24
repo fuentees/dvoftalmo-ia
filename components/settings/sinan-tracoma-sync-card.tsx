@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Database, FileSearch, Upload } from "lucide-react";
+import { AlertTriangle, Database, Download, FileSearch, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -54,6 +54,8 @@ export function SinanTracomaSyncCard() {
   const [message, setMessage] = useState<{ type: "info" | "success" | "error"; text: string } | null>(null);
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [downloadBank, setDownloadBank] = useState<"traconet" | "nottraconet" | "all">("all");
+  const [downloading, setDownloading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -73,6 +75,31 @@ export function SinanTracomaSyncCard() {
           ? error.message
           : "Erro ao consultar status SINAN Tracoma. Verifique se a migration foi aplicada."
       });
+    }
+  }
+
+  async function handleDownload() {
+    setDownloading(true);
+    try {
+      const params = new URLSearchParams();
+      if (downloadBank !== "all") params.set("bank", downloadBank);
+      const response = await fetch(`/api/admin/sinan-tracoma-export?${params}`);
+      if (!response.ok) {
+        const err = await readResponse(response) as { error?: string };
+        throw new Error(err.error ?? "Erro ao exportar.");
+      }
+      const count = response.headers.get("X-Row-Count") ?? "?";
+      const blob = await response.blob();
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `sinan-tracoma${downloadBank !== "all" ? `-${downloadBank}` : ""}.csv`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      setMessage({ type: "success", text: `${Number(count).toLocaleString("pt-BR")} registros exportados como CSV.` });
+    } catch (error) {
+      setMessage({ type: "error", text: error instanceof Error ? error.message : "Erro ao exportar." });
+    } finally {
+      setDownloading(false);
     }
   }
 
@@ -210,6 +237,29 @@ export function SinanTracomaSyncCard() {
             </div>
           </div>
         ) : null}
+
+        <div className="space-y-2 rounded-md border p-3 text-xs">
+          <p className="font-medium">Baixar dados do Supabase (CSV)</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              className="h-8 rounded-md border bg-background px-2 text-xs"
+              value={downloadBank}
+              onChange={e => setDownloadBank(e.target.value as typeof downloadBank)}
+              disabled={downloading || busy}
+            >
+              <option value="all">Todos os bancos</option>
+              <option value="traconet">TRACONET</option>
+              <option value="nottraconet">NOTTRACONET</option>
+            </select>
+            <Button size="sm" variant="outline" className="h-8 text-xs" disabled={downloading || busy} onClick={() => void handleDownload()}>
+              <Download className="mr-1.5 h-3.5 w-3.5" />
+              {downloading ? "Exportando..." : "Baixar CSV"}
+            </Button>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Exporta os dados atualmente no Supabase. Para atualizar, basta importar um arquivo mais recente — registros existentes são atualizados e novos são adicionados.
+          </p>
+        </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <select className="h-8 rounded-md border bg-background px-2 text-xs" value={bank} onChange={event => setBank(event.target.value as Bank)}>

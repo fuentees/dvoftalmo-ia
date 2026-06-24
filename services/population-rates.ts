@@ -142,7 +142,7 @@ function riskColor(value: number | null, thresholds: [number, number, number]) {
   return "#14b8a6";
 }
 
-export async function buildCevespRates() {
+export async function buildCevespRates(ano?: number, gve?: string) {
   const population = await loadPopulation();
   if (population.missing) {
     return { missingPopulation: true, message: "Tabela ibge_municipio_populacao ainda nao aplicada no Supabase." };
@@ -150,10 +150,17 @@ export async function buildCevespRates() {
 
   const rows = await fetchAll(
     "cevesp_notificacoes",
-    '"ANO","TotalCaso","MunicipioNotificacao","IbgeNotificacao","GVE_NOME","Excluido"'
+    '"ANO","TotalCaso","MunicipioNotificacao","IbgeNotificacao","GVE_NOME","Excluido"',
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (q: any) => {
+      let next = q;
+      if (ano) next = next.eq('"ANO"', ano);
+      if (gve) next = next.eq('"GVE_NOME"', gve);
+      return next;
+    }
   );
   const years = rows.map((row) => Number(row.ANO)).filter((year) => Number.isInteger(year) && year > 1900);
-  const analysisYear = Math.max(...years, 0);
+  const analysisYear = ano ?? (years.length ? Math.max(...years) : 0);
   const currentRows = rows.filter((row) => Number(row.ANO) === analysisYear && Number(row.Excluido ?? 0) === 0);
 
   const byMunicipality = new Map<string, { municipio: string; codigoIbge: string | null; gve: string; casos: number }>();

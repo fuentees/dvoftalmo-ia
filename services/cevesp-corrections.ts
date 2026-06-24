@@ -132,16 +132,19 @@ export function mapInvalidCacheRow(r: Record<string, unknown>): InvalidRecord | 
   };
 }
 
-async function findInvalidRecordsFromCache(limit?: number): Promise<InvalidRecord[]> {
+async function findInvalidRecordsFromCache(limit?: number, ano?: number, gve?: string): Promise<InvalidRecord[]> {
   const supabase = createAdminClient();
   const pageSize = 1000;
   const invalid: InvalidRecord[] = [];
 
   for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
+    let q = supabase
       .from("cevesp_notificacoes")
       .select('id,row_key,"ID","ControlaSubmit","DtNotificacao","SemEpidemio","MunicipioNotificacao","GVE_NOME","ANO","TotalCaso","FxMenorUmAno","FxUmQuatro","FxCincoNove","FxDezQuatorze","FxQuizeOuMais","SexMasc","SexFem"')
       .range(from, from + pageSize - 1);
+    if (ano) q = q.eq('"ANO"', ano) as typeof q;
+    if (gve) q = q.eq('"GVE_NOME"', gve) as typeof q;
+    const { data, error } = await q;
     if (error) throw new Error(`Erro ao consultar cache CEVESP: ${error.message}`);
 
     for (const row of data ?? []) {
@@ -178,7 +181,7 @@ async function getPrimaryKeyColumn(tableName: string, dbName: string): Promise<s
   }
 }
 
-export async function findInvalidRecords(limit?: number): Promise<InvalidRecord[]> {
+export async function findInvalidRecords(limit?: number, ano?: number, gve?: string): Promise<InvalidRecord[]> {
   let tableName: string;
   let conn: Awaited<ReturnType<typeof createNotificationConnection>>;
   try {
@@ -186,7 +189,7 @@ export async function findInvalidRecords(limit?: number): Promise<InvalidRecord[
     conn = await createNotificationConnection();
   } catch (error) {
     if (isNotificationConnectionError(error) || !process.env.NOTIFY_DB_HOST) {
-      return findInvalidRecordsFromCache(limit);
+      return findInvalidRecordsFromCache(limit, ano, gve);
     }
     throw error;
   }
@@ -235,7 +238,7 @@ export async function findInvalidRecords(limit?: number): Promise<InvalidRecord[
                 ELSE 'outro'
               END AS problema
        FROM \`${tableName}\`
-       WHERE (
+       WHERE ${ano ? "ANO = ? AND (" : "("}
               DtNotificacao IS NOT NULL
               AND CAST(DtNotificacao AS CHAR) REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
               AND STR_TO_DATE(CAST(DtNotificacao AS CHAR), '%Y-%m-%d') IS NULL
@@ -253,14 +256,18 @@ export async function findInvalidRecords(limit?: number): Promise<InvalidRecord[
           OR (TotalCaso = 0 AND (COALESCE(SexMasc,0)+COALESCE(SexFem,0)) > 0)
           OR (TotalCaso > 0 AND (COALESCE(FxMenorUmAno,0)+COALESCE(FxUmQuatro,0)+COALESCE(FxCincoNove,0)+COALESCE(FxDezQuatorze,0)+COALESCE(FxQuizeOuMais,0)) = 0)
           OR (TotalCaso > 0 AND (COALESCE(SexMasc,0)+COALESCE(SexFem,0)) <> TotalCaso)
+       ${ano ? ")" : ""}
        ${limit ? "LIMIT ?" : ""}`;
-    const queryParams: unknown[] = [currentYear, currentSe, currentYear, currentSe];
+    // param order: CASE uses currentYear/currentSe first (in SELECT), then WHERE ANO (if ano), then WHERE se_futura pair
+    const queryParams: unknown[] = ano
+      ? [currentYear, currentSe, ano, currentYear, currentSe]
+      : [currentYear, currentSe, currentYear, currentSe];
     if (limit) queryParams.push(limit);
     const [rows] = await conn.query(sql, queryParams);
 
     const DATA_TEMPO = new Set(["dia_impossivel", "data_futura", "ano_impossivel", "se_alta", "se_baixa", "se_futura"]);
 
-    return (rows as Array<Record<string, unknown>>).map((r) => {
+    const allRecords = (rows as Array<Record<string, unknown>>).map((r) => {
       const problema   = String(r.problema ?? "");
       const rawDt      = r.DtNotificacao ? String(r.DtNotificacao).split("T")[0] : null;
       const anoData    = rawDt ? parseInt(rawDt.slice(0, 4), 10) : null;
@@ -331,9 +338,10 @@ export async function findInvalidRecords(limit?: number): Promise<InvalidRecord[
         suggestedValue
       };
     });
+    return gve ? allRecords.filter((r) => r.gve === gve) : allRecords;
   } catch (error) {
     if (isNotificationConnectionError(error)) {
-      return findInvalidRecordsFromCache(limit);
+      return findInvalidRecordsFromCache(limit, ano, gve);
     }
     throw error;
   } finally {

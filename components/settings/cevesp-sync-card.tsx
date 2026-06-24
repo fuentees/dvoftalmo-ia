@@ -60,9 +60,11 @@ export function CevespSyncCard() {
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [msg, setMsg] = useState<Msg | null>(null);
   const [exportYear, setExportYear] = useState<string>(String(currentYear));
+  const [downloadYear, setDownloadYear] = useState<string>("all");
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -75,6 +77,33 @@ export function CevespSyncCard() {
       if (response.ok) setStatus(await response.json());
     } catch {
       // Status is informational; export/import can still be attempted.
+    }
+  }
+
+  async function handleDownloadCache() {
+    setDownloading(true);
+    setMsg(null);
+    try {
+      const url = downloadYear === "all"
+        ? "/api/admin/cevesp-export-cache"
+        : `/api/admin/cevesp-export-cache?year=${downloadYear}`;
+      const response = await fetch(url);
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? "Erro ao exportar.");
+      }
+      const count = response.headers.get("X-Row-Count") ?? "?";
+      const blob = await response.blob();
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = downloadYear === "all" ? "cevesp-notificacoes.csv" : `cevesp-notificacoes-${downloadYear}.csv`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      setMsg({ type: "success", text: `${Number(count).toLocaleString("pt-BR")} registros exportados do Supabase.` });
+    } catch (error) {
+      setMsg({ type: "error", text: (error as Error).message });
+    } finally {
+      setDownloading(false);
     }
   }
 
@@ -296,6 +325,36 @@ export function CevespSyncCard() {
               </p>
             </div>
           )}
+          <p className="text-[11px] text-muted-foreground">
+            Para atualizar os dados, basta importar um arquivo mais recente — registros existentes são atualizados e novos são adicionados.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-xs font-medium">
+            <span className="mr-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] text-primary-foreground">3</span>
+            Baixar dados do Supabase (CSV)
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={downloadYear}
+              onChange={e => setDownloadYear(e.target.value)}
+              disabled={downloading || importing || exporting}
+              className="h-8 rounded-md border bg-background px-2 text-xs"
+            >
+              <option value="all">Todos os anos</option>
+              {(status?.years ?? []).map(y => (
+                <option key={y} value={String(y)}>{y}</option>
+              ))}
+            </select>
+            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => void handleDownloadCache()} disabled={downloading || importing || exporting}>
+              <Download className="mr-1.5 h-3.5 w-3.5" />
+              {downloading ? "Exportando..." : "Baixar CSV"}
+            </Button>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Exporta os dados atualmente no Supabase como CSV.
+          </p>
         </div>
 
         {msg && (

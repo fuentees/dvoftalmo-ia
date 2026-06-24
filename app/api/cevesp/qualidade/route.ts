@@ -117,8 +117,11 @@ export async function GET(req: NextRequest) {
     const issueFilter = searchParams.get("issue") ?? "todos";
     const query = searchParams.get("q") ?? "";
     const format = searchParams.get("format");
+    const anoParam = searchParams.get("ano");
+    const ano = anoParam ? Number(anoParam) : undefined;
+    const gve = searchParams.get("gve") ?? undefined;
 
-    const records = await findInvalidRecords();
+    const records = await findInvalidRecords(undefined, ano, gve);
     const filteredRecords = filterRecords(records, issueFilter, query);
 
     if (format === "csv") {

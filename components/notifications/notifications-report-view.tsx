@@ -30,6 +30,7 @@ type ReportData = {
   indicators: {
     notifications: number;
     totalCases: number;
+    reportingMunicipalities: number;
     topMunicipalities: Array<{ name: string; total: number }>;
     topGves: Array<{ name: string; total: number }>;
     topUnits: Array<{ name: string; total: number }>;
@@ -45,6 +46,12 @@ type ReportData = {
     specializedReferrals: number;
     weeklySeries: Array<{ week: string; total: number }>;
   };
+  previousYear?: {
+    ano: number;
+    totalCases: number;
+    notifications: number;
+    reportingMunicipalities: number;
+  } | null;
   alerts: Array<{ title: string; severity: "alta" | "media" | "baixa"; description: string }>;
   interpretation: string[];
   bulletinSections: { recomendacoes: string[] };
@@ -151,11 +158,12 @@ function riskFromReport(report?: ReportData, quality?: QualityData) {
   return { label: "Estável", cls: "border-green-200 bg-green-50 text-green-700" };
 }
 
-function MetricCard({ label, value, detail, tone = "default" }: {
+function MetricCard({ label, value, detail, tone = "default", change }: {
   label: string;
   value: string | number;
   detail?: string;
   tone?: "default" | "red" | "amber" | "green";
+  change?: { pct: number; prevAno: number };
 }) {
   const toneClass = {
     default: "",
@@ -168,6 +176,11 @@ function MetricCard({ label, value, detail, tone = "default" }: {
       <CardContent className="pt-4">
         <div className="text-xs text-muted-foreground">{label}</div>
         <div className="mt-1 text-2xl font-semibold tabular-nums">{typeof value === "number" ? num(value) : value}</div>
+        {change != null && (
+          <div className={`mt-0.5 text-xs font-medium ${change.pct > 0 ? "text-red-600" : change.pct < 0 ? "text-green-600" : "text-muted-foreground"}`}>
+            {change.pct > 0 ? "▲" : change.pct < 0 ? "▼" : "="} {Math.abs(change.pct).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% vs {change.prevAno}
+          </div>
+        )}
         {detail && <div className="mt-1 text-xs text-muted-foreground">{detail}</div>}
       </CardContent>
     </Card>
@@ -278,6 +291,11 @@ export function NotificationsReportView() {
   const [question, setQuestion] = useState("Total de casos por GVE dos últimos 5 anos por mês");
   const [showEndemic, setShowEndemic] = useState(false);
   const [selectedYear, setSelectedYear] = useState<number | undefined>(undefined);
+  const [selectedGve, setSelectedGve] = useState<string>("");
+  const [seInicio, setSeInicio] = useState<number | undefined>(undefined);
+  const [seFim, setSeFim] = useState<number | undefined>(undefined);
+  const [municipioInput, setMunicipioInput] = useState<string>("");
+  const [selectedMunicipio, setSelectedMunicipio] = useState<string>("");
 
   const anosQuery = useQuery<{ anos: number[] }>({
     queryKey: ["cevesp-anos"],
@@ -288,11 +306,31 @@ export function NotificationsReportView() {
     staleTime: 10 * 60 * 1000
   });
 
-  const report = useQuery<ReportData>({
-    queryKey: ["notifications-report", selectedYear],
+  const gvesQuery = useQuery<{ gves: string[] }>({
+    queryKey: ["cevesp-gves", selectedYear],
     queryFn: async () => {
-      const url = selectedYear ? `/api/notificacoes/relatorio?ano=${selectedYear}` : "/api/notificacoes/relatorio";
-      const response = await fetch(url);
+      const url = selectedYear ? `/api/cevesp/gves?ano=${selectedYear}` : "/api/cevesp/gves";
+      const res = await fetch(url);
+      return res.json() as Promise<{ gves: string[] }>;
+    },
+    staleTime: 10 * 60 * 1000
+  });
+
+  function buildQueryParams() {
+    const params = new URLSearchParams();
+    if (selectedYear) params.set("ano", String(selectedYear));
+    if (selectedGve) params.set("gve", selectedGve);
+    if (selectedMunicipio) params.set("municipio", selectedMunicipio);
+    if (seInicio != null) params.set("seInicio", String(seInicio));
+    if (seFim != null) params.set("seFim", String(seFim));
+    return params.toString();
+  }
+
+  const report = useQuery<ReportData>({
+    queryKey: ["notifications-report", selectedYear, selectedGve, selectedMunicipio, seInicio, seFim],
+    queryFn: async () => {
+      const qs = buildQueryParams();
+      const response = await fetch(`/api/notificacoes/relatorio${qs ? `?${qs}` : ""}`);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Erro ao gerar relatorio");
       return data as ReportData;
@@ -301,9 +339,12 @@ export function NotificationsReportView() {
   });
 
   const quality = useQuery<QualityData>({
-    queryKey: ["cevesp-qualidade-resumo"],
+    queryKey: ["cevesp-qualidade-resumo", selectedYear, selectedGve],
     queryFn: async () => {
-      const response = await fetch("/api/cevesp/qualidade?limit=200");
+      const params = new URLSearchParams({ limit: "200" });
+      if (selectedYear) params.set("ano", String(selectedYear));
+      if (selectedGve) params.set("gve", selectedGve);
+      const response = await fetch(`/api/cevesp/qualidade?${params}`);
       const data = await response.json();
       if (!response.ok) throw new Error(data.message ?? data.error ?? "Erro ao carregar qualidade");
       return data as QualityData;
@@ -323,9 +364,13 @@ export function NotificationsReportView() {
   });
 
   const rates = useQuery<CevespRatesData>({
-    queryKey: ["cevesp-taxas"],
+    queryKey: ["cevesp-taxas", selectedYear, selectedGve],
     queryFn: async () => {
-      const response = await fetch("/api/cevesp/taxas");
+      const params = new URLSearchParams();
+      if (selectedYear) params.set("ano", String(selectedYear));
+      if (selectedGve) params.set("gve", selectedGve);
+      const qs = params.toString();
+      const response = await fetch(`/api/cevesp/taxas${qs ? `?${qs}` : ""}`);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Erro ao calcular taxas");
       return data as CevespRatesData;
@@ -349,6 +394,16 @@ export function NotificationsReportView() {
   const risk = riskFromReport(report.data, quality.data);
   const totalCases = report.data?.indicators.totalCases ?? 0;
   const outbreakRate = pct(report.data?.indicators.outbreakNotifications ?? 0, report.data?.indicators.notifications ?? 0);
+
+  const prevYear = report.data?.previousYear ?? null;
+  const casesChange = prevYear && prevYear.totalCases > 0
+    ? { pct: ((totalCases - prevYear.totalCases) / prevYear.totalCases) * 100, prevAno: prevYear.ano }
+    : null;
+  const reportingMunicipalities = report.data?.indicators.reportingMunicipalities ?? 0;
+  const muniChange = prevYear && prevYear.reportingMunicipalities > 0
+    ? { pct: ((reportingMunicipalities - prevYear.reportingMunicipalities) / prevYear.reportingMunicipalities) * 100, prevAno: prevYear.ano }
+    : null;
+  const SP_MUNICIPIOS = 645;
   const qualityTop = useMemo(() => {
     return Object.entries(quality.data?.byType ?? {})
       .map(([label, total]) => ({ label, total }))
@@ -357,7 +412,68 @@ export function NotificationsReportView() {
   }, [quality.data]);
 
   function downloadBoletim() {
-    window.open("/api/cevesp/boletim", "_blank");
+    const qs = buildQueryParams();
+    window.open(`/api/cevesp/boletim${qs ? `?${qs}` : ""}`, "_blank");
+  }
+
+  function printPdf() {
+    window.print();
+  }
+
+  function downloadSituacaoCsv() {
+    const escape = (v: unknown) => {
+      const t = String(v ?? "");
+      return /[",;\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+    };
+
+    const sections: string[] = [];
+
+    if (rates.data?.byMunicipality?.length) {
+      sections.push("Incidência por município");
+      sections.push(["Município", "GVE", "Casos", "População", "Incidência/100 mil"].map(escape).join(";"));
+      for (const r of rates.data.byMunicipality) {
+        sections.push([
+          r.municipio, r.gve, r.casos, r.populacao,
+          Number(r.incidencia100k ?? 0).toFixed(2).replace(".", ",")
+        ].map(escape).join(";"));
+      }
+    } else if (report.data?.indicators.topMunicipalities.length) {
+      sections.push("Top municípios por casos");
+      sections.push(["Município", "Casos"].map(escape).join(";"));
+      for (const r of report.data.indicators.topMunicipalities) {
+        sections.push([r.name, r.total].map(escape).join(";"));
+      }
+    }
+
+    if (rates.data?.byGve?.length) {
+      if (sections.length) sections.push("");
+      sections.push("Incidência por GVE");
+      sections.push(["GVE", "Casos", "População", "Incidência/100 mil"].map(escape).join(";"));
+      for (const r of rates.data.byGve) {
+        sections.push([
+          r.gve, r.casos, r.populacao,
+          Number(r.incidencia100k ?? 0).toFixed(2).replace(".", ",")
+        ].map(escape).join(";"));
+      }
+    } else if (report.data?.indicators.topGves.length) {
+      if (sections.length) sections.push("");
+      sections.push("Top GVEs por casos");
+      sections.push(["GVE", "Casos"].map(escape).join(";"));
+      for (const r of report.data.indicators.topGves) {
+        sections.push([r.name, r.total].map(escape).join(";"));
+      }
+    }
+
+    if (!sections.length) return;
+    const blob = new Blob([`﻿${sections.join("\n")}`], { type: "text/csv;charset=utf-8" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    const gveSuffix = selectedGve ? `-${selectedGve.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 20)}` : "";
+    const muniSuffix = selectedMunicipio ? `-${selectedMunicipio.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 20)}` : "";
+    const seSuffix = (seInicio || seFim) ? `-SE${seInicio ?? 1}-${seFim ?? 53}` : "";
+    link.download = `cevesp-situacao${selectedYear ? `-${selectedYear}` : ""}${gveSuffix}${muniSuffix}${seSuffix}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
   }
 
   function downloadAskCsv() {
@@ -391,6 +507,9 @@ export function NotificationsReportView() {
             </div>
             <h1 className="mt-2 text-lg font-semibold leading-tight">
               Conjuntivites - CEVESP{selectedYear ? ` · ${selectedYear}` : ""}
+              {selectedGve ? ` · ${selectedGve}` : ""}
+              {selectedMunicipio ? ` · ${selectedMunicipio}` : ""}
+              {(seInicio || seFim) ? ` · SE ${seInicio ?? 1}–${seFim ?? 53}` : ""}
             </h1>
             <p className="mt-0.5 text-sm text-muted-foreground">
               Aprofundamento da Sala de Situação: consulta ao banco, canal endêmico, qualidade e saídas técnicas.
@@ -399,10 +518,17 @@ export function NotificationsReportView() {
               Voltar para a Sala de Situação
             </Link>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 print-hide" data-print-hide>
             <select
               value={selectedYear ?? ""}
-              onChange={e => setSelectedYear(e.target.value ? Number(e.target.value) : undefined)}
+              onChange={e => {
+                setSelectedYear(e.target.value ? Number(e.target.value) : undefined);
+                setSelectedGve("");
+                setSeInicio(undefined);
+                setSeFim(undefined);
+                setMunicipioInput("");
+                setSelectedMunicipio("");
+              }}
               className="h-9 rounded-md border bg-background px-2 text-sm"
               disabled={anosQuery.isLoading}
             >
@@ -411,9 +537,57 @@ export function NotificationsReportView() {
                 <option key={y} value={y}>{y}</option>
               ))}
             </select>
+            <select
+              value={selectedGve}
+              onChange={e => setSelectedGve(e.target.value)}
+              className="h-9 rounded-md border bg-background px-2 text-sm"
+              disabled={gvesQuery.isLoading}
+            >
+              <option value="">Todos os GVEs</option>
+              {(gvesQuery.data?.gves ?? []).map(g => (
+                <option key={g} value={g}>{g}</option>
+              ))}
+            </select>
+            <input
+              type="text"
+              placeholder="Município..."
+              value={municipioInput}
+              onChange={e => setMunicipioInput(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") setSelectedMunicipio(municipioInput.trim()); }}
+              onBlur={() => { if (municipioInput.trim() !== selectedMunicipio) setSelectedMunicipio(municipioInput.trim()); }}
+              className="h-9 w-36 rounded-md border bg-background px-2 text-sm"
+            />
+            {selectedYear && (
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-muted-foreground">SE</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={53}
+                  placeholder="01"
+                  value={seInicio ?? ""}
+                  onChange={e => setSeInicio(e.target.value ? Number(e.target.value) : undefined)}
+                  className="h-9 w-14 rounded-md border bg-background px-2 text-sm text-center"
+                />
+                <span className="text-xs text-muted-foreground">a</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={53}
+                  placeholder="53"
+                  value={seFim ?? ""}
+                  onChange={e => setSeFim(e.target.value ? Number(e.target.value) : undefined)}
+                  className="h-9 w-14 rounded-md border bg-background px-2 text-sm text-center"
+                />
+              </div>
+            )}
             <Button variant="outline" onClick={() => void report.refetch()} disabled={report.isFetching}>
               <RefreshCw className={`h-4 w-4 ${report.isFetching ? "animate-spin" : ""}`} />
               Atualizar
+            </Button>
+            <Button variant="outline" onClick={printPdf}>
+              <Download className="h-4 w-4" />
+              Salvar PDF
             </Button>
             <Button variant="outline" onClick={downloadBoletim}>
               <Download className="h-4 w-4" />
@@ -428,7 +602,7 @@ export function NotificationsReportView() {
           </div>
         </div>
 
-        <div className="mt-4 flex gap-1 overflow-x-auto rounded-lg border bg-muted/30 p-1">
+        <div className="mt-4 flex gap-1 overflow-x-auto rounded-lg border bg-muted/30 p-1 print-hide" data-print-hide>
           {tabs.map((item) => {
             const Icon = item.icon;
             return (
@@ -474,8 +648,37 @@ export function NotificationsReportView() {
 
         {tab === "situacao" && report.data && (
           <div className="space-y-6">
-            <div className="grid gap-4 md:grid-cols-4">
-              <MetricCard label="Casos analisados" value={totalCases} detail={`${num(report.data.sampledRows)} notificações avaliadas`} />
+            <div className="flex items-center justify-between gap-2 print-hide" data-print-hide>
+              <div className="text-xs text-muted-foreground">
+                {(() => {
+                  const lastWeek = report.data.indicators.weeklySeries.at(-1);
+                  const match = lastWeek?.week.match(/^(\d{4})-SE(\d+)$/);
+                  const seLabel = match ? `SE ${match[2]}/${match[1]}` : null;
+                  const genDate = new Date(report.data.generatedAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+                  return seLabel
+                    ? `Dados até ${seLabel} · Relatório gerado em ${genDate}`
+                    : `Relatório gerado em ${genDate}`;
+                })()}
+              </div>
+              <Button variant="outline" size="sm" onClick={downloadSituacaoCsv} disabled={!rates.data && !report.data}>
+                <Download className="h-4 w-4" />
+                Exportar análise CSV
+              </Button>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+              <MetricCard
+                label="Casos analisados"
+                value={totalCases}
+                detail={`${num(report.data.sampledRows)} notificações avaliadas`}
+                change={casesChange ?? undefined}
+              />
+              <MetricCard
+                label="Municípios notificando"
+                value={`${reportingMunicipalities} de ${SP_MUNICIPIOS}`}
+                detail={`${pct(reportingMunicipalities, SP_MUNICIPIOS)} dos municípios SP`}
+                tone={reportingMunicipalities < SP_MUNICIPIOS * 0.5 ? "amber" : "green"}
+                change={muniChange ?? undefined}
+              />
               <MetricCard label="Notificações com surto" value={report.data.indicators.outbreakNotifications} detail={`${outbreakRate} das notificações`} tone={report.data.indicators.outbreakNotifications > 0 ? "amber" : "green"} />
               <MetricCard label="Coletas biológicas" value={report.data.indicators.biologicalCollectionTotal} detail={`${num(report.data.indicators.biologicalCollectionNotifications)} notificações com coleta`} />
               <MetricCard label="Problemas de qualidade" value={quality.data?.total ?? 0} detail="Registros que precisam revisão" tone={(quality.data?.total ?? 0) > 0 ? "amber" : "green"} />
@@ -793,7 +996,7 @@ export function NotificationsReportView() {
           </div>
         )}
 
-        {tab === "saidas" && report.data && (
+        {tab === "saidas" && (
           <div className="space-y-4">
             <div className="grid gap-4 md:grid-cols-3">
               <Card>
@@ -828,42 +1031,46 @@ export function NotificationsReportView() {
               </Card>
             </div>
 
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">Recomendações para boletim</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm text-muted-foreground">
-                {report.data.bulletinSections.recomendacoes.map((item, index) => <p key={index}>{item}</p>)}
-              </CardContent>
-            </Card>
+            {report.data && (
+              <>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Recomendações para boletim</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 text-sm text-muted-foreground">
+                    {report.data.bulletinSections.recomendacoes.map((item, index) => <p key={index}>{item}</p>)}
+                  </CardContent>
+                </Card>
 
-            <details className="rounded-lg border bg-card p-4">
-              <summary className="cursor-pointer text-sm font-medium">Resumo estrutural do banco</summary>
-              <div className="mt-4 overflow-x-auto">
-                <table className="w-full min-w-[760px] text-sm">
-                  <thead>
-                    <tr className="border-b text-left">
-                      <th className="py-2">Coluna</th>
-                      <th>Tipo</th>
-                      <th>Ausentes</th>
-                      <th>Valores frequentes</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {report.data.columns.map((column) => (
-                      <tr key={column.name} className="border-b last:border-0">
-                        <td className="py-2 font-medium">{column.name}</td>
-                        <td>{column.type}</td>
-                        <td>{column.missing}</td>
-                        <td className="max-w-[520px] truncate">
-                          {column.topValues.map((item) => `${item.value} (${item.count})`).join(", ")}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </details>
+                <details className="rounded-lg border bg-card p-4">
+                  <summary className="cursor-pointer text-sm font-medium">Resumo estrutural do banco</summary>
+                  <div className="mt-4 overflow-x-auto">
+                    <table className="w-full min-w-[760px] text-sm">
+                      <thead>
+                        <tr className="border-b text-left">
+                          <th className="py-2">Coluna</th>
+                          <th>Tipo</th>
+                          <th>Ausentes</th>
+                          <th>Valores frequentes</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {report.data.columns.map((column) => (
+                          <tr key={column.name} className="border-b last:border-0">
+                            <td className="py-2 font-medium">{column.name}</td>
+                            <td>{column.type}</td>
+                            <td>{column.missing}</td>
+                            <td className="max-w-[520px] truncate">
+                              {column.topValues.map((item) => `${item.value} (${item.count})`).join(", ")}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              </>
+            )}
           </div>
         )}
       </div>
