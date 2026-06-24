@@ -1116,8 +1116,12 @@ export async function auditarSinanTracoma(opts?: {
     return { gve, traconet: tc, nottraconet: ntc, diff, risco: abs >= 50 ? "alto" : abs >= 10 ? "medio" : "baixo" as "alto" | "medio" | "baixo" };
   }).sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
 
-  // ── Field completeness — somente TRACONET (individuais) tem campos clínicos ──
-  const fieldsTraconet = ["agravo", "municipio", "gve", "classificacao", "criterio", "tratamento", "conclusao", "evolucao"];
+  // ── Field completeness — todos os campos normalizados de ambos os bancos ──
+  const fieldsTraconet = [
+    "agravo", "ano", "dt_notificacao",
+    "municipio", "ibge", "gve", "drs", "unidade",
+    "classificacao", "criterio", "tratamento", "conclusao", "evolucao",
+  ];
   const fieldCompleteness: SinanAuditResult["fieldCompleteness"] = {};
   const baseRows = traconetRows.length > 0 ? traconetRows : nottraconetRows; // fallback se só houver um banco
   for (const f of fieldsTraconet) {
@@ -1163,9 +1167,14 @@ export async function auditarSinanTracoma(opts?: {
     return { ano, totalRows: rows.length, avgPct: fieldsTraconet.length ? Math.round(totalPct / fieldsTraconet.length) : 0 };
   }).sort((a, b) => a.ano - b.ano);
 
-  // ── Field completeness — NOTTRACONET (consolidado) ──
+  // ── Field completeness — NOTTRACONET (consolidado) — todos os campos normalizados ──
+  const fieldsNottraconet = [
+    "agravo", "ano", "dt_notificacao",
+    "municipio", "ibge", "gve", "drs", "unidade",
+    "classificacao", "criterio", "tratamento", "conclusao", "evolucao",
+  ];
   const fieldCompletenessNottraconet: SinanAuditResult["fieldCompletenessNottraconet"] = {};
-  for (const f of ["municipio", "gve", "ano"]) {
+  for (const f of fieldsNottraconet) {
     const filled = nottraconetRows.filter((r) => !isBlank(r[f])).length;
     fieldCompletenessNottraconet[f] = {
       total: nottraconetRows.length,

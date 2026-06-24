@@ -4,18 +4,41 @@ import { getCurrentUser } from "@/lib/supabase/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const CEVESP_FIELD_LABELS: Record<string, string> = {
-  DtNotificacao: "Data de notificação",
+  // Identificação e localização
+  ANO: "Ano",
+  Mes: "Mês",
   SemEpidemio: "Semana epidemiológica",
-  MunicipioNotificacao: "Município",
+  DtNotificacao: "Data de notificação",
+  MunicipioNotificacao: "Município de notificação",
+  IbgeNotificacao: "Cód. IBGE",
   GVE_NOME: "GVE",
+  DRS_NOME: "DRS",
+  SUBGRUPOS_VE: "Subgrupo VE",
+  Unid_notificacao: "Unidade notificadora",
+  UVIS: "UVIS",
+  Nome_notificante: "Nome do notificante",
+  CargoFuncao: "Cargo/Função",
+  // Contagens principais
   TotalCaso: "Total de casos",
+  SexMasc: "Sexo masculino",
+  SexFem: "Sexo feminino",
+  // Faixas etárias
   FxMenorUmAno: "Faixa <1 ano",
   FxUmQuatro: "Faixa 1–4 anos",
   FxCincoNove: "Faixa 5–9 anos",
   FxDezQuatorze: "Faixa 10–14 anos",
   FxQuizeOuMais: "Faixa 15+ anos",
-  SexMasc: "Sexo masculino",
-  SexFem: "Sexo feminino"
+  // Surto / investigação
+  Surto: "Surto",
+  NuSurto: "N° surto",
+  // Ações
+  NuColetaMaterialBio: "N° coleta material biológico",
+  ColetaMaterialBio: "Coleta mat. biológico",
+  NuAcaoEducativa: "N° ações educativas",
+  NuTreinamento: "N° treinamentos",
+  AfastamentoProfSintomatico: "Afastamento prof. sintomático",
+  NuEncamimento: "N° encaminhamentos",
+  MedidaAdotada: "Medida adotada",
 };
 
 export async function GET(req: NextRequest) {
@@ -32,7 +55,7 @@ export async function GET(req: NextRequest) {
     const admin = createAdminClient();
     const cols = Object.keys(CEVESP_FIELD_LABELS);
     const selectCols = cols.map((c) => `"${c}"`).join(",");
-    const pageSize = 2000;
+    const pageSize = 1000;
     const allRows: Array<Record<string, unknown>> = [];
 
     for (let from = 0; ; from += pageSize) {
