@@ -49,12 +49,14 @@ export async function GET(req: NextRequest) {
     }
 
     const total = allRows.length;
+
+    function isFilled(v: unknown) {
+      return v !== null && v !== undefined && String(v).trim() !== "";
+    }
+
     const fieldCompleteness: Record<string, { total: number; filled: number; pct: number; label: string }> = {};
     for (const col of cols) {
-      const filled = allRows.filter((r) => {
-        const v = r[col];
-        return v !== null && v !== undefined && String(v).trim() !== "";
-      }).length;
+      const filled = allRows.filter((r) => isFilled(r[col])).length;
       fieldCompleteness[col] = {
         total,
         filled,
@@ -63,7 +65,42 @@ export async function GET(req: NextRequest) {
       };
     }
 
-    return NextResponse.json({ fieldCompleteness, totalRows: total });
+    // byGve: group by GVE_NOME, compute avg fill rate across all tracked cols
+    const gveGroups = new Map<string, Array<Record<string, unknown>>>();
+    for (const row of allRows) {
+      const gve = String(row["GVE_NOME"] ?? "").trim() || "Não informado";
+      if (!gveGroups.has(gve)) gveGroups.set(gve, []);
+      gveGroups.get(gve)!.push(row);
+    }
+    const byGve = Array.from(gveGroups.entries()).map(([gve, rows]) => {
+      const fieldPcts = cols.map((col) => {
+        const filled = rows.filter((r) => isFilled(r[col])).length;
+        return rows.length ? (filled / rows.length) * 100 : 0;
+      });
+      const avgPct = Math.round(fieldPcts.reduce((a, b) => a + b, 0) / (fieldPcts.length || 1));
+      const criticalFields = fieldPcts.filter((p) => p < 70).length;
+      return { gve, totalRows: rows.length, avgPct, criticalFields };
+    }).sort((a, b) => a.avgPct - b.avgPct);
+
+    // byYear: group by year extracted from DtNotificacao
+    const yearGroups = new Map<number, Array<Record<string, unknown>>>();
+    for (const row of allRows) {
+      const raw = String(row["DtNotificacao"] ?? "");
+      const year = raw ? new Date(raw).getFullYear() : NaN;
+      const key = isNaN(year) ? 0 : year;
+      if (!yearGroups.has(key)) yearGroups.set(key, []);
+      yearGroups.get(key)!.push(row);
+    }
+    const byYear = Array.from(yearGroups.entries()).map(([ano, rows]) => {
+      const fieldPcts = cols.map((col) => {
+        const filled = rows.filter((r) => isFilled(r[col])).length;
+        return rows.length ? (filled / rows.length) * 100 : 0;
+      });
+      const avgPct = Math.round(fieldPcts.reduce((a, b) => a + b, 0) / (fieldPcts.length || 1));
+      return { ano, totalRows: rows.length, avgPct };
+    }).sort((a, b) => a.ano - b.ano);
+
+    return NextResponse.json({ fieldCompleteness, totalRows: total, byGve, byYear });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: msg }, { status: 500 });

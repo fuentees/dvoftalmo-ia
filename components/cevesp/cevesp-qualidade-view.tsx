@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import {
   AlertCircle, AlertTriangle, CheckCircle2, ClipboardCheck,
-  MapPin, RefreshCw, Users, XCircle
+  Download, MapPin, RefreshCw, Users, XCircle
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,8 @@ interface QualidadeData {
 interface CompletudeCevespData {
   fieldCompleteness: Record<string, FieldCompletenessEntry>;
   totalRows: number;
+  byGve: Array<{ gve: string; totalRows: number; avgPct: number; criticalFields: number }>;
+  byYear: Array<{ ano: number; totalRows: number; avgPct: number }>;
 }
 
 interface ApiError { error: string; message?: string }
@@ -432,7 +434,20 @@ function PorMunicipioPanel({ data, externalGve, onClearGve }: { data: QualidadeD
   );
 }
 
+type CevespCompView = "campos" | "gve" | "ano";
+
+function downloadCsvCevesp(filename: string, rows: string[][]) {
+  const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(";")).join("\n");
+  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
 function CompletudeCevespPanel({ data }: { data: CompletudeCevespData }) {
+  const [view, setView] = useState<CevespCompView>("campos");
+
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const handleSort = (key: string) => {
@@ -440,13 +455,53 @@ function CompletudeCevespPanel({ data }: { data: CompletudeCevespData }) {
     setSortKey(key);
   };
 
-  const entries = Object.entries(data.fieldCompleteness ?? {});
-  const rows = entries.map(([field, s]) => ({ field, label: s.label, filled: s.filled, total: s.total, pct: s.pct }));
-  const sortedRows = useSortedRows(rows, sortKey as keyof (typeof rows)[0] | null, sortDir);
+  const [sortKeyGve, setSortKeyGve] = useState<string | null>(null);
+  const [sortDirGve, setSortDirGve] = useState<SortDir>("asc");
+  const handleSortGve = (key: string) => {
+    setSortDirGve((d) => sortKeyGve === key ? (d === "asc" ? "desc" : "asc") : "asc");
+    setSortKeyGve(key);
+  };
+
+  const [sortKeyAno, setSortKeyAno] = useState<string | null>(null);
+  const [sortDirAno, setSortDirAno] = useState<SortDir>("asc");
+  const handleSortAno = (key: string) => {
+    setSortDirAno((d) => sortKeyAno === key ? (d === "asc" ? "desc" : "asc") : "asc");
+    setSortKeyAno(key);
+  };
+
   const thCls = "px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground";
 
-  const critCount = rows.filter((r) => r.pct < 70 && r.total > 0).length;
-  const okCount   = rows.filter((r) => r.pct >= 90).length;
+  const entries = Object.entries(data.fieldCompleteness ?? {});
+  const fieldRows = entries.map(([field, s]) => ({ field, label: s.label, filled: s.filled, total: s.total, pct: s.pct }));
+  const sortedFieldRows = useSortedRows(fieldRows, sortKey as keyof (typeof fieldRows)[0] | null, sortDir);
+
+  const gveRows = data.byGve ?? [];
+  const sortedGveRows = useSortedRows(gveRows, sortKeyGve as keyof (typeof gveRows)[0] | null, sortDirGve);
+
+  const anoRows = data.byYear ?? [];
+  const sortedAnoRows = useSortedRows(anoRows, sortKeyAno as keyof (typeof anoRows)[0] | null, sortDirAno);
+
+  const critCount = fieldRows.filter((r) => r.pct < 70 && r.total > 0).length;
+  const okCount   = fieldRows.filter((r) => r.pct >= 90).length;
+
+  function exportCsv() {
+    if (view === "campos") {
+      downloadCsvCevesp("completude-cevesp-campos.csv", [
+        ["Campo", "Preenchidos", "Total", "%", "Status"],
+        ...fieldRows.map((r) => [r.label, String(r.filled), String(r.total), `${r.pct}%`, r.pct >= 90 ? "OK" : r.pct >= 70 ? "Atenção" : "Crítico"])
+      ]);
+    } else if (view === "gve") {
+      downloadCsvCevesp("completude-cevesp-por-gve.csv", [
+        ["GVE", "Linhas", "% médio", "Campos críticos"],
+        ...gveRows.map((r) => [r.gve, String(r.totalRows), `${r.avgPct}%`, String(r.criticalFields)])
+      ]);
+    } else {
+      downloadCsvCevesp("completude-cevesp-por-ano.csv", [
+        ["Ano", "Linhas", "% médio"],
+        ...anoRows.map((r) => [String(r.ano || "—"), String(r.totalRows), `${r.avgPct}%`])
+      ]);
+    }
+  }
 
   if (!entries.length) {
     return <p className="py-6 text-center text-sm text-muted-foreground">Completude indisponível — sem dados.</p>;
@@ -455,29 +510,36 @@ function CompletudeCevespPanel({ data }: { data: CompletudeCevespData }) {
   return (
     <Card>
       <CardHeader className="pb-2 pt-4">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <CardTitle className="text-base">Completude dos campos — CEVESP</CardTitle>
             <p className="mt-0.5 text-xs text-muted-foreground">
               % de registros com campo preenchido. Abaixo de 70% indica subnotificação ou problema de importação.
             </p>
           </div>
-          <div className="flex shrink-0 gap-2 text-xs">
-            {critCount > 0 && (
-              <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-medium text-red-700">
-                {critCount} crítico{critCount > 1 ? "s" : ""}
-              </span>
-            )}
-            {okCount > 0 && (
-              <span className="rounded-full border border-green-200 bg-green-50 px-2 py-0.5 font-medium text-green-700">
-                {okCount} ok
-              </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex gap-0.5 rounded-lg border bg-muted/30 p-0.5 text-xs">
+              {(["campos", "gve", "ano"] as CevespCompView[]).map((v) => (
+                <button key={v} onClick={() => setView(v)} className={`rounded-md px-2.5 py-1 font-medium transition-colors ${view === v ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                  {v === "campos" ? "Campos" : v === "gve" ? "Por GVE" : "Por Ano"}
+                </button>
+              ))}
+            </div>
+            <button onClick={exportCsv} className="flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors">
+              <Download className="h-3 w-3" /> CSV
+            </button>
+            {view === "campos" && (
+              <div className="flex gap-2 text-xs">
+                {critCount > 0 && <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-medium text-red-700">{critCount} crítico{critCount > 1 ? "s" : ""}</span>}
+                {okCount > 0 && <span className="rounded-full border border-green-200 bg-green-50 px-2 py-0.5 font-medium text-green-700">{okCount} ok</span>}
+              </div>
             )}
           </div>
         </div>
       </CardHeader>
       <CardContent className="p-0 pb-0">
         <div className="overflow-x-auto">
+          {view === "campos" && (
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/30">
@@ -489,7 +551,7 @@ function CompletudeCevespPanel({ data }: { data: CompletudeCevespData }) {
               </tr>
             </thead>
             <tbody>
-              {sortedRows.map((row) => {
+              {sortedFieldRows.map((row) => {
                 const badgeCls = row.pct >= 90 ? "border-green-200 bg-green-50 text-green-700" : row.pct >= 70 ? "border-amber-200 bg-amber-50 text-amber-700" : "border-red-200 bg-red-50 text-red-700";
                 const numCls   = row.pct >= 90 ? "text-green-700" : row.pct >= 70 ? "text-amber-700" : "text-red-700";
                 const statusLabel = row.pct >= 90 ? "OK" : row.pct >= 70 ? "Atenção" : "Crítico";
@@ -507,6 +569,57 @@ function CompletudeCevespPanel({ data }: { data: CompletudeCevespData }) {
               })}
             </tbody>
           </table>
+          )}
+          {view === "gve" && (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-muted/30">
+                <SortTh label="GVE" sortKey="gve" currentKey={sortKeyGve} dir={sortDirGve} onSort={handleSortGve} className={thCls} />
+                <SortTh label="Linhas" sortKey="totalRows" currentKey={sortKeyGve} dir={sortDirGve} onSort={handleSortGve} className={`${thCls} text-right`} />
+                <SortTh label="% médio" sortKey="avgPct" currentKey={sortKeyGve} dir={sortDirGve} onSort={handleSortGve} className={`${thCls} text-right`} />
+                <SortTh label="Campos críticos" sortKey="criticalFields" currentKey={sortKeyGve} dir={sortDirGve} onSort={handleSortGve} className={`${thCls} text-right`} />
+              </tr>
+            </thead>
+            <tbody>
+              {sortedGveRows.map((row) => {
+                const numCls = row.avgPct >= 90 ? "text-green-700" : row.avgPct >= 70 ? "text-amber-700" : "text-red-700";
+                return (
+                  <tr key={row.gve} className="border-b last:border-0 hover:bg-muted/20">
+                    <td className="px-4 py-2.5 font-medium">{row.gve || <span className="italic text-muted-foreground">Não informado</span>}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{row.totalRows.toLocaleString("pt-BR")}</td>
+                    <td className={`px-4 py-2.5 text-right tabular-nums font-semibold ${numCls}`}>{row.avgPct}%</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">
+                      {row.criticalFields > 0 ? <span className="font-semibold text-red-600">{row.criticalFields}</span> : <span className="text-green-600">0</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          )}
+          {view === "ano" && (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-muted/30">
+                <SortTh label="Ano" sortKey="ano" currentKey={sortKeyAno} dir={sortDirAno} onSort={handleSortAno} className={thCls} />
+                <SortTh label="Linhas" sortKey="totalRows" currentKey={sortKeyAno} dir={sortDirAno} onSort={handleSortAno} className={`${thCls} text-right`} />
+                <SortTh label="% médio de preenchimento" sortKey="avgPct" currentKey={sortKeyAno} dir={sortDirAno} onSort={handleSortAno} className={`${thCls} text-right`} />
+              </tr>
+            </thead>
+            <tbody>
+              {sortedAnoRows.map((row) => {
+                const numCls = row.avgPct >= 90 ? "text-green-700" : row.avgPct >= 70 ? "text-amber-700" : "text-red-700";
+                return (
+                  <tr key={row.ano} className="border-b last:border-0 hover:bg-muted/20">
+                    <td className="px-4 py-2.5 font-medium tabular-nums">{row.ano || "—"}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{row.totalRows.toLocaleString("pt-BR")}</td>
+                    <td className={`px-4 py-2.5 text-right tabular-nums font-semibold ${numCls}`}>{row.avgPct}%</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          )}
         </div>
       </CardContent>
     </Card>

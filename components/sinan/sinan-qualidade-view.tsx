@@ -1179,8 +1179,20 @@ function CorrecoesTab({ data }: { data: SinanAuditResult }) {
 
 // ── Aba: Completude & Técnico ─────────────────────────────────────────────────
 
+type CompView = "campos" | "gve" | "ano";
+
+function downloadCsv(filename: string, rows: string[][]) {
+  const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(";")).join("\n");
+  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
 function CompletudeTecnicoTab({ data }: { data: SinanAuditResult }) {
   const [showBancoDetail, setShowBancoDetail] = useState<"traconet" | "nottraconet" | null>(null);
+  const [compView, setCompView] = useState<CompView>("campos");
 
   // Sort state — duplicidades
   const [sortKeyDup, setSortKeyDup] = useState<string | null>(null);
@@ -1195,12 +1207,28 @@ function CompletudeTecnicoTab({ data }: { data: SinanAuditResult }) {
     sortDirDup
   );
 
-  // Sort state — completude
+  // Sort state — completude campos
   const [sortKeyComp, setSortKeyComp] = useState<string | null>(null);
   const [sortDirComp, setSortDirComp] = useState<SortDir>("asc");
   const handleSortComp = (key: string) => {
     setSortDirComp((d) => sortKeyComp === key ? (d === "asc" ? "desc" : "asc") : "asc");
     setSortKeyComp(key);
+  };
+
+  // Sort state — completude por GVE
+  const [sortKeyGve, setSortKeyGve] = useState<string | null>(null);
+  const [sortDirGve, setSortDirGve] = useState<SortDir>("asc");
+  const handleSortGve = (key: string) => {
+    setSortDirGve((d) => sortKeyGve === key ? (d === "asc" ? "desc" : "asc") : "asc");
+    setSortKeyGve(key);
+  };
+
+  // Sort state — completude por Ano
+  const [sortKeyAno, setSortKeyAno] = useState<string | null>(null);
+  const [sortDirAno, setSortDirAno] = useState<SortDir>("asc");
+  const handleSortAno = (key: string) => {
+    setSortDirAno((d) => sortKeyAno === key ? (d === "asc" ? "desc" : "asc") : "asc");
+    setSortKeyAno(key);
   };
 
   const thCls = "px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground";
@@ -1211,13 +1239,34 @@ function CompletudeTecnicoTab({ data }: { data: SinanAuditResult }) {
   const okFields       = allFields.filter(([, s]) => s.pct >= 70);
   const sortedFields   = [...criticalFields, ...warnFields, ...okFields];
   const fieldRows = sortedFields.map(([field, stat]) => ({
-    field,
-    label: FIELD_LABELS[field] ?? field,
-    filled: stat.filled,
-    total: stat.total,
-    pct: stat.pct,
+    field, label: FIELD_LABELS[field] ?? field, filled: stat.filled, total: stat.total, pct: stat.pct,
   }));
   const sortedCompRows = useSortedRows(fieldRows, sortKeyComp as keyof (typeof fieldRows)[0] | null, sortDirComp);
+
+  const byGveRows = data.fieldCompletenessByGve ?? [];
+  const sortedGveRows = useSortedRows(byGveRows, sortKeyGve as keyof (typeof byGveRows)[0] | null, sortDirGve);
+
+  const byAnoRows = data.fieldCompletenessByYear ?? [];
+  const sortedAnoRows = useSortedRows(byAnoRows, sortKeyAno as keyof (typeof byAnoRows)[0] | null, sortDirAno);
+
+  function exportCsv() {
+    if (compView === "campos") {
+      downloadCsv("completude-traconet-campos.csv", [
+        ["Campo", "Preenchidos", "Total", "%", "Status"],
+        ...fieldRows.map((r) => [r.label, String(r.filled), String(r.total), `${r.pct}%`, r.pct >= 90 ? "OK" : r.pct >= 70 ? "Atenção" : "Crítico"])
+      ]);
+    } else if (compView === "gve") {
+      downloadCsv("completude-traconet-por-gve.csv", [
+        ["GVE", "Linhas", "% médio", "Campos críticos"],
+        ...byGveRows.map((r) => [r.gve, String(r.totalRows), `${r.avgPct}%`, String(r.criticalFields)])
+      ]);
+    } else {
+      downloadCsv("completude-traconet-por-ano.csv", [
+        ["Ano", "Linhas", "% médio"],
+        ...byAnoRows.map((r) => [String(r.ano), String(r.totalRows), `${r.avgPct}%`])
+      ]);
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -1245,37 +1294,40 @@ function CompletudeTecnicoTab({ data }: { data: SinanAuditResult }) {
         </Card>
       )}
 
-      {/* Completude dos campos */}
+      {/* Completude dos campos — TRACONET */}
       <Card>
         <CardHeader className="pb-2 pt-4">
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <CardTitle className="text-base">Completude dos campos — TRACONET</CardTitle>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 % de registros com campo preenchido. Abaixo de 70% indica problema de mapeamento ou subnotificação.
               </p>
             </div>
-            <div className="flex shrink-0 gap-2 text-xs">
-              {criticalFields.length > 0 && (
-                <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-medium text-red-700">
-                  {criticalFields.length} crítico{criticalFields.length > 1 ? "s" : ""}
-                </span>
-              )}
-              {warnFields.length > 0 && (
-                <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-medium text-amber-700">
-                  {warnFields.length} atenção
-                </span>
-              )}
-              {okFields.length > 0 && (
-                <span className="rounded-full border border-green-200 bg-green-50 px-2 py-0.5 font-medium text-green-700">
-                  {okFields.length} ok
-                </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex gap-0.5 rounded-lg border bg-muted/30 p-0.5 text-xs">
+                {(["campos", "gve", "ano"] as CompView[]).map((v) => (
+                  <button key={v} onClick={() => setCompView(v)} className={`rounded-md px-2.5 py-1 font-medium transition-colors ${compView === v ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                    {v === "campos" ? "Campos" : v === "gve" ? "Por GVE" : "Por Ano"}
+                  </button>
+                ))}
+              </div>
+              <button onClick={exportCsv} className="flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors">
+                <Download className="h-3 w-3" /> CSV
+              </button>
+              {compView === "campos" && (
+                <div className="flex gap-2 text-xs">
+                  {criticalFields.length > 0 && <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-medium text-red-700">{criticalFields.length} crítico{criticalFields.length > 1 ? "s" : ""}</span>}
+                  {warnFields.length > 0 && <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-medium text-amber-700">{warnFields.length} atenção</span>}
+                  {okFields.length > 0 && <span className="rounded-full border border-green-200 bg-green-50 px-2 py-0.5 font-medium text-green-700">{okFields.length} ok</span>}
+                </div>
               )}
             </div>
           </div>
         </CardHeader>
         <CardContent className="p-0 pb-0">
           <div className="overflow-x-auto">
+            {compView === "campos" && (
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/30">
@@ -1305,6 +1357,57 @@ function CompletudeTecnicoTab({ data }: { data: SinanAuditResult }) {
                 })}
               </tbody>
             </table>
+            )}
+            {compView === "gve" && (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/30">
+                  <SortTh label="GVE" sortKey="gve" currentKey={sortKeyGve} dir={sortDirGve} onSort={handleSortGve} className={thCls} />
+                  <SortTh label="Linhas" sortKey="totalRows" currentKey={sortKeyGve} dir={sortDirGve} onSort={handleSortGve} className={`${thCls} text-right`} />
+                  <SortTh label="% médio" sortKey="avgPct" currentKey={sortKeyGve} dir={sortDirGve} onSort={handleSortGve} className={`${thCls} text-right`} />
+                  <SortTh label="Campos críticos" sortKey="criticalFields" currentKey={sortKeyGve} dir={sortDirGve} onSort={handleSortGve} className={`${thCls} text-right`} />
+                </tr>
+              </thead>
+              <tbody>
+                {sortedGveRows.map((row) => {
+                  const numCls = row.avgPct >= 90 ? "text-green-700" : row.avgPct >= 70 ? "text-amber-700" : "text-red-700";
+                  return (
+                    <tr key={row.gve} className="border-b last:border-0 hover:bg-muted/20">
+                      <td className="px-4 py-2.5 font-medium">{row.gve || <span className="italic text-muted-foreground">Não informado</span>}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">{row.totalRows.toLocaleString("pt-BR")}</td>
+                      <td className={`px-4 py-2.5 text-right tabular-nums font-semibold ${numCls}`}>{row.avgPct}%</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">
+                        {row.criticalFields > 0 ? <span className="font-semibold text-red-600">{row.criticalFields}</span> : <span className="text-green-600">0</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            )}
+            {compView === "ano" && (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/30">
+                  <SortTh label="Ano" sortKey="ano" currentKey={sortKeyAno} dir={sortDirAno} onSort={handleSortAno} className={thCls} />
+                  <SortTh label="Linhas" sortKey="totalRows" currentKey={sortKeyAno} dir={sortDirAno} onSort={handleSortAno} className={`${thCls} text-right`} />
+                  <SortTh label="% médio de preenchimento" sortKey="avgPct" currentKey={sortKeyAno} dir={sortDirAno} onSort={handleSortAno} className={`${thCls} text-right`} />
+                </tr>
+              </thead>
+              <tbody>
+                {sortedAnoRows.map((row) => {
+                  const numCls = row.avgPct >= 90 ? "text-green-700" : row.avgPct >= 70 ? "text-amber-700" : "text-red-700";
+                  return (
+                    <tr key={row.ano} className="border-b last:border-0 hover:bg-muted/20">
+                      <td className="px-4 py-2.5 font-medium tabular-nums">{row.ano || "—"}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">{row.totalRows.toLocaleString("pt-BR")}</td>
+                      <td className={`px-4 py-2.5 text-right tabular-nums font-semibold ${numCls}`}>{row.avgPct}%</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            )}
           </div>
         </CardContent>
       </Card>

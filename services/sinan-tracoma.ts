@@ -492,6 +492,8 @@ export interface SinanAuditResult {
   }>;
   fieldCompleteness: Record<string, { total: number; filled: number; pct: number }>;
   fieldCompletenessNottraconet: Record<string, { total: number; filled: number; pct: number }>;
+  fieldCompletenessByGve: Array<{ gve: string; totalRows: number; avgPct: number; criticalFields: number }>;
+  fieldCompletenessByYear: Array<{ ano: number; totalRows: number; avgPct: number }>;
   casosComFormaClinica: number;
   casosSemFormaPositiva: number;
   formaClinicaResumo: Array<{ forma: string; count: number }>;
@@ -1127,6 +1129,40 @@ export async function auditarSinanTracoma(opts?: {
     fieldCompleteness[f] = { total: baseRows.length, filled, pct: baseRows.length ? Math.round((filled / baseRows.length) * 100) : 0 };
   }
 
+  // ── Completude por GVE (TRACONET) ──
+  const gveGroupedComp = new Map<string, Array<Record<string, unknown>>>();
+  for (const r of traconetRows) {
+    const g = resolveGve(r);
+    if (!gveGroupedComp.has(g)) gveGroupedComp.set(g, []);
+    gveGroupedComp.get(g)!.push(r);
+  }
+  const fieldCompletenessByGve: SinanAuditResult["fieldCompletenessByGve"] = Array.from(gveGroupedComp.entries()).map(([gve, rows]) => {
+    let totalPct = 0, criticalFields = 0;
+    for (const f of fieldsTraconet) {
+      const filled = rows.filter((r) => f === "classificacao" ? clinicalFormsFromAuditRow(r).length > 0 || !isBlank(r[f]) : !isBlank(r[f])).length;
+      const pct = rows.length ? Math.round((filled / rows.length) * 100) : 0;
+      totalPct += pct;
+      if (pct < 70 && rows.length > 0) criticalFields++;
+    }
+    return { gve, totalRows: rows.length, avgPct: fieldsTraconet.length ? Math.round(totalPct / fieldsTraconet.length) : 0, criticalFields };
+  }).sort((a, b) => a.avgPct - b.avgPct);
+
+  // ── Completude por Ano (TRACONET) ──
+  const anoGroupedComp = new Map<number, Array<Record<string, unknown>>>();
+  for (const r of traconetRows) {
+    const a = Number(r.ano ?? 0);
+    if (!anoGroupedComp.has(a)) anoGroupedComp.set(a, []);
+    anoGroupedComp.get(a)!.push(r);
+  }
+  const fieldCompletenessByYear: SinanAuditResult["fieldCompletenessByYear"] = Array.from(anoGroupedComp.entries()).map(([ano, rows]) => {
+    let totalPct = 0;
+    for (const f of fieldsTraconet) {
+      const filled = rows.filter((r) => f === "classificacao" ? clinicalFormsFromAuditRow(r).length > 0 || !isBlank(r[f]) : !isBlank(r[f])).length;
+      totalPct += rows.length ? Math.round((filled / rows.length) * 100) : 0;
+    }
+    return { ano, totalRows: rows.length, avgPct: fieldsTraconet.length ? Math.round(totalPct / fieldsTraconet.length) : 0 };
+  }).sort((a, b) => a.ano - b.ano);
+
   // ── Field completeness — NOTTRACONET (consolidado) ──
   const fieldCompletenessNottraconet: SinanAuditResult["fieldCompletenessNottraconet"] = {};
   for (const f of ["municipio", "gve", "ano"]) {
@@ -1389,7 +1425,7 @@ export async function auditarSinanTracoma(opts?: {
       diagnostico: { traconet: bankDiag(traconetRows, diagTraconet), nottraconet: bankDiag(nottraconetRows, diagNottraconet), aviso },
       crossBankDivergences: [], comparisonsByMunicipalityYear: [],
       divergencesByYear: [], divergencesByGve: [],
-      fieldCompleteness: {}, fieldCompletenessNottraconet: {}, casosComFormaClinica: 0, casosSemFormaPositiva: 0,
+      fieldCompleteness: {}, fieldCompletenessNottraconet: {}, fieldCompletenessByGve: [], fieldCompletenessByYear: [], casosComFormaClinica: 0, casosSemFormaPositiva: 0,
       formaClinicaResumo: [], semGraduacao: 0, semTratamento: 0, semConclusao: 0,
       tfSemTratamento: 0, ttSemCircurgia: 0, ttSemTs: 0, anoImpossivel: 0,
       semFormaClinicaDetalhe: [], ttSemTsDetalhe: [],
@@ -1421,6 +1457,8 @@ export async function auditarSinanTracoma(opts?: {
     divergencesByGve,
     fieldCompleteness,
     fieldCompletenessNottraconet,
+    fieldCompletenessByGve,
+    fieldCompletenessByYear,
     casosComFormaClinica,
     casosSemFormaPositiva,
     formaClinicaResumo,
