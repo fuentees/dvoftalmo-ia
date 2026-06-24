@@ -7,7 +7,7 @@ import {
   Database, RefreshCw, XCircle, Activity,
   MapPin, Stethoscope, BarChart2, Download, Search, Target, ChevronDown
 } from "lucide-react";
-import { PagedTable, type PagedColumn } from "@/components/ui/paged-table";
+import { PagedTable } from "@/components/ui/paged-table";
 import { useMemo, useState } from "react";
 import {
   CartesianGrid, Line, LineChart,
@@ -455,11 +455,6 @@ function GestaoTab({ data }: { data: SinanAuditResult }) {
     { label: "Encerrados", value: encerrados, tone: "green" }
   ];
   const maxFunnel = Math.max(...funnel.map((item) => item.value), 1);
-  const criticos =
-    (data.casosSemFormaPositiva ?? data.semGraduacao ?? 0) +
-    (data.ttSemTs ?? 0) +
-    (data.duplicateNotificationIds?.length ?? 0);
-  const altoRisco = (data.crossBankDivergences ?? []).filter((item) => item.risco === "alto").length;
   const thCls = "px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground";
 
   // Sort state — "O que fazer primeiro"
@@ -660,7 +655,6 @@ function DivergenciasTab({ data }: { data: SinanAuditResult }) {
 
   const totalYear = sumRows(filteredByYear);
   const totalGve  = sumRows(data.divergencesByGve ?? []);
-  const totalMuni = sumRows(filteredMuni);
 
   const sortedByYear = useSortedRows(filteredByYear, sortKeyAno as keyof (typeof filteredByYear)[0] | null, sortDirAno);
   const sortedByGve  = useSortedRows(filteredByGve, sortKeyGve as keyof (typeof filteredByGve)[0] | null, sortDirGve);
@@ -1756,13 +1750,6 @@ export function SinanQualidadeView() {
     (data.totalTraconetPositive ?? 0) === 0 &&
     data.semGraduacao === data.totalTraconet
   );
-  const alertasCount =
-    (data?.tfSemTratamento ?? 0) +
-    (data?.ttSemCircurgia ?? 0) +
-    (data?.ttSemTs ?? 0) +
-    (data?.semConclusao ?? 0) +
-    (data?.duplicateNotificationIds?.length ?? 0) +
-    (clinicalMappingMissing ? 0 : data?.semGraduacao ?? 0);
   const criticosCount =
     (data?.casosSemFormaPositiva ?? data?.semGraduacao ?? 0) +
     (data?.ttSemTs ?? 0) +

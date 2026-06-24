@@ -136,7 +136,7 @@ export function CorrectionQueueView() {
     onError: (err: Error) => showToast(err.message, "error")
   });
 
-  const allItems = items.data ?? [];
+  const allItems = useMemo(() => items.data ?? [], [items.data]);
 
   const fieldOptions = useMemo(
     () => [...new Set(allItems.map((i) => i.field_name))].sort(),

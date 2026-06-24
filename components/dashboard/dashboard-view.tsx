@@ -206,58 +206,6 @@ function EmptyState({ title, detail }: { title: string; detail: string }) {
   );
 }
 
-function WorkPathCard({
-  step,
-  title,
-  description,
-  href,
-  label,
-  secondaryHref,
-  secondaryLabel,
-  icon
-}: {
-  step: string;
-  title: string;
-  description: string;
-  href: string;
-  label: string;
-  secondaryHref?: string;
-  secondaryLabel?: string;
-  icon: React.ReactNode;
-}) {
-  return (
-    <Card>
-      <CardContent className="flex h-full flex-col gap-3 pt-5">
-        <div className="flex items-start gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-            {icon}
-          </div>
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{step}</div>
-            <h3 className="mt-1 text-sm font-semibold">{title}</h3>
-            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</p>
-          </div>
-        </div>
-        <div className="mt-auto grid gap-2">
-          <Button asChild variant="outline" size="sm" className="justify-between">
-            <Link href={href}>
-              {label}
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-          </Button>
-          {secondaryHref && secondaryLabel && (
-            <Button asChild variant="ghost" size="sm" className="justify-between">
-              <Link href={secondaryHref}>
-                {secondaryLabel}
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-            </Button>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
 
 export function DashboardView() {
   const [tab, setTab] = useState<Tab>("geral");

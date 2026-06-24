@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-export const CEVESP_FIELD_LABELS: Record<string, string> = {
+const CEVESP_FIELD_LABELS: Record<string, string> = {
   DtNotificacao: "Data de notificação",
   SemEpidemio: "Semana epidemiológica",
   MunicipioNotificacao: "Município",
