@@ -1323,6 +1323,14 @@ function CompletudeTecnicoTab({ data }: { data: SinanAuditResult }) {
     sortDirDup
   );
 
+  // Sort state — completude
+  const [sortKeyComp, setSortKeyComp] = useState<string | null>(null);
+  const [sortDirComp, setSortDirComp] = useState<SortDir>("asc");
+  const handleSortComp = (key: string) => {
+    setSortDirComp((d) => sortKeyComp === key ? (d === "asc" ? "desc" : "asc") : "asc");
+    setSortKeyComp(key);
+  };
+
   const thCls = "px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground";
 
   const allFields = Object.entries(data.fieldCompleteness);
@@ -1330,6 +1338,14 @@ function CompletudeTecnicoTab({ data }: { data: SinanAuditResult }) {
   const warnFields     = allFields.filter(([, s]) => s.pct >= 50 && s.pct < 70 && s.total > 0);
   const okFields       = allFields.filter(([, s]) => s.pct >= 70);
   const sortedFields   = [...criticalFields, ...warnFields, ...okFields];
+  const fieldRows = sortedFields.map(([field, stat]) => ({
+    field,
+    label: FIELD_LABELS[field] ?? field,
+    filled: stat.filled,
+    total: stat.total,
+    pct: stat.pct,
+  }));
+  const sortedCompRows = useSortedRows(fieldRows, sortKeyComp as keyof (typeof fieldRows)[0] | null, sortDirComp);
 
   return (
     <div className="space-y-5">
@@ -1386,11 +1402,37 @@ function CompletudeTecnicoTab({ data }: { data: SinanAuditResult }) {
             </div>
           </div>
         </CardHeader>
-        <CardContent className="pb-4">
-          <div className="grid gap-2.5 sm:grid-cols-2">
-            {sortedFields.map(([field, stat]) => (
-              <PctBar key={field} label={FIELD_LABELS[field] ?? field} pct={stat.pct} />
-            ))}
+        <CardContent className="p-0 pb-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/30">
+                  <SortTh label="Campo" sortKey="label" currentKey={sortKeyComp} dir={sortDirComp} onSort={handleSortComp} className={thCls} />
+                  <SortTh label="Preenchidos" sortKey="filled" currentKey={sortKeyComp} dir={sortDirComp} onSort={handleSortComp} className={`${thCls} text-right`} />
+                  <SortTh label="Total" sortKey="total" currentKey={sortKeyComp} dir={sortDirComp} onSort={handleSortComp} className={`${thCls} text-right`} />
+                  <SortTh label="%" sortKey="pct" currentKey={sortKeyComp} dir={sortDirComp} onSort={handleSortComp} className={`${thCls} text-right`} />
+                  <th className={thCls}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedCompRows.map((row) => {
+                  const badgeCls = row.pct >= 90 ? "border-green-200 bg-green-50 text-green-700" : row.pct >= 70 ? "border-amber-200 bg-amber-50 text-amber-700" : "border-red-200 bg-red-50 text-red-700";
+                  const numCls   = row.pct >= 90 ? "text-green-700" : row.pct >= 70 ? "text-amber-700" : "text-red-700";
+                  const statusLabel = row.pct >= 90 ? "OK" : row.pct >= 70 ? "Atenção" : "Crítico";
+                  return (
+                    <tr key={row.field} className="border-b last:border-0 hover:bg-muted/20">
+                      <td className="px-4 py-2.5 font-medium">{row.label}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">{row.filled.toLocaleString("pt-BR")}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">{row.total.toLocaleString("pt-BR")}</td>
+                      <td className={`px-4 py-2.5 text-right tabular-nums font-semibold ${numCls}`}>{row.pct.toFixed(0)}%</td>
+                      <td className="px-4 py-2.5">
+                        <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${badgeCls}`}>{statusLabel}</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </CardContent>
       </Card>

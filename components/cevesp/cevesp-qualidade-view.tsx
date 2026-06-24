@@ -59,6 +59,37 @@ function severity(r: InvalidRecord): "critical" | "warning" {
   return "warning";
 }
 
+type SortDir = "asc" | "desc";
+
+function useSortedRows<T>(rows: T[], key: keyof T | null, dir: SortDir): T[] {
+  if (!key) return rows;
+  return [...rows].sort((a, b) => {
+    const av = a[key], bv = b[key];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    const cmp = typeof av === "number" && typeof bv === "number"
+      ? av - bv
+      : String(av).localeCompare(String(bv), "pt-BR");
+    return dir === "asc" ? cmp : -cmp;
+  });
+}
+
+function SortTh({ label, sortKey, currentKey, dir, onSort, className }: {
+  label: string; sortKey: string; currentKey: string | null;
+  dir: SortDir; onSort: (k: string) => void; className?: string;
+}) {
+  const active = currentKey === sortKey;
+  return (
+    <th onClick={() => onSort(sortKey)} className={`cursor-pointer select-none ${className ?? ""} hover:text-foreground`}>
+      <span className="inline-flex items-center gap-1">
+        {label}
+        <span className="text-[10px] text-muted-foreground/60">{active ? (dir === "asc" ? "↑" : "↓") : "↕"}</span>
+      </span>
+    </th>
+  );
+}
+
 function SummaryCard({ count, label, sev, detail }: {
   count: number; label: string; sev: "critical" | "warning" | "ok"; detail?: string;
 }) {
@@ -168,6 +199,15 @@ function TabsBar({ tab, setTab, counts }: {
 }
 
 function PorAnoPanel({ data, onSelectAno }: { data: QualidadeData; onSelectAno?: (ano: number) => void }) {
+  const [sortKey, setSortKey] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const handleSort = (key: string) => {
+    setSortDir((d) => sortKey === key ? (d === "asc" ? "desc" : "asc") : "asc");
+    setSortKey(key);
+  };
+  const sortedRows = useSortedRows(data.byAno, sortKey as keyof (typeof data.byAno)[0] | null, sortDir);
+  const thCls = "px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground";
+
   if (!data.byAno.length) {
     return <p className="py-6 text-center text-sm text-muted-foreground">Nenhum registro com ano informado.</p>;
   }
@@ -184,13 +224,13 @@ function PorAnoPanel({ data, onSelectAno }: { data: QualidadeData; onSelectAno?:
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b bg-muted/40">
-                <th className="px-4 py-2 text-left font-medium">Ano</th>
-                <th className="px-4 py-2 text-right font-medium">Registros com problema</th>
+                <SortTh label="Ano" sortKey="ano" currentKey={sortKey} dir={sortDir} onSort={handleSort} className={thCls} />
+                <SortTh label="Registros com problema" sortKey="count" currentKey={sortKey} dir={sortDir} onSort={handleSort} className={`${thCls} text-right`} />
                 {onSelectAno && <th className="px-4 py-2" />}
               </tr>
             </thead>
             <tbody>
-              {data.byAno.map(({ ano, count }) => (
+              {sortedRows.map(({ ano, count }) => (
                 <tr key={ano} className="border-b last:border-0 hover:bg-muted/20">
                   <td className="px-4 py-2 font-medium tabular-nums">{ano}</td>
                   <td className="px-4 py-2 text-right tabular-nums">
@@ -219,10 +259,19 @@ function PorAnoPanel({ data, onSelectAno }: { data: QualidadeData; onSelectAno?:
 }
 
 function PorGvePanel({ data, onSelectGve }: { data: QualidadeData; onSelectGve?: (gve: string) => void }) {
+  const [sortKey, setSortKey] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const handleSort = (key: string) => {
+    setSortDir((d) => sortKey === key ? (d === "asc" ? "desc" : "asc") : "asc");
+    setSortKey(key);
+  };
+  const sortedRows = useSortedRows(data.byGve, sortKey as keyof (typeof data.byGve)[0] | null, sortDir);
+  const thCls = "px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground";
+  const maxCount = data.byGve[0]?.count ?? 1;
+
   if (!data.byGve.length) {
     return <p className="py-6 text-center text-sm text-muted-foreground">Nenhum registro com GVE informado.</p>;
   }
-  const maxCount = data.byGve[0]?.count ?? 1;
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -236,14 +285,14 @@ function PorGvePanel({ data, onSelectGve }: { data: QualidadeData; onSelectGve?:
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b bg-muted/40">
-                <th className="px-4 py-2 text-left font-medium">GVE</th>
-                <th className="px-4 py-2 text-right font-medium">Registros</th>
-                <th className="px-4 py-2 text-left font-medium w-32">Proporção</th>
+                <SortTh label="GVE" sortKey="gve" currentKey={sortKey} dir={sortDir} onSort={handleSort} className={thCls} />
+                <SortTh label="Registros" sortKey="count" currentKey={sortKey} dir={sortDir} onSort={handleSort} className={`${thCls} text-right`} />
+                <th className={`${thCls} w-32`}>Proporção</th>
                 {onSelectGve && <th className="px-4 py-2" />}
               </tr>
             </thead>
             <tbody>
-              {data.byGve.map(({ gve, count }) => (
+              {sortedRows.map(({ gve, count }) => (
                 <tr key={gve} className="border-b last:border-0 hover:bg-muted/20">
                   <td className="px-4 py-2 font-medium">{gve}</td>
                   <td className="px-4 py-2 text-right tabular-nums font-semibold">
