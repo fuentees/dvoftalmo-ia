@@ -646,6 +646,8 @@ type DivView = "ano" | "gve" | "municipio";
 function DivergenciasTab({ data }: { data: SinanAuditResult }) {
   const [view, setView] = useState<DivView>("ano");
   const [busca, setBusca] = useState("");
+  const [filterYear, setFilterYear] = useState<string>("");
+  const availableYears = [...new Set((data.divergencesByYear ?? []).map(d => String(d.ano)))].sort();
 
   // Sort state for "Por Ano" table
   const [sortKeyAno, setSortKeyAno] = useState<string | null>(null);
@@ -667,18 +669,25 @@ function DivergenciasTab({ data }: { data: SinanAuditResult }) {
   const allMuni = data.comparisonsByMunicipalityYear?.length
     ? data.comparisonsByMunicipalityYear
     : data.crossBankDivergences;
-  const filteredMuni = normalizedBusca
-    ? allMuni.filter((d) =>
-        `${d.municipio} ${d.municipioNome} ${d.gve} ${d.ano}`.toLowerCase().includes(normalizedBusca)
-      )
-    : allMuni;
+  const filteredMuni = allMuni.filter(d => {
+    const matchYear = !filterYear || String(d.ano) === filterYear;
+    const matchBusca = !normalizedBusca || `${d.municipio} ${d.municipioNome} ${d.gve} ${d.ano}`.toLowerCase().includes(normalizedBusca);
+    return matchYear && matchBusca;
+  });
 
-  const totalYear = sumRows(data.divergencesByYear ?? []);
+  const filteredByYear = filterYear
+    ? (data.divergencesByYear ?? []).filter(d => String(d.ano) === filterYear)
+    : (data.divergencesByYear ?? []);
+  const filteredByGve = filterYear
+    ? []
+    : (data.divergencesByGve ?? []);
+
+  const totalYear = sumRows(filteredByYear);
   const totalGve  = sumRows(data.divergencesByGve ?? []);
   const totalMuni = sumRows(filteredMuni);
 
-  const sortedByYear = useSortedRows(data.divergencesByYear ?? [], sortKeyAno as keyof (typeof data.divergencesByYear)[0] | null, sortDirAno);
-  const sortedByGve  = useSortedRows(data.divergencesByGve ?? [], sortKeyGve as keyof (typeof data.divergencesByGve)[0] | null, sortDirGve);
+  const sortedByYear = useSortedRows(filteredByYear, sortKeyAno as keyof (typeof filteredByYear)[0] | null, sortDirAno);
+  const sortedByGve  = useSortedRows(filteredByGve, sortKeyGve as keyof (typeof filteredByGve)[0] | null, sortDirGve);
 
   const thCls = "px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground";
 
@@ -700,6 +709,30 @@ function DivergenciasTab({ data }: { data: SinanAuditResult }) {
       </div>
 
       <Card>
+        {availableYears.length > 1 && (
+          <div className="flex flex-wrap items-center gap-2 border-b bg-muted/5 px-4 py-2.5">
+            <span className="text-xs text-muted-foreground">Filtrar por ano:</span>
+            <div className="flex flex-wrap gap-1">
+              <button
+                type="button"
+                onClick={() => setFilterYear("")}
+                className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${!filterYear ? "bg-primary text-primary-foreground" : "border hover:bg-muted"}`}
+              >
+                Todos
+              </button>
+              {availableYears.map(y => (
+                <button
+                  key={y}
+                  type="button"
+                  onClick={() => setFilterYear(y)}
+                  className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${filterYear === y ? "bg-primary text-primary-foreground" : "border hover:bg-muted"}`}
+                >
+                  {y}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="flex items-center justify-between border-b px-4 py-2.5">
           <span className="text-xs font-medium text-muted-foreground">Agrupar por</span>
           <div className="flex gap-1 rounded-lg bg-muted/50 p-0.5">
@@ -749,6 +782,11 @@ function DivergenciasTab({ data }: { data: SinanAuditResult }) {
             </table>
           )}
 
+          {view === "gve" && filterYear && (
+            <div className="px-4 py-3 text-xs text-muted-foreground border-b">
+              O agrupamento por GVE não tem breakdown por ano. Selecione "Por Município" para filtrar por ano.
+            </div>
+          )}
           {view === "gve" && (
             <table className="w-full text-sm">
               <thead>
@@ -869,7 +907,6 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
   const ttSemTsDetalhe = data.ttSemTsDetalhe ?? [];
   const casosComForma = data.casosComFormaClinica ?? data.totalTraconetPositive ?? 0;
   const casosSemForma = data.casosSemFormaPositiva ?? data.semGraduacao ?? 0;
-  const correctionRecords = data.correctionRecords ?? [];
 
   // Toggle dentro da seção de forma clínica (GVE ou Município)
   const [formaView, setFormaView] = useState<"gve" | "municipio">("gve");
@@ -890,14 +927,6 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
     setSortKeyFMun(key);
   };
 
-  // Sort state — notificações para corrigir
-  const [sortKeyCorr, setSortKeyCorr] = useState<string | null>(null);
-  const [sortDirCorr, setSortDirCorr] = useState<SortDir>("asc");
-  const handleSortCorr = (key: string) => {
-    setSortDirCorr((d) => sortKeyCorr === key ? (d === "asc" ? "desc" : "asc") : "asc");
-    setSortKeyCorr(key);
-  };
-
   // Sort state — TT sem TS
   const [sortKeyTT, setSortKeyTT] = useState<string | null>(null);
   const [sortDirTT, setSortDirTT] = useState<SortDir>("asc");
@@ -908,7 +937,6 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
 
   const sortedByGve = useSortedRows(byGve, sortKeyFGve as keyof (typeof byGve)[0] | null, sortDirFGve);
   const sortedDetalhe = useSortedRows(detalhe, sortKeyFMun as keyof (typeof detalhe)[0] | null, sortDirFMun);
-  const sortedCorrectionRecords = useSortedRows(correctionRecords, sortKeyCorr as keyof (typeof correctionRecords)[0] | null, sortDirCorr);
   const sortedTtSemTs = useSortedRows(ttSemTsDetalhe, sortKeyTT as keyof (typeof ttSemTsDetalhe)[0] | null, sortDirTT);
 
   const alertas = [
@@ -1165,61 +1193,7 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
         </div>
       </div>
 
-      {/* ── Seção 3: Notificações para corrigir ── */}
-      {correctionRecords.length > 0 && (
-        <div>
-          <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
-            <ClipboardList className="h-4 w-4 text-primary" />
-            Notificações para solicitar correção
-            <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
-              {correctionRecords.length.toLocaleString("pt-BR")}
-            </span>
-          </h3>
-          <Card>
-            <CardContent className="overflow-x-auto p-0">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/30">
-                    <SortTh label="Prioridade" sortKey="priority" currentKey={sortKeyCorr} dir={sortDirCorr} onSort={handleSortCorr} className={thCls} />
-                    <SortTh label="Problema" sortKey="problem" currentKey={sortKeyCorr} dir={sortDirCorr} onSort={handleSortCorr} className={thCls} />
-                    <th className={thCls}>NU_NOTIFIC / row_key</th>
-                    <SortTh label="Município" sortKey="municipio" currentKey={sortKeyCorr} dir={sortDirCorr} onSort={handleSortCorr} className={thCls} />
-                    <SortTh label="GVE" sortKey="gve" currentKey={sortKeyCorr} dir={sortDirCorr} onSort={handleSortCorr} className={thCls} />
-                    <SortTh label="Ano" sortKey="ano" currentKey={sortKeyCorr} dir={sortDirCorr} onSort={handleSortCorr} className={`${thCls} text-right`} />
-                    <th className={thCls}>Campo</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedCorrectionRecords.slice(0, 80).map((item, index) => (
-                    <tr key={`${item.problem}-${item.notificationId ?? item.rowKey ?? index}`} className="border-b last:border-0 hover:bg-muted/20">
-                      <td className="px-4 py-2.5">
-                        <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${
-                          item.priority === "Critica" ? "border-red-200 bg-red-50 text-red-700"
-                            : item.priority === "Alta" ? "border-amber-200 bg-amber-50 text-amber-700"
-                            : "border-sky-200 bg-sky-50 text-sky-700"
-                        }`}>{item.priority}</span>
-                      </td>
-                      <td className="px-4 py-2.5 font-medium">{item.problem}</td>
-                      <td className="max-w-[220px] truncate px-4 py-2.5 font-mono text-xs" title={item.notificationId ?? item.rowKey ?? ""}>
-                        {item.notificationId ?? item.rowKey ?? "Sem identificador"}
-                      </td>
-                      <td className="px-4 py-2.5">{item.municipioNome || item.municipio}</td>
-                      <td className="px-4 py-2.5 text-xs text-muted-foreground">{item.gve}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{item.ano ?? "-"}</td>
-                      <td className="px-4 py-2.5 font-mono text-xs">{item.field}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {correctionRecords.length > 80 && (
-                <div className="border-t px-4 py-3 text-xs text-muted-foreground">
-                  Exibindo 80 de {correctionRecords.length.toLocaleString("pt-BR")}. Use "Exportar correções" para baixar a lista completa.
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      {/* ── Seção 3 (removida — agora em CorrecoesTab dentro de QualidadeDadosTab) ── */}
 
       {/* ── Seção 4: TT sem TS detalhado ── */}
       {ttSemTsDetalhe.length > 0 && (
@@ -1262,10 +1236,78 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
   );
 }
 
+// ── Aba: Correções ────────────────────────────────────────────────────────────
+
+function CorrecoesTab({ data }: { data: SinanAuditResult }) {
+  const correctionRecords = data.correctionRecords ?? [];
+  const [sortKeyCorr, setSortKeyCorr] = useState<string | null>(null);
+  const [sortDirCorr, setSortDirCorr] = useState<SortDir>("asc");
+  const handleSortCorr = (key: string) => {
+    setSortDirCorr((d) => sortKeyCorr === key ? (d === "asc" ? "desc" : "asc") : "asc");
+    setSortKeyCorr(key);
+  };
+  const sortedCorrectionRecords = useSortedRows(correctionRecords, sortKeyCorr as keyof (typeof correctionRecords)[0] | null, sortDirCorr);
+  const thCls = "px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground";
+
+  if (correctionRecords.length === 0) {
+    return (
+      <div className="flex h-20 items-center justify-center gap-2 text-sm text-muted-foreground">
+        <CheckCircle2 className="h-4 w-4 text-green-500" />
+        Nenhuma notificação para correção
+      </div>
+    );
+  }
+
+  return (
+    <Card>
+      <CardContent className="overflow-x-auto p-0">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b bg-muted/30">
+              <SortTh label="Prioridade" sortKey="priority" currentKey={sortKeyCorr} dir={sortDirCorr} onSort={handleSortCorr} className={thCls} />
+              <SortTh label="Problema" sortKey="problem" currentKey={sortKeyCorr} dir={sortDirCorr} onSort={handleSortCorr} className={thCls} />
+              <th className={thCls}>NU_NOTIFIC / row_key</th>
+              <SortTh label="Município" sortKey="municipio" currentKey={sortKeyCorr} dir={sortDirCorr} onSort={handleSortCorr} className={thCls} />
+              <SortTh label="GVE" sortKey="gve" currentKey={sortKeyCorr} dir={sortDirCorr} onSort={handleSortCorr} className={thCls} />
+              <SortTh label="Ano" sortKey="ano" currentKey={sortKeyCorr} dir={sortDirCorr} onSort={handleSortCorr} className={`${thCls} text-right`} />
+              <th className={thCls}>Campo</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedCorrectionRecords.slice(0, 80).map((item, index) => (
+              <tr key={`${item.problem}-${item.notificationId ?? item.rowKey ?? index}`} className="border-b last:border-0 hover:bg-muted/20">
+                <td className="px-4 py-2.5">
+                  <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${
+                    item.priority === "Critica" ? "border-red-200 bg-red-50 text-red-700"
+                      : item.priority === "Alta" ? "border-amber-200 bg-amber-50 text-amber-700"
+                      : "border-sky-200 bg-sky-50 text-sky-700"
+                  }`}>{item.priority}</span>
+                </td>
+                <td className="px-4 py-2.5 font-medium">{item.problem}</td>
+                <td className="max-w-[220px] truncate px-4 py-2.5 font-mono text-xs" title={item.notificationId ?? item.rowKey ?? ""}>
+                  {item.notificationId ?? item.rowKey ?? "Sem identificador"}
+                </td>
+                <td className="px-4 py-2.5">{item.municipioNome || item.municipio}</td>
+                <td className="px-4 py-2.5 text-xs text-muted-foreground">{item.gve}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{item.ano ?? "-"}</td>
+                <td className="px-4 py-2.5 font-mono text-xs">{item.field}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {correctionRecords.length > 80 && (
+          <div className="border-t px-4 py-3 text-xs text-muted-foreground">
+            Exibindo 80 de {correctionRecords.length.toLocaleString("pt-BR")}. Use "Exportar correções" para baixar a lista completa.
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ── Aba: Completude & Técnico ─────────────────────────────────────────────────
 
 function CompletudeTecnicoTab({ data }: { data: SinanAuditResult }) {
-  const [showAllFields, setShowAllFields] = useState(false);
   const [showBancoDetail, setShowBancoDetail] = useState<"traconet" | "nottraconet" | null>(null);
 
   // Sort state — duplicidades
@@ -1288,7 +1330,6 @@ function CompletudeTecnicoTab({ data }: { data: SinanAuditResult }) {
   const warnFields     = allFields.filter(([, s]) => s.pct >= 50 && s.pct < 70 && s.total > 0);
   const okFields       = allFields.filter(([, s]) => s.pct >= 70);
   const sortedFields   = [...criticalFields, ...warnFields, ...okFields];
-  const visibleFields  = showAllFields ? sortedFields : sortedFields.slice(0, 6);
 
   return (
     <div className="space-y-5">
@@ -1347,32 +1388,19 @@ function CompletudeTecnicoTab({ data }: { data: SinanAuditResult }) {
         </CardHeader>
         <CardContent className="pb-4">
           <div className="grid gap-2.5 sm:grid-cols-2">
-            {visibleFields.map(([field, stat]) => (
+            {sortedFields.map(([field, stat]) => (
               <PctBar key={field} label={FIELD_LABELS[field] ?? field} pct={stat.pct} />
             ))}
           </div>
-          {sortedFields.length > 6 && (
-            <button
-              onClick={() => setShowAllFields(!showAllFields)}
-              className="mt-3 w-full rounded-md border border-dashed py-1.5 text-xs text-muted-foreground hover:border-foreground/30 hover:text-foreground transition-colors"
-            >
-              {showAllFields
-                ? "Mostrar menos"
-                : `Ver todos os ${sortedFields.length} campos`}
-            </button>
-          )}
         </CardContent>
       </Card>
 
       {/* Diagnóstico de importação — compacto */}
-      <Card>
-        <CardHeader className="pb-2 pt-4">
-          <CardTitle className="text-base">Diagnóstico de importação</CardTitle>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Resumo do que foi detectado em cada banco ao importar o arquivo.
-          </p>
-        </CardHeader>
-        <CardContent className="pb-4 space-y-3">
+      <details className="rounded-lg border">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-medium hover:bg-muted/20 transition-colors">
+          Diagnóstico de importação
+        </summary>
+        <div className="border-t px-4 py-3 space-y-3">
           {(["traconet", "nottraconet"] as const).map((banco) => {
             const d = data.diagnostico[banco];
             const count = banco === "traconet" ? data.totalTraconet : data.totalNottraconetRows;
@@ -1436,8 +1464,8 @@ function CompletudeTecnicoTab({ data }: { data: SinanAuditResult }) {
               </div>
             );
           })}
-        </CardContent>
-      </Card>
+        </div>
+      </details>
 
       {/* Possíveis duplicidades — só exibe se houver */}
       {(data.duplicateNotificationIds?.length ?? 0) > 0 && (
@@ -1544,6 +1572,23 @@ function QualidadeDadosTab({ data, clinicalMappingMissing, yearChartData }: {
           Registros com inconsistências que precisam de revisão direta no sistema ou junto ao município.
         </p>
         <QualidadeClinicaTab data={data} clinicalMappingMissing={clinicalMappingMissing} />
+      </Collapsible>
+      <Collapsible
+        title="Notificações para correção"
+        icon={<ClipboardList className="h-4 w-4 text-primary" />}
+        badge={
+          (data.correctionRecords?.length ?? 0) > 0 ? (
+            <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
+              {(data.correctionRecords?.length ?? 0).toLocaleString("pt-BR")}
+            </span>
+          ) : undefined
+        }
+        defaultOpen={(data.correctionRecords?.length ?? 0) > 0}
+      >
+        <p className="text-sm text-muted-foreground">
+          Registros individuais identificados com problema que precisam ser corrigidos no sistema ou encaminhados ao município.
+        </p>
+        <CorrecoesTab data={data} />
       </Collapsible>
       <Collapsible
         title="Completude dos campos"
