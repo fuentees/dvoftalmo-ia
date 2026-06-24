@@ -18,6 +18,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Textarea } from "@/components/ui/textarea";
 import { RateMap, type RateMapRow } from "@/components/epidemiology/rate-map";
 import { EndemicChannelChart, EpidemicCharts } from "@/components/notifications/epidemic-charts";
+import { listarMunicipiosPorGve } from "@/lib/municipios-sp";
 
 type HubTab = "situacao" | "consulta" | "canal" | "saidas";
 
@@ -312,8 +313,8 @@ export function NotificationsReportView() {
   const [selectedGve, setSelectedGve] = useState<string>("");
   const [seInicio, setSeInicio] = useState<number | undefined>(undefined);
   const [seFim, setSeFim] = useState<number | undefined>(undefined);
-  const [municipioInput, setMunicipioInput] = useState<string>("");
   const [selectedMunicipio, setSelectedMunicipio] = useState<string>("");
+  const municipioOptions = useMemo(() => listarMunicipiosPorGve(selectedGve), [selectedGve]);
 
   const anosQuery = useQuery<{ anos: number[] }>({
     queryKey: ["cevesp-anos"],
@@ -537,7 +538,6 @@ export function NotificationsReportView() {
                 setSelectedGve("");
                 setSeInicio(undefined);
                 setSeFim(undefined);
-                setMunicipioInput("");
                 setSelectedMunicipio("");
               }}
               className="h-9 rounded-md border bg-background px-2 text-sm"
@@ -550,7 +550,7 @@ export function NotificationsReportView() {
             </select>
             <select
               value={selectedGve}
-              onChange={e => setSelectedGve(e.target.value)}
+              onChange={e => { setSelectedGve(e.target.value); setSelectedMunicipio(""); }}
               className="h-9 rounded-md border bg-background px-2 text-sm"
               disabled={gvesQuery.isLoading}
             >
@@ -559,15 +559,16 @@ export function NotificationsReportView() {
                 <option key={g} value={g}>{g}</option>
               ))}
             </select>
-            <input
-              type="text"
-              placeholder="Município..."
-              value={municipioInput}
-              onChange={e => setMunicipioInput(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter") setSelectedMunicipio(municipioInput.trim()); }}
-              onBlur={() => { if (municipioInput.trim() !== selectedMunicipio) setSelectedMunicipio(municipioInput.trim()); }}
-              className="h-9 w-36 rounded-md border bg-background px-2 text-sm"
-            />
+            <select
+              value={selectedMunicipio}
+              onChange={e => setSelectedMunicipio(e.target.value)}
+              className="h-9 rounded-md border bg-background px-2 text-sm"
+            >
+              <option value="">Todos os municípios</option>
+              {municipioOptions.map(m => (
+                <option key={m.codigo} value={m.nome}>{m.nome}</option>
+              ))}
+            </select>
             {selectedYear && (
               <div className="flex items-center gap-1">
                 <span className="text-xs text-muted-foreground">SE</span>

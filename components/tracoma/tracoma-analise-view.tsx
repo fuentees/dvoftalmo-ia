@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
+import { listarGvesSp, listarMunicipiosPorGve } from "@/lib/municipios-sp";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -117,8 +118,9 @@ export function TracomaAnaliseView() {
   const [bulletinAnoInicio, setBulletinAnoInicio] = useState<number | undefined>(undefined);
   const [bulletinForce, setBulletinForce] = useState(false);
 
-  // Stable GVE list — persists when a GVE filter is applied
-  const [knownGves, setKnownGves] = useState<string[]>([]);
+  const gveOptions = useMemo(() => listarGvesSp(), []);
+  const municipioOptions = useMemo(() => listarMunicipiosPorGve(pendingGve), [pendingGve]);
+
 
   const [taxaMapView, setTaxaMapView] = useState<"municipio" | "gve">("municipio");
   const [taxaMetric, setTaxaMetric] = useState<"prevalencia" | "taxaDeteccao100k" | "coberturaExame">("prevalencia");
@@ -154,14 +156,6 @@ export function TracomaAnaliseView() {
     staleTime: 5 * 60 * 1000
   });
 
-  // Build stable GVE list from first unfiltered load
-  useEffect(() => {
-    if (!gve && rates.data?.byGve?.length) {
-      setKnownGves(
-        rates.data.byGve.map((r) => r.gve).filter(Boolean).sort()
-      );
-    }
-  }, [gve, rates.data]);
 
   const bulletinsQuery = useQuery<Bulletin[]>({
     queryKey: ["boletins-tracoma"],
@@ -275,23 +269,23 @@ export function TracomaAnaliseView() {
               <label className="text-xs text-muted-foreground">GVE</label>
               <select
                 value={pendingGve}
-                onChange={(e) => setPendingGve(e.target.value)}
+                onChange={(e) => { setPendingGve(e.target.value); setPendingMunicipio(""); }}
                 className="h-9 min-w-[180px] rounded-md border bg-background px-2 text-sm"
               >
                 <option value="">Todos os GVEs</option>
-                {knownGves.map((g) => <option key={g} value={g}>{g}</option>)}
+                {gveOptions.map((g) => <option key={g} value={g}>{g}</option>)}
               </select>
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs text-muted-foreground">Município</label>
-              <input
-                type="text"
-                placeholder="Buscar município..."
+              <select
                 value={pendingMunicipio}
                 onChange={(e) => setPendingMunicipio(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && applyFilters()}
-                className="h-9 w-48 rounded-md border bg-background px-2 text-sm"
-              />
+                className="h-9 min-w-[180px] rounded-md border bg-background px-2 text-sm"
+              >
+                <option value="">Todos os municípios</option>
+                {municipioOptions.map((m) => <option key={m.codigo} value={m.nome}>{m.nome}</option>)}
+              </select>
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs text-muted-foreground">Ano início</label>

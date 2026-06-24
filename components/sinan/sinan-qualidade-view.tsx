@@ -646,8 +646,6 @@ type DivView = "ano" | "gve" | "municipio";
 function DivergenciasTab({ data }: { data: SinanAuditResult }) {
   const [view, setView] = useState<DivView>("ano");
   const [busca, setBusca] = useState("");
-  const [filterYear, setFilterYear] = useState<string>("");
-  const availableYears = [...new Set((data.divergencesByYear ?? []).map(d => String(d.ano)))].sort();
 
   // Sort state for "Por Ano" table
   const [sortKeyAno, setSortKeyAno] = useState<string | null>(null);
@@ -669,18 +667,12 @@ function DivergenciasTab({ data }: { data: SinanAuditResult }) {
   const allMuni = data.comparisonsByMunicipalityYear?.length
     ? data.comparisonsByMunicipalityYear
     : data.crossBankDivergences;
-  const filteredMuni = allMuni.filter(d => {
-    const matchYear = !filterYear || String(d.ano) === filterYear;
-    const matchBusca = !normalizedBusca || `${d.municipio} ${d.municipioNome} ${d.gve} ${d.ano}`.toLowerCase().includes(normalizedBusca);
-    return matchYear && matchBusca;
-  });
+  const filteredMuni = allMuni.filter(d =>
+    !normalizedBusca || `${d.municipio} ${d.municipioNome} ${d.gve} ${d.ano}`.toLowerCase().includes(normalizedBusca)
+  );
 
-  const filteredByYear = filterYear
-    ? (data.divergencesByYear ?? []).filter(d => String(d.ano) === filterYear)
-    : (data.divergencesByYear ?? []);
-  const filteredByGve = filterYear
-    ? []
-    : (data.divergencesByGve ?? []);
+  const filteredByYear = data.divergencesByYear ?? [];
+  const filteredByGve  = data.divergencesByGve ?? [];
 
   const totalYear = sumRows(filteredByYear);
   const totalGve  = sumRows(data.divergencesByGve ?? []);
@@ -709,30 +701,6 @@ function DivergenciasTab({ data }: { data: SinanAuditResult }) {
       </div>
 
       <Card>
-        {availableYears.length > 1 && (
-          <div className="flex flex-wrap items-center gap-2 border-b bg-muted/5 px-4 py-2.5">
-            <span className="text-xs text-muted-foreground">Filtrar por ano:</span>
-            <div className="flex flex-wrap gap-1">
-              <button
-                type="button"
-                onClick={() => setFilterYear("")}
-                className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${!filterYear ? "bg-primary text-primary-foreground" : "border hover:bg-muted"}`}
-              >
-                Todos
-              </button>
-              {availableYears.map(y => (
-                <button
-                  key={y}
-                  type="button"
-                  onClick={() => setFilterYear(y)}
-                  className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${filterYear === y ? "bg-primary text-primary-foreground" : "border hover:bg-muted"}`}
-                >
-                  {y}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
         <div className="flex items-center justify-between border-b px-4 py-2.5">
           <span className="text-xs font-medium text-muted-foreground">Agrupar por</span>
           <div className="flex gap-1 rounded-lg bg-muted/50 p-0.5">
@@ -782,11 +750,6 @@ function DivergenciasTab({ data }: { data: SinanAuditResult }) {
             </table>
           )}
 
-          {view === "gve" && filterYear && (
-            <div className="px-4 py-3 text-xs text-muted-foreground border-b">
-              O agrupamento por GVE não tem breakdown por ano. Selecione "Por Município" para filtrar por ano.
-            </div>
-          )}
           {view === "gve" && (
             <table className="w-full text-sm">
               <thead>
