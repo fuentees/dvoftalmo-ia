@@ -491,6 +491,7 @@ export interface SinanAuditResult {
     risco: "alto" | "medio" | "baixo";
   }>;
   fieldCompleteness: Record<string, { total: number; filled: number; pct: number }>;
+  fieldCompletenessNottraconet: Record<string, { total: number; filled: number; pct: number }>;
   casosComFormaClinica: number;
   casosSemFormaPositiva: number;
   formaClinicaResumo: Array<{ forma: string; count: number }>;
@@ -1126,6 +1127,25 @@ export async function auditarSinanTracoma(opts?: {
     fieldCompleteness[f] = { total: baseRows.length, filled, pct: baseRows.length ? Math.round((filled / baseRows.length) * 100) : 0 };
   }
 
+  // ── Field completeness — NOTTRACONET (consolidado) ──
+  const fieldCompletenessNottraconet: SinanAuditResult["fieldCompletenessNottraconet"] = {};
+  for (const f of ["municipio", "gve", "ano"]) {
+    const filled = nottraconetRows.filter((r) => !isBlank(r[f])).length;
+    fieldCompletenessNottraconet[f] = {
+      total: nottraconetRows.length,
+      filled,
+      pct: nottraconetRows.length ? Math.round((filled / nottraconetRows.length) * 100) : 0
+    };
+  }
+  if (consolidatedPositiveField) {
+    const filled = nottraconetRows.filter((r) => getRawValue(r, consolidatedPositiveFieldCandidates) != null).length;
+    fieldCompletenessNottraconet[consolidatedPositiveField] = {
+      total: nottraconetRows.length,
+      filled,
+      pct: nottraconetRows.length ? Math.round((filled / nottraconetRows.length) * 100) : 0
+    };
+  }
+
   // Clinical quality checks: only individual cases (TRACONET).
   function municipioDetailRows(rows: Array<Record<string, unknown>>) {
     const map = new Map<string, { count: number; ids: string[]; semIdentificador: number }>();
@@ -1369,7 +1389,7 @@ export async function auditarSinanTracoma(opts?: {
       diagnostico: { traconet: bankDiag(traconetRows, diagTraconet), nottraconet: bankDiag(nottraconetRows, diagNottraconet), aviso },
       crossBankDivergences: [], comparisonsByMunicipalityYear: [],
       divergencesByYear: [], divergencesByGve: [],
-      fieldCompleteness: {}, casosComFormaClinica: 0, casosSemFormaPositiva: 0,
+      fieldCompleteness: {}, fieldCompletenessNottraconet: {}, casosComFormaClinica: 0, casosSemFormaPositiva: 0,
       formaClinicaResumo: [], semGraduacao: 0, semTratamento: 0, semConclusao: 0,
       tfSemTratamento: 0, ttSemCircurgia: 0, ttSemTs: 0, anoImpossivel: 0,
       semFormaClinicaDetalhe: [], ttSemTsDetalhe: [],
@@ -1400,6 +1420,7 @@ export async function auditarSinanTracoma(opts?: {
     divergencesByYear,
     divergencesByGve,
     fieldCompleteness,
+    fieldCompletenessNottraconet,
     casosComFormaClinica,
     casosSemFormaPositiva,
     formaClinicaResumo,

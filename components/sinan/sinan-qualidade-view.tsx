@@ -886,45 +886,6 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
   const sortedDetalhe = useSortedRows(detalhe, sortKeyFMun as keyof (typeof detalhe)[0] | null, sortDirFMun);
   const sortedTtSemTs = useSortedRows(ttSemTsDetalhe, sortKeyTT as keyof (typeof ttSemTsDetalhe)[0] | null, sortDirTT);
 
-  const alertas = [
-    {
-      count: data.ttSemTs ?? 0, tone: (data.ttSemTs ?? 0) > 0 ? "red" : "green",
-      label: "TT sem TS associado",
-      detail: "TT isolado deve ser revisado como possível erro de classificação ou digitação clínica."
-    },
-    {
-      count: data.tfSemTratamento, tone: data.tfSemTratamento > 0 ? "red" : "green",
-      label: "TF sem tratamento registrado",
-      detail: "TF ativo exige azitromicina. Ausência de registro é inconsistência grave que impede controle epidemiológico."
-    },
-    {
-      count: data.ttSemCircurgia, tone: data.ttSemCircurgia > 0 ? "red" : "green",
-      label: "TT sem encaminhamento para cirurgia",
-      detail: "Triquíase tracomatosa requer referência oftalmológica. Sem encaminhamento há risco de progressão para cegueira."
-    },
-    {
-      count: data.semTratamento, tone: data.semTratamento > 0 ? "amber" : "green",
-      label: "Sem tratamento (geral)",
-      detail: "Campo tratamento vazio — verificar se azitromicina ou outra conduta foi omitida no registro."
-    },
-    {
-      count: data.semConclusao, tone: data.semConclusao > 0 ? "amber" : "green",
-      label: "Sem conclusão / encerramento",
-      detail: "Investigações sem encerramento dificultam o cálculo de prevalência real."
-    },
-    {
-      count: data.anoImpossivel, tone: data.anoImpossivel > 0 ? "amber" : "green",
-      label: "Ano impossível",
-      detail: "Erro de digitação na data. Corrigir na fonte antes de analisar a série histórica."
-    },
-    {
-      count: data.duplicateNotificationIds?.length ?? 0,
-      tone: (data.duplicateNotificationIds?.length ?? 0) > 0 ? "red" : "green",
-      label: "Possível duplicidade",
-      detail: "Detectado quando coincidem NU_NOTIFIC, iniciais, nome da mãe, data de nascimento e ano."
-    }
-  ];
-
   const thCls = "px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground";
 
   return (
@@ -1106,43 +1067,7 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
         </div>
       </div>
 
-      {/* ── Seção 2: Alertas clínicos ── */}
-      <div>
-        <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
-          <AlertTriangle className="h-4 w-4 text-amber-500" />
-          Alertas clínicos
-        </h3>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {alertas.map((a) => {
-            const icon = a.tone === "red"
-              ? <XCircle className="h-5 w-5 text-red-500" />
-              : a.tone === "amber"
-                ? <AlertTriangle className="h-5 w-5 text-amber-500" />
-                : <CheckCircle2 className="h-5 w-5 text-green-500" />;
-            const border = a.tone === "red" ? "border-red-200 bg-red-50"
-              : a.tone === "amber" ? "border-amber-200 bg-amber-50"
-              : "border-green-200 bg-green-50";
-            const numColor = a.tone === "red" ? "text-red-700"
-              : a.tone === "amber" ? "text-amber-700" : "text-green-700";
-            return (
-              <div key={a.label} className={`flex items-start gap-3 rounded-lg border p-3 ${border}`}>
-                <div className="mt-0.5 shrink-0">{icon}</div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline gap-2 flex-wrap">
-                    <span className={`text-xl font-bold tabular-nums ${numColor}`}>{a.count.toLocaleString("pt-BR")}</span>
-                    <span className="text-xs font-semibold leading-tight">{a.label}</span>
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground leading-snug">{a.detail}</p>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ── Seção 3 (removida — agora em CorrecoesTab dentro de QualidadeDadosTab) ── */}
-
-      {/* ── Seção 4: TT sem TS detalhado ── */}
+      {/* ── Seção 3: TT sem TS detalhado ── */}
       {ttSemTsDetalhe.length > 0 && (
         <div>
           <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
@@ -1384,6 +1309,54 @@ function CompletudeTecnicoTab({ data }: { data: SinanAuditResult }) {
         </CardContent>
       </Card>
 
+      {/* Completude dos campos — NOTTRACONET */}
+      {Object.keys(data.fieldCompletenessNottraconet ?? {}).length > 0 && (
+        <Card>
+          <CardHeader className="pb-2 pt-4">
+            <CardTitle className="text-base">Completude dos campos — NOTTRACONET</CardTitle>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              % de registros consolidados com campo preenchido.
+            </p>
+          </CardHeader>
+          <CardContent className="p-0 pb-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/30">
+                    <th className={thCls}>Campo</th>
+                    <th className={`${thCls} text-right`}>Preenchidos</th>
+                    <th className={`${thCls} text-right`}>Total</th>
+                    <th className={`${thCls} text-right`}>%</th>
+                    <th className={thCls}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(data.fieldCompletenessNottraconet ?? {}).map(([field, stat]) => {
+                    const badgeCls = stat.pct >= 90 ? "border-green-200 bg-green-50 text-green-700" : stat.pct >= 70 ? "border-amber-200 bg-amber-50 text-amber-700" : "border-red-200 bg-red-50 text-red-700";
+                    const numCls = stat.pct >= 90 ? "text-green-700" : stat.pct >= 70 ? "text-amber-700" : "text-red-700";
+                    const statusLabel = stat.pct >= 90 ? "OK" : stat.pct >= 70 ? "Atenção" : "Crítico";
+                    const label = FIELD_LABELS[field] ??
+                      (field.toUpperCase().includes("POS") ? "Casos positivos" :
+                       field.toUpperCase().includes("EXAM") ? "Examinados" : field);
+                    return (
+                      <tr key={field} className="border-b last:border-0 hover:bg-muted/20">
+                        <td className="px-4 py-2.5 font-medium">{label}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums">{stat.filled.toLocaleString("pt-BR")}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums">{stat.total.toLocaleString("pt-BR")}</td>
+                        <td className={`px-4 py-2.5 text-right tabular-nums font-semibold ${numCls}`}>{stat.pct.toFixed(0)}%</td>
+                        <td className="px-4 py-2.5">
+                          <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${badgeCls}`}>{statusLabel}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Diagnóstico de importação — compacto */}
       <details className="rounded-lg border">
         <summary className="cursor-pointer px-4 py-3 text-sm font-medium hover:bg-muted/20 transition-colors">
@@ -1506,6 +1479,39 @@ function CompletudeTecnicoTab({ data }: { data: SinanAuditResult }) {
 
 // ── Aba: Qualidade dos dados (fusão Divergências + Clínica + Completude) ──────
 
+function AlertasClinicoGrid({ data }: { data: SinanAuditResult }) {
+  const alertas = [
+    { count: data.ttSemTs ?? 0, tone: (data.ttSemTs ?? 0) > 0 ? "red" : "green", label: "TT sem TS associado", detail: "TT isolado deve ser revisado como possível erro de classificação ou digitação clínica." },
+    { count: data.tfSemTratamento, tone: data.tfSemTratamento > 0 ? "red" : "green", label: "TF sem tratamento registrado", detail: "TF ativo exige azitromicina. Ausência de registro é inconsistência grave que impede controle epidemiológico." },
+    { count: data.ttSemCircurgia, tone: data.ttSemCircurgia > 0 ? "red" : "green", label: "TT sem encaminhamento para cirurgia", detail: "Triquíase tracomatosa requer referência oftalmológica. Sem encaminhamento há risco de progressão para cegueira." },
+    { count: data.semTratamento, tone: data.semTratamento > 0 ? "amber" : "green", label: "Sem tratamento (geral)", detail: "Campo tratamento vazio — verificar se azitromicina ou outra conduta foi omitida no registro." },
+    { count: data.semConclusao, tone: data.semConclusao > 0 ? "amber" : "green", label: "Sem conclusão / encerramento", detail: "Investigações sem encerramento dificultam o cálculo de prevalência real." },
+    { count: data.anoImpossivel, tone: data.anoImpossivel > 0 ? "amber" : "green", label: "Ano impossível", detail: "Erro de digitação na data. Corrigir na fonte antes de analisar a série histórica." },
+    { count: data.duplicateNotificationIds?.length ?? 0, tone: (data.duplicateNotificationIds?.length ?? 0) > 0 ? "red" : "green", label: "Possível duplicidade", detail: "Detectado quando coincidem NU_NOTIFIC, iniciais, nome da mãe, data de nascimento e ano." }
+  ];
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {alertas.map((a) => {
+        const icon = a.tone === "red" ? <XCircle className="h-5 w-5 text-red-500" /> : a.tone === "amber" ? <AlertTriangle className="h-5 w-5 text-amber-500" /> : <CheckCircle2 className="h-5 w-5 text-green-500" />;
+        const border = a.tone === "red" ? "border-red-200 bg-red-50" : a.tone === "amber" ? "border-amber-200 bg-amber-50" : "border-green-200 bg-green-50";
+        const numColor = a.tone === "red" ? "text-red-700" : a.tone === "amber" ? "text-amber-700" : "text-green-700";
+        return (
+          <div key={a.label} className={`flex items-start gap-3 rounded-lg border p-3 ${border}`}>
+            <div className="mt-0.5 shrink-0">{icon}</div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline gap-2 flex-wrap">
+                <span className={`text-xl font-bold tabular-nums ${numColor}`}>{a.count.toLocaleString("pt-BR")}</span>
+                <span className="text-xs font-semibold leading-tight">{a.label}</span>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground leading-snug">{a.detail}</p>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function QualidadeDadosTab({ data, clinicalMappingMissing, yearChartData }: {
   data: SinanAuditResult;
   clinicalMappingMissing: boolean;
@@ -1516,6 +1522,17 @@ function QualidadeDadosTab({ data, clinicalMappingMissing, yearChartData }: {
       <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
         Esta seção é voltada para analistas e equipes técnicas responsáveis pela qualidade dos dados.
       </div>
+
+      {/* ── Alertas clínicos no topo ── */}
+      {data.totalTraconet > 0 && (
+        <div>
+          <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+            <AlertTriangle className="h-4 w-4 text-amber-500" />
+            Alertas clínicos
+          </h3>
+          <AlertasClinicoGrid data={data} />
+        </div>
+      )}
 
       {yearChartData.length > 1 && (
         <Card>

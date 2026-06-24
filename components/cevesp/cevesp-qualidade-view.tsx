@@ -12,7 +12,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PagedTable, type PagedColumn } from "@/components/ui/paged-table";
 import type { InvalidRecord } from "@/services/cevesp-corrections";
 
-type CevespTab = "registros" | "por_ano" | "por_gve" | "por_municipio";
+type CevespTab = "registros" | "por_ano" | "por_gve" | "por_municipio" | "completude";
+
+interface FieldCompletenessEntry { total: number; filled: number; pct: number; label: string }
 
 interface QualidadeData {
   records: InvalidRecord[];
@@ -24,6 +26,11 @@ interface QualidadeData {
   filteredTotal: number;
   limit: number;
   offset: number;
+}
+
+interface CompletudeCevespData {
+  fieldCompleteness: Record<string, FieldCompletenessEntry>;
+  totalRows: number;
 }
 
 interface ApiError { error: string; message?: string }
@@ -172,7 +179,8 @@ function TabsBar({ tab, setTab, counts }: {
     { id: "registros",    label: "Registros"    },
     { id: "por_ano",      label: "Por Ano"      },
     { id: "por_gve",      label: "Por GVE"      },
-    { id: "por_municipio",label: "Por Município" }
+    { id: "por_municipio",label: "Por Município" },
+    { id: "completude",   label: "Completude"   }
   ];
   return (
     <div className="flex flex-wrap gap-1 rounded-lg border bg-muted/30 p-1">
@@ -424,6 +432,87 @@ function PorMunicipioPanel({ data, externalGve, onClearGve }: { data: QualidadeD
   );
 }
 
+function CompletudeCevespPanel({ data }: { data: CompletudeCevespData }) {
+  const [sortKey, setSortKey] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const handleSort = (key: string) => {
+    setSortDir((d) => sortKey === key ? (d === "asc" ? "desc" : "asc") : "asc");
+    setSortKey(key);
+  };
+
+  const entries = Object.entries(data.fieldCompleteness ?? {});
+  const rows = entries.map(([field, s]) => ({ field, label: s.label, filled: s.filled, total: s.total, pct: s.pct }));
+  const sortedRows = useSortedRows(rows, sortKey as keyof (typeof rows)[0] | null, sortDir);
+  const thCls = "px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground";
+
+  const critCount = rows.filter((r) => r.pct < 70 && r.total > 0).length;
+  const okCount   = rows.filter((r) => r.pct >= 90).length;
+
+  if (!entries.length) {
+    return <p className="py-6 text-center text-sm text-muted-foreground">Completude indisponível — sem dados.</p>;
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-2 pt-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <CardTitle className="text-base">Completude dos campos — CEVESP</CardTitle>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              % de registros com campo preenchido. Abaixo de 70% indica subnotificação ou problema de importação.
+            </p>
+          </div>
+          <div className="flex shrink-0 gap-2 text-xs">
+            {critCount > 0 && (
+              <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-medium text-red-700">
+                {critCount} crítico{critCount > 1 ? "s" : ""}
+              </span>
+            )}
+            {okCount > 0 && (
+              <span className="rounded-full border border-green-200 bg-green-50 px-2 py-0.5 font-medium text-green-700">
+                {okCount} ok
+              </span>
+            )}
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="p-0 pb-0">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-muted/30">
+                <SortTh label="Campo" sortKey="label" currentKey={sortKey} dir={sortDir} onSort={handleSort} className={thCls} />
+                <SortTh label="Preenchidos" sortKey="filled" currentKey={sortKey} dir={sortDir} onSort={handleSort} className={`${thCls} text-right`} />
+                <SortTh label="Total" sortKey="total" currentKey={sortKey} dir={sortDir} onSort={handleSort} className={`${thCls} text-right`} />
+                <SortTh label="%" sortKey="pct" currentKey={sortKey} dir={sortDir} onSort={handleSort} className={`${thCls} text-right`} />
+                <th className={thCls}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedRows.map((row) => {
+                const badgeCls = row.pct >= 90 ? "border-green-200 bg-green-50 text-green-700" : row.pct >= 70 ? "border-amber-200 bg-amber-50 text-amber-700" : "border-red-200 bg-red-50 text-red-700";
+                const numCls   = row.pct >= 90 ? "text-green-700" : row.pct >= 70 ? "text-amber-700" : "text-red-700";
+                const statusLabel = row.pct >= 90 ? "OK" : row.pct >= 70 ? "Atenção" : "Crítico";
+                return (
+                  <tr key={row.field} className="border-b last:border-0 hover:bg-muted/20">
+                    <td className="px-4 py-2.5 font-medium">{row.label}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{row.filled.toLocaleString("pt-BR")}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{row.total.toLocaleString("pt-BR")}</td>
+                    <td className={`px-4 py-2.5 text-right tabular-nums font-semibold ${numCls}`}>{row.pct.toFixed(0)}%</td>
+                    <td className="px-4 py-2.5">
+                      <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${badgeCls}`}>{statusLabel}</span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function CevespQualidadeView() {
   const qc = useQueryClient();
   const [tab, setTab]             = useState<CevespTab>("registros");
@@ -470,6 +559,17 @@ export function CevespQualidadeView() {
       return json as QualidadeData;
     },
     staleTime: 2 * 60 * 1000
+  });
+
+  const { data: completudeData } = useQuery<CompletudeCevespData>({
+    queryKey: ["cevesp-qualidade-completude"],
+    queryFn: async () => {
+      const res  = await fetch("/api/cevesp/qualidade/completude");
+      const json = await res.json();
+      if (!res.ok) throw new Error((json as ApiError).message ?? (json as ApiError).error);
+      return json as CompletudeCevespData;
+    },
+    staleTime: 10 * 60 * 1000
   });
 
   const proposeMutation = useMutation({
@@ -563,11 +663,13 @@ export function CevespQualidadeView() {
   const dateTempoBased = records.filter((r) => r.issueType === "data_tempo").length;
   const conteudoBased  = records.filter((r) => r.issueType === "conteudo").length;
 
+  const completudeCritica = Object.values(completudeData?.fieldCompleteness ?? {}).filter((e) => e.pct < 90 && e.total > 0).length;
   const tabCounts: Record<CevespTab, number> = {
     registros:    total,
     por_ano:      data?.byAno.length ?? 0,
     por_gve:      data?.byGve.length ?? 0,
-    por_municipio: data?.byMunicipio.length ?? 0
+    por_municipio: data?.byMunicipio.length ?? 0,
+    completude:   completudeCritica
   };
 
   return (
@@ -622,9 +724,10 @@ export function CevespQualidadeView() {
         />
       </div>
 
+      {(data || completudeData) && <TabsBar tab={tab} setTab={setTab} counts={tabCounts} />}
+
       {total > 0 && (
         <>
-          <TabsBar tab={tab} setTab={setTab} counts={tabCounts} />
 
           {tab === "registros" && (
             <div className="space-y-4">
@@ -856,7 +959,14 @@ export function CevespQualidadeView() {
         </>
       )}
 
-      {total === 0 && (
+      {tab === "completude" && completudeData && <CompletudeCevespPanel data={completudeData} />}
+      {tab === "completude" && !completudeData && (
+        <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
+          <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Carregando completude...
+        </div>
+      )}
+
+      {total === 0 && tab !== "completude" && (
         <div className="rounded-lg border border-green-200 bg-green-50 p-6 text-center text-sm text-green-800">
           <CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-green-500" />
           <p className="font-medium">Nenhuma inconsistência detectada</p>
