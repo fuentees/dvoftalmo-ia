@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   AlertTriangle, CheckCircle2, ClipboardList,
   Database, RefreshCw, XCircle, Activity,
-  MapPin, Stethoscope, BarChart2, Download, Search, Target
+  MapPin, Stethoscope, BarChart2, Download, Search, Target, ChevronDown
 } from "lucide-react";
 import { PagedTable, type PagedColumn } from "@/components/ui/paged-table";
 import { useMemo, useState } from "react";
@@ -113,6 +113,75 @@ function KpiCard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+// ── Collapsible ───────────────────────────────────────────────────────────────
+
+function Collapsible({ title, badge, icon, defaultOpen = true, children }: {
+  title: string;
+  badge?: React.ReactNode;
+  icon?: React.ReactNode;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center gap-2 rounded-lg border bg-muted/40 px-4 py-3 text-left transition-colors hover:bg-muted/60"
+      >
+        {icon}
+        <span className="flex-1 text-sm font-semibold">{title}</span>
+        {badge}
+        <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && <div className="mt-3 space-y-4">{children}</div>}
+    </div>
+  );
+}
+
+// ── Tabelas ordenáveis ────────────────────────────────────────────────────────
+
+type SortDir = "asc" | "desc";
+
+function useSortedRows<T>(rows: T[], key: keyof T | null, dir: SortDir): T[] {
+  if (!key) return rows;
+  return [...rows].sort((a, b) => {
+    const av = a[key], bv = b[key];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    const cmp = typeof av === "number" && typeof bv === "number"
+      ? av - bv
+      : String(av).localeCompare(String(bv), "pt-BR");
+    return dir === "asc" ? cmp : -cmp;
+  });
+}
+
+function SortTh({ label, sortKey, currentKey, dir, onSort, className }: {
+  label: string;
+  sortKey: string;
+  currentKey: string | null;
+  dir: SortDir;
+  onSort: (k: string) => void;
+  className?: string;
+}) {
+  const active = currentKey === sortKey;
+  return (
+    <th
+      onClick={() => onSort(sortKey)}
+      className={`cursor-pointer select-none ${className ?? ""} hover:text-foreground`}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        <span className="text-[10px] text-muted-foreground/60">
+          {active ? (dir === "asc" ? "↑" : "↓") : "↕"}
+        </span>
+      </span>
+    </th>
   );
 }
 
@@ -409,6 +478,26 @@ function GestaoTab({ data }: { data: SinanAuditResult }) {
   const altoRisco = (data.crossBankDivergences ?? []).filter((item) => item.risco === "alto").length;
   const thCls = "px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground";
 
+  // Sort state — "O que fazer primeiro"
+  const [sortKeyA, setSortKeyA] = useState<keyof ActionPlanRow | null>(null);
+  const [sortDirA, setSortDirA] = useState<SortDir>("asc");
+  const handleSortA = (key: string) => {
+    const k = key as keyof ActionPlanRow;
+    setSortDirA((d) => sortKeyA === k ? (d === "asc" ? "desc" : "asc") : "asc");
+    setSortKeyA(k);
+  };
+  const sortedActionPlan = useSortedRows(actionPlan, sortKeyA, sortDirA);
+
+  // Sort state — "Municípios que precisam de atenção"
+  const [sortKeyP, setSortKeyP] = useState<keyof ManagementRow | null>(null);
+  const [sortDirP, setSortDirP] = useState<SortDir>("asc");
+  const handleSortP = (key: string) => {
+    const k = key as keyof ManagementRow;
+    setSortDirP((d) => sortKeyP === k ? (d === "asc" ? "desc" : "asc") : "asc");
+    setSortKeyP(k);
+  };
+  const sortedPriorities = useSortedRows(priorities, sortKeyP, sortDirP);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -424,128 +513,130 @@ function GestaoTab({ data }: { data: SinanAuditResult }) {
         </Button>
       </div>
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">O que fazer primeiro</CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Corrija estes problemas em ordem de urgência para garantir dados confiáveis.
-          </p>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/30">
-                  <th className={thCls}>Urgência</th>
-                  <th className={thCls}>Problema</th>
-                  <th className={`${thCls} text-right`}>Qtd.</th>
-                  <th className={thCls}>Onde</th>
-                  <th className={thCls}>O que fazer</th>
-                </tr>
-              </thead>
-              <tbody>
-                {actionPlan.map((row) => {
-                  const badge = row.tone === "red"
-                    ? "border-red-200 bg-red-50 text-red-700"
-                    : row.tone === "amber"
-                      ? "border-amber-200 bg-amber-50 text-amber-700"
-                      : "border-green-200 bg-green-50 text-green-700";
-                  return (
-                    <tr key={`${row.prioridade}-${row.problema}`} className="border-b last:border-0 hover:bg-muted/20">
-                      <td className="px-4 py-2.5">
-                        <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${badge}`}>
-                          {row.prioridade}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5 font-medium">{row.problema}</td>
-                      <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
-                        {row.volume > 0 ? row.volume.toLocaleString("pt-BR") : "—"}
-                      </td>
-                      <td className="px-4 py-2.5 text-xs text-muted-foreground">{row.onde}</td>
-                      <td className="px-4 py-2.5 text-xs text-muted-foreground">{row.acao}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <Collapsible title="O que fazer primeiro" icon={<Target className="h-4 w-4 text-muted-foreground" />} defaultOpen={true}>
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Municípios que precisam de atenção</CardTitle>
             <p className="text-xs text-muted-foreground">
-              Ordenados pela quantidade de problemas encontrados nos dados.
+              Corrija estes problemas em ordem de urgência para garantir dados confiáveis.
             </p>
           </CardHeader>
-          <CardContent className="overflow-x-auto p-0">
-            {priorities.length ? (
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/30">
-                    <th className={thCls}>#</th>
-                    <th className={thCls}>Município</th>
-                    <th className={thCls}>GVE</th>
-                    <th className={`${thCls} text-right`}>Problemas</th>
-                    <th className={`${thCls} text-right`}>Diferença</th>
+                    <SortTh label="Urgência" sortKey="prioridade" currentKey={sortKeyA as string | null} dir={sortDirA} onSort={handleSortA} className={thCls} />
+                    <SortTh label="Problema" sortKey="problema" currentKey={sortKeyA as string | null} dir={sortDirA} onSort={handleSortA} className={thCls} />
+                    <SortTh label="Qtd." sortKey="volume" currentKey={sortKeyA as string | null} dir={sortDirA} onSort={handleSortA} className={`${thCls} text-right`} />
+                    <th className={thCls}>Onde</th>
                     <th className={thCls}>O que fazer</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {priorities.map((row, index) => (
-                    <tr key={row.key} className="border-b last:border-0 hover:bg-muted/20">
-                      <td className="px-4 py-2.5">
-                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
-                          {index + 1}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5 font-medium">
-                        {row.municipioNome !== row.municipio ? row.municipioNome : row.municipio}
-                      </td>
-                      <td className="px-4 py-2.5 text-xs text-muted-foreground">{row.gve || "-"}</td>
-                      <td className="px-4 py-2.5 text-right font-semibold tabular-nums text-red-700">{row.criticos.toLocaleString("pt-BR")}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{row.divergencia.toLocaleString("pt-BR")}</td>
-                      <td className="px-4 py-2.5 text-xs text-muted-foreground">{row.acao}</td>
-                    </tr>
-                  ))}
+                  {sortedActionPlan.map((row) => {
+                    const badge = row.tone === "red"
+                      ? "border-red-200 bg-red-50 text-red-700"
+                      : row.tone === "amber"
+                        ? "border-amber-200 bg-amber-50 text-amber-700"
+                        : "border-green-200 bg-green-50 text-green-700";
+                    return (
+                      <tr key={`${row.prioridade}-${row.problema}`} className="border-b last:border-0 hover:bg-muted/20">
+                        <td className="px-4 py-2.5">
+                          <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${badge}`}>
+                            {row.prioridade}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 font-medium">{row.problema}</td>
+                        <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
+                          {row.volume > 0 ? row.volume.toLocaleString("pt-BR") : "—"}
+                        </td>
+                        <td className="px-4 py-2.5 text-xs text-muted-foreground">{row.onde}</td>
+                        <td className="px-4 py-2.5 text-xs text-muted-foreground">{row.acao}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
-            ) : (
-              <div className="flex h-28 items-center justify-center text-sm text-muted-foreground">
-                <CheckCircle2 className="mr-2 h-4 w-4 text-green-500" />
-                Nenhum município com pendência crítica nos filtros atuais.
-              </div>
-            )}
+            </div>
           </CardContent>
         </Card>
+      </Collapsible>
 
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Fluxo de atendimento</CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Quantas pessoas passaram por cada etapa do atendimento.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {funnel.map((item) => {
-              const color = item.tone === "green" ? "bg-green-500" : item.tone === "amber" ? "bg-amber-400" : "bg-primary";
-              return (
-                <div key={item.label}>
-                  <div className="mb-1 flex justify-between gap-3 text-xs">
-                    <span className="text-muted-foreground">{item.label}</span>
-                    <span className="font-semibold tabular-nums">{item.value.toLocaleString("pt-BR")}</span>
-                  </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-muted">
-                    <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.max(3, Math.round((item.value / maxFunnel) * 100))}%` }} />
-                  </div>
+      <Collapsible title="Municípios que precisam de atenção" icon={<MapPin className="h-4 w-4 text-muted-foreground" />} defaultOpen={true}>
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+          <Card>
+            <CardHeader className="pb-3">
+              <p className="text-xs text-muted-foreground">
+                Ordenados pela quantidade de problemas encontrados nos dados.
+              </p>
+            </CardHeader>
+            <CardContent className="overflow-x-auto p-0">
+              {sortedPriorities.length ? (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/30">
+                      <th className={thCls}>#</th>
+                      <SortTh label="Município" sortKey="municipioNome" currentKey={sortKeyP as string | null} dir={sortDirP} onSort={handleSortP} className={thCls} />
+                      <SortTh label="GVE" sortKey="gve" currentKey={sortKeyP as string | null} dir={sortDirP} onSort={handleSortP} className={thCls} />
+                      <SortTh label="Problemas" sortKey="criticos" currentKey={sortKeyP as string | null} dir={sortDirP} onSort={handleSortP} className={`${thCls} text-right`} />
+                      <SortTh label="Diferença" sortKey="divergencia" currentKey={sortKeyP as string | null} dir={sortDirP} onSort={handleSortP} className={`${thCls} text-right`} />
+                      <th className={thCls}>O que fazer</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedPriorities.map((row, index) => (
+                      <tr key={row.key} className="border-b last:border-0 hover:bg-muted/20">
+                        <td className="px-4 py-2.5">
+                          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+                            {index + 1}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 font-medium">
+                          {row.municipioNome !== row.municipio ? row.municipioNome : row.municipio}
+                        </td>
+                        <td className="px-4 py-2.5 text-xs text-muted-foreground">{row.gve || "-"}</td>
+                        <td className="px-4 py-2.5 text-right font-semibold tabular-nums text-red-700">{row.criticos.toLocaleString("pt-BR")}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums">{row.divergencia.toLocaleString("pt-BR")}</td>
+                        <td className="px-4 py-2.5 text-xs text-muted-foreground">{row.acao}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="flex h-28 items-center justify-center text-sm text-muted-foreground">
+                  <CheckCircle2 className="mr-2 h-4 w-4 text-green-500" />
+                  Nenhum município com pendência crítica nos filtros atuais.
                 </div>
-              );
-            })}
-          </CardContent>
-        </Card>
-      </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Fluxo de atendimento</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Quantas pessoas passaram por cada etapa do atendimento.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {funnel.map((item) => {
+                const color = item.tone === "green" ? "bg-green-500" : item.tone === "amber" ? "bg-amber-400" : "bg-primary";
+                return (
+                  <div key={item.label}>
+                    <div className="mb-1 flex justify-between gap-3 text-xs">
+                      <span className="text-muted-foreground">{item.label}</span>
+                      <span className="font-semibold tabular-nums">{item.value.toLocaleString("pt-BR")}</span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-muted">
+                      <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.max(3, Math.round((item.value / maxFunnel) * 100))}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+        </div>
+      </Collapsible>
     </div>
   );
 }
@@ -555,6 +646,22 @@ type DivView = "ano" | "gve" | "municipio";
 function DivergenciasTab({ data }: { data: SinanAuditResult }) {
   const [view, setView] = useState<DivView>("ano");
   const [busca, setBusca] = useState("");
+
+  // Sort state for "Por Ano" table
+  const [sortKeyAno, setSortKeyAno] = useState<string | null>(null);
+  const [sortDirAno, setSortDirAno] = useState<SortDir>("asc");
+  const handleSortAno = (key: string) => {
+    setSortDirAno((d) => sortKeyAno === key ? (d === "asc" ? "desc" : "asc") : "asc");
+    setSortKeyAno(key);
+  };
+
+  // Sort state for "Por GVE" table
+  const [sortKeyGve, setSortKeyGve] = useState<string | null>(null);
+  const [sortDirGve, setSortDirGve] = useState<SortDir>("asc");
+  const handleSortGve = (key: string) => {
+    setSortDirGve((d) => sortKeyGve === key ? (d === "asc" ? "desc" : "asc") : "asc");
+    setSortKeyGve(key);
+  };
 
   const normalizedBusca = busca.trim().toLowerCase();
   const allMuni = data.comparisonsByMunicipalityYear?.length
@@ -569,6 +676,9 @@ function DivergenciasTab({ data }: { data: SinanAuditResult }) {
   const totalYear = sumRows(data.divergencesByYear ?? []);
   const totalGve  = sumRows(data.divergencesByGve ?? []);
   const totalMuni = sumRows(filteredMuni);
+
+  const sortedByYear = useSortedRows(data.divergencesByYear ?? [], sortKeyAno as keyof (typeof data.divergencesByYear)[0] | null, sortDirAno);
+  const sortedByGve  = useSortedRows(data.divergencesByGve ?? [], sortKeyGve as keyof (typeof data.divergencesByGve)[0] | null, sortDirGve);
 
   const thCls = "px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground";
 
@@ -617,15 +727,15 @@ function DivergenciasTab({ data }: { data: SinanAuditResult }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/30">
-                  <th className={thCls}>Ano</th>
-                  <th className={`${thCls} text-right`}>Individuais (TRACONET)</th>
-                  <th className={`${thCls} text-right`}>Positivos (NOTTRACONET)</th>
-                  <th className={`${thCls} text-right`}>Diferença</th>
+                  <SortTh label="Ano" sortKey="ano" currentKey={sortKeyAno} dir={sortDirAno} onSort={handleSortAno} className={thCls} />
+                  <SortTh label="Individuais (TRACONET)" sortKey="traconet" currentKey={sortKeyAno} dir={sortDirAno} onSort={handleSortAno} className={`${thCls} text-right`} />
+                  <SortTh label="Positivos (NOTTRACONET)" sortKey="nottraconet" currentKey={sortKeyAno} dir={sortDirAno} onSort={handleSortAno} className={`${thCls} text-right`} />
+                  <SortTh label="Diferença" sortKey="diff" currentKey={sortKeyAno} dir={sortDirAno} onSort={handleSortAno} className={`${thCls} text-right`} />
                   <th className={`${thCls} text-center`}>Risco</th>
                 </tr>
               </thead>
               <tbody>
-                {(data.divergencesByYear ?? []).map((d) => (
+                {sortedByYear.map((d) => (
                   <tr key={d.ano} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
                     <td className="px-4 py-2.5 font-medium tabular-nums">{d.ano}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums">{d.traconet.toLocaleString("pt-BR")}</td>
@@ -643,15 +753,15 @@ function DivergenciasTab({ data }: { data: SinanAuditResult }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/30">
-                  <th className={thCls}>GVE</th>
-                  <th className={`${thCls} text-right`}>Individuais (TRACONET)</th>
-                  <th className={`${thCls} text-right`}>Positivos (NOTTRACONET)</th>
-                  <th className={`${thCls} text-right`}>Diferença</th>
+                  <SortTh label="GVE" sortKey="gve" currentKey={sortKeyGve} dir={sortDirGve} onSort={handleSortGve} className={thCls} />
+                  <SortTh label="Individuais (TRACONET)" sortKey="traconet" currentKey={sortKeyGve} dir={sortDirGve} onSort={handleSortGve} className={`${thCls} text-right`} />
+                  <SortTh label="Positivos (NOTTRACONET)" sortKey="nottraconet" currentKey={sortKeyGve} dir={sortDirGve} onSort={handleSortGve} className={`${thCls} text-right`} />
+                  <SortTh label="Diferença" sortKey="diff" currentKey={sortKeyGve} dir={sortDirGve} onSort={handleSortGve} className={`${thCls} text-right`} />
                   <th className={`${thCls} text-center`}>Risco</th>
                 </tr>
               </thead>
               <tbody>
-                {(data.divergencesByGve ?? []).map((d, i) => (
+                {sortedByGve.map((d, i) => (
                   <tr key={i} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
                     <td className="px-4 py-2.5 font-medium">
                       {d.gve || <span className="italic text-muted-foreground">Não informado</span>}
@@ -764,6 +874,43 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
   // Toggle dentro da seção de forma clínica (GVE ou Município)
   const [formaView, setFormaView] = useState<"gve" | "municipio">("gve");
 
+  // Sort state — forma clínica por GVE
+  const [sortKeyFGve, setSortKeyFGve] = useState<string | null>(null);
+  const [sortDirFGve, setSortDirFGve] = useState<SortDir>("asc");
+  const handleSortFGve = (key: string) => {
+    setSortDirFGve((d) => sortKeyFGve === key ? (d === "asc" ? "desc" : "asc") : "asc");
+    setSortKeyFGve(key);
+  };
+
+  // Sort state — forma clínica por Município
+  const [sortKeyFMun, setSortKeyFMun] = useState<string | null>(null);
+  const [sortDirFMun, setSortDirFMun] = useState<SortDir>("asc");
+  const handleSortFMun = (key: string) => {
+    setSortDirFMun((d) => sortKeyFMun === key ? (d === "asc" ? "desc" : "asc") : "asc");
+    setSortKeyFMun(key);
+  };
+
+  // Sort state — notificações para corrigir
+  const [sortKeyCorr, setSortKeyCorr] = useState<string | null>(null);
+  const [sortDirCorr, setSortDirCorr] = useState<SortDir>("asc");
+  const handleSortCorr = (key: string) => {
+    setSortDirCorr((d) => sortKeyCorr === key ? (d === "asc" ? "desc" : "asc") : "asc");
+    setSortKeyCorr(key);
+  };
+
+  // Sort state — TT sem TS
+  const [sortKeyTT, setSortKeyTT] = useState<string | null>(null);
+  const [sortDirTT, setSortDirTT] = useState<SortDir>("asc");
+  const handleSortTT = (key: string) => {
+    setSortDirTT((d) => sortKeyTT === key ? (d === "asc" ? "desc" : "asc") : "asc");
+    setSortKeyTT(key);
+  };
+
+  const sortedByGve = useSortedRows(byGve, sortKeyFGve as keyof (typeof byGve)[0] | null, sortDirFGve);
+  const sortedDetalhe = useSortedRows(detalhe, sortKeyFMun as keyof (typeof detalhe)[0] | null, sortDirFMun);
+  const sortedCorrectionRecords = useSortedRows(correctionRecords, sortKeyCorr as keyof (typeof correctionRecords)[0] | null, sortDirCorr);
+  const sortedTtSemTs = useSortedRows(ttSemTsDetalhe, sortKeyTT as keyof (typeof ttSemTsDetalhe)[0] | null, sortDirTT);
+
   const alertas = [
     {
       count: data.ttSemTs ?? 0, tone: (data.ttSemTs ?? 0) > 0 ? "red" : "green",
@@ -834,11 +981,7 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
       </div>
 
       {/* ── Seção 1: Forma clínica ── */}
-      <div>
-        <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
-          <Stethoscope className="h-4 w-4 text-primary" />
-          Forma clínica — onde corrigir
-        </h3>
+      <Collapsible title="Forma clínica" icon={<Stethoscope className="h-4 w-4 text-primary" />} defaultOpen={true}>
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
           <Card>
             <CardHeader className="pb-0">
@@ -904,13 +1047,13 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b bg-muted/30">
-                      <th className={thCls}>GVE</th>
-                      <th className={`${thCls} text-right`}>Casos s/ forma</th>
+                      <SortTh label="GVE" sortKey="gve" currentKey={sortKeyFGve} dir={sortDirFGve} onSort={handleSortFGve} className={thCls} />
+                      <SortTh label="Casos s/ forma" sortKey="count" currentKey={sortKeyFGve} dir={sortDirFGve} onSort={handleSortFGve} className={`${thCls} text-right`} />
                       <th className={`${thCls} w-48`}>Proporção</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {byGve.map((d) => (
+                    {sortedByGve.map((d) => (
                       <tr key={d.gve} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
                         <td className="px-4 py-2.5 font-medium">{d.gve}</td>
                         <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-amber-700">{d.count.toLocaleString("pt-BR")}</td>
@@ -927,14 +1070,14 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b bg-muted/30">
-                      <th className={thCls}>Município</th>
-                      <th className={thCls}>GVE</th>
-                      <th className={`${thCls} text-right`}>Casos s/ forma</th>
+                      <SortTh label="Município" sortKey="municipioNome" currentKey={sortKeyFMun} dir={sortDirFMun} onSort={handleSortFMun} className={thCls} />
+                      <SortTh label="GVE" sortKey="gve" currentKey={sortKeyFMun} dir={sortDirFMun} onSort={handleSortFMun} className={thCls} />
+                      <SortTh label="Casos s/ forma" sortKey="count" currentKey={sortKeyFMun} dir={sortDirFMun} onSort={handleSortFMun} className={`${thCls} text-right`} />
                       <th className={`${thCls} w-40`}>Proporção</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {detalhe.map((d, i) => (
+                    {sortedDetalhe.map((d, i) => (
                       <tr key={i} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
                         <td className="px-4 py-2.5 font-medium">
                           {d.municipioNome !== d.municipio ? d.municipioNome : d.municipio}
@@ -982,14 +1125,10 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
             </CardContent>
           </Card>
         </div>
-      </div>
+      </Collapsible>
 
       {/* ── Seção 2: Alertas clínicos ── */}
-      <div>
-        <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
-          <AlertTriangle className="h-4 w-4 text-amber-500" />
-          Alertas clínicos
-        </h3>
+      <Collapsible title="Alertas clínicos" icon={<AlertTriangle className="h-4 w-4 text-amber-500" />} defaultOpen={true}>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {alertas.map((a) => {
             const icon = a.tone === "red"
@@ -1016,34 +1155,36 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
             );
           })}
         </div>
-      </div>
+      </Collapsible>
 
       {/* ── Seção 3: Notificações para corrigir ── */}
       {correctionRecords.length > 0 && (
-        <div>
-          <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
-            <ClipboardList className="h-4 w-4 text-primary" />
-            Notificações para solicitar correção
+        <Collapsible
+          title="Notificações para solicitar correção"
+          icon={<ClipboardList className="h-4 w-4 text-primary" />}
+          badge={
             <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
               {correctionRecords.length.toLocaleString("pt-BR")}
             </span>
-          </h3>
+          }
+          defaultOpen={correctionRecords.length > 0}
+        >
           <Card>
             <CardContent className="overflow-x-auto p-0">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/30">
-                    <th className={thCls}>Prioridade</th>
-                    <th className={thCls}>Problema</th>
+                    <SortTh label="Prioridade" sortKey="priority" currentKey={sortKeyCorr} dir={sortDirCorr} onSort={handleSortCorr} className={thCls} />
+                    <SortTh label="Problema" sortKey="problem" currentKey={sortKeyCorr} dir={sortDirCorr} onSort={handleSortCorr} className={thCls} />
                     <th className={thCls}>NU_NOTIFIC / row_key</th>
-                    <th className={thCls}>Município</th>
-                    <th className={thCls}>GVE</th>
-                    <th className={`${thCls} text-right`}>Ano</th>
+                    <SortTh label="Município" sortKey="municipio" currentKey={sortKeyCorr} dir={sortDirCorr} onSort={handleSortCorr} className={thCls} />
+                    <SortTh label="GVE" sortKey="gve" currentKey={sortKeyCorr} dir={sortDirCorr} onSort={handleSortCorr} className={thCls} />
+                    <SortTh label="Ano" sortKey="ano" currentKey={sortKeyCorr} dir={sortDirCorr} onSort={handleSortCorr} className={`${thCls} text-right`} />
                     <th className={thCls}>Campo</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {correctionRecords.slice(0, 80).map((item, index) => (
+                  {sortedCorrectionRecords.slice(0, 80).map((item, index) => (
                     <tr key={`${item.problem}-${item.notificationId ?? item.rowKey ?? index}`} className="border-b last:border-0 hover:bg-muted/20">
                       <td className="px-4 py-2.5">
                         <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${
@@ -1071,28 +1212,24 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
               )}
             </CardContent>
           </Card>
-        </div>
+        </Collapsible>
       )}
 
       {/* ── Seção 4: TT sem TS detalhado ── */}
       {ttSemTsDetalhe.length > 0 && (
-        <div>
-          <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
-            <MapPin className="h-4 w-4 text-red-500" />
-            TT sem TS — onde revisar
-          </h3>
+        <Collapsible title="TT sem TS — onde revisar" icon={<MapPin className="h-4 w-4 text-red-500" />} defaultOpen={true}>
           <Card>
             <CardContent className="overflow-x-auto p-0">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/30">
-                    <th className={thCls}>Município</th>
-                    <th className={thCls}>GVE</th>
-                    <th className={`${thCls} text-right`}>Casos</th>
+                    <SortTh label="Município" sortKey="municipioNome" currentKey={sortKeyTT} dir={sortDirTT} onSort={handleSortTT} className={thCls} />
+                    <SortTh label="GVE" sortKey="gve" currentKey={sortKeyTT} dir={sortDirTT} onSort={handleSortTT} className={thCls} />
+                    <SortTh label="Casos" sortKey="count" currentKey={sortKeyTT} dir={sortDirTT} onSort={handleSortTT} className={`${thCls} text-right`} />
                   </tr>
                 </thead>
                 <tbody>
-                  {ttSemTsDetalhe.slice(0, 50).map((d, i) => (
+                  {sortedTtSemTs.slice(0, 50).map((d, i) => (
                     <tr key={i} className="border-b last:border-0 hover:bg-muted/20">
                       <td className="px-4 py-2.5 font-medium">
                         {d.municipioNome !== d.municipio ? d.municipioNome : d.municipio}
@@ -1108,7 +1245,7 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
               </table>
             </CardContent>
           </Card>
-        </div>
+        </Collapsible>
       )}
 
     </div>
@@ -1120,6 +1257,19 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
 function CompletudeTecnicoTab({ data }: { data: SinanAuditResult }) {
   const [showAllFields, setShowAllFields] = useState(false);
   const [showBancoDetail, setShowBancoDetail] = useState<"traconet" | "nottraconet" | null>(null);
+
+  // Sort state — duplicidades
+  const [sortKeyDup, setSortKeyDup] = useState<string | null>(null);
+  const [sortDirDup, setSortDirDup] = useState<SortDir>("asc");
+  const handleSortDup = (key: string) => {
+    setSortDirDup((d) => sortKeyDup === key ? (d === "asc" ? "desc" : "asc") : "asc");
+    setSortKeyDup(key);
+  };
+  const sortedDuplicates = useSortedRows(
+    data.duplicateNotificationIds ?? [],
+    sortKeyDup as keyof (typeof data.duplicateNotificationIds)[0] | null,
+    sortDirDup
+  );
 
   const thCls = "px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground";
 
@@ -1294,16 +1444,16 @@ function CompletudeTecnicoTab({ data }: { data: SinanAuditResult }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/30">
-                  <th className={thCls}>NU_NOTIFIC</th>
+                  <SortTh label="NU_NOTIFIC" sortKey="id" currentKey={sortKeyDup} dir={sortDirDup} onSort={handleSortDup} className={thCls} />
                   <th className={thCls}>Iniciais</th>
                   <th className={thCls}>Nascimento</th>
-                  <th className={thCls}>Município</th>
-                  <th className={`${thCls} text-right`}>Ano</th>
-                  <th className={`${thCls} text-right`}>Repetições</th>
+                  <SortTh label="Município" sortKey="municipio" currentKey={sortKeyDup} dir={sortDirDup} onSort={handleSortDup} className={thCls} />
+                  <SortTh label="Ano" sortKey="ano" currentKey={sortKeyDup} dir={sortDirDup} onSort={handleSortDup} className={`${thCls} text-right`} />
+                  <SortTh label="Repetições" sortKey="count" currentKey={sortKeyDup} dir={sortDirDup} onSort={handleSortDup} className={`${thCls} text-right`} />
                 </tr>
               </thead>
               <tbody>
-                {data.duplicateNotificationIds.slice(0, 30).map((item) => (
+                {sortedDuplicates.slice(0, 30).map((item) => (
                   <tr key={item.caseKey ?? item.id} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
                     <td className="px-4 py-2 font-mono text-xs">{item.id}</td>
                     <td className="px-4 py-2 font-mono text-xs">{item.iniciais || "-"}</td>
@@ -1364,28 +1514,37 @@ function QualidadeDadosTab({ data, clinicalMappingMissing, yearChartData }: {
         </Card>
       )}
 
-      <div>
-        <h3 className="mb-1 text-base font-semibold">Divergências entre os dois bancos</h3>
-        <p className="mb-4 text-sm text-muted-foreground">
+      <Collapsible
+        title="Divergências entre os dois bancos"
+        icon={<BarChart2 className="h-4 w-4 text-muted-foreground" />}
+        defaultOpen={true}
+      >
+        <p className="text-sm text-muted-foreground">
           Comparação entre os casos registrados individualmente e o consolidado anual.
           Diferenças grandes precisam ser investigadas antes de publicar indicadores.
         </p>
         <DivergenciasTab data={data} />
-      </div>
-      <div className="border-t pt-6">
-        <h3 className="mb-1 text-base font-semibold">Alertas e problemas clínicos</h3>
-        <p className="mb-4 text-sm text-muted-foreground">
+      </Collapsible>
+      <Collapsible
+        title="Alertas e problemas clínicos"
+        icon={<AlertTriangle className="h-4 w-4 text-amber-500" />}
+        defaultOpen={true}
+      >
+        <p className="text-sm text-muted-foreground">
           Registros com inconsistências que precisam de revisão direta no sistema ou junto ao município.
         </p>
         <QualidadeClinicaTab data={data} clinicalMappingMissing={clinicalMappingMissing} />
-      </div>
-      <div className="border-t pt-6">
-        <h3 className="mb-1 text-base font-semibold">Completude dos campos</h3>
-        <p className="mb-4 text-sm text-muted-foreground">
+      </Collapsible>
+      <Collapsible
+        title="Completude dos campos"
+        icon={<ClipboardList className="h-4 w-4 text-muted-foreground" />}
+        defaultOpen={false}
+      >
+        <p className="text-sm text-muted-foreground">
           Percentual de preenchimento de cada campo e diagnóstico técnico da importação.
         </p>
         <CompletudeTecnicoTab data={data} />
-      </div>
+      </Collapsible>
     </div>
   );
 }
