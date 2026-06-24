@@ -5,13 +5,11 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
   BarChart3,
-  ClipboardCheck,
   Download,
   FileText,
   LineChart,
   MessageSquareText,
-  RefreshCw,
-  ShieldCheck
+  RefreshCw
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -21,7 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { RateMap, type RateMapRow } from "@/components/epidemiology/rate-map";
 import { EndemicChannelChart, EpidemicCharts } from "@/components/notifications/epidemic-charts";
 
-type HubTab = "situacao" | "consulta" | "canal" | "qualidade" | "saidas";
+type HubTab = "situacao" | "consulta" | "canal" | "saidas";
 
 type ReportData = {
   generatedAt: string;
@@ -128,7 +126,6 @@ const tabs: Array<{ id: HubTab; label: string; icon: React.ElementType }> = [
   { id: "situacao", label: "Situação", icon: BarChart3 },
   { id: "consulta", label: "Consulta", icon: MessageSquareText },
   { id: "canal", label: "Canal", icon: LineChart },
-  { id: "qualidade", label: "Qualidade", icon: ShieldCheck },
   { id: "saidas", label: "Saídas", icon: FileText }
 ];
 
@@ -404,13 +401,6 @@ export function NotificationsReportView() {
     ? { pct: ((reportingMunicipalities - prevYear.reportingMunicipalities) / prevYear.reportingMunicipalities) * 100, prevAno: prevYear.ano }
     : null;
   const SP_MUNICIPIOS = 645;
-  const qualityTop = useMemo(() => {
-    return Object.entries(quality.data?.byType ?? {})
-      .map(([label, total]) => ({ label, total }))
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 6);
-  }, [quality.data]);
-
   function downloadBoletim() {
     const qs = buildQueryParams();
     window.open(`/api/cevesp/boletim${qs ? `?${qs}` : ""}`, "_blank");
@@ -869,130 +859,6 @@ export function NotificationsReportView() {
               </Card>
             )}
             {endemic.data && endemic.data.length > 0 && <EndemicChannelChart data={endemic.data} />}
-          </div>
-        )}
-
-        {tab === "qualidade" && (
-          <div className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-3">
-              <MetricCard label="Registros com inconsistência" value={quality.data?.total ?? 0} tone={(quality.data?.total ?? 0) > 0 ? "amber" : "green"} />
-              <MetricCard label="Tipos de problema" value={Object.keys(quality.data?.byType ?? {}).length} />
-              <MetricCard label="GVEs com problema" value={quality.data?.byGve.length ?? 0} />
-            </div>
-
-            {(quality.data?.records?.length ?? 0) > 0 ? (
-              <Card>
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <CardTitle className="text-base">Registros com inconsistência</CardTitle>
-                    <div className="flex gap-2">
-                      <Button asChild size="sm" variant="outline">
-                        <Link href="/conjuntivite?tab=qualidade">
-                          <ShieldCheck className="h-3.5 w-3.5" />
-                          Auditoria completa
-                        </Link>
-                      </Button>
-                      <Button asChild size="sm" variant="outline">
-                        <Link href="/correcoes">
-                          <ClipboardCheck className="h-3.5 w-3.5" />
-                          Fila de correções
-                        </Link>
-                      </Button>
-                    </div>
-                  </div>
-                  {(quality.data?.total ?? 0) > (quality.data?.records?.length ?? 0) && (
-                    <p className="text-xs text-muted-foreground">
-                      Exibindo {quality.data?.records?.length} de {quality.data?.total} — acesse a auditoria completa para ver todos.
-                    </p>
-                  )}
-                </CardHeader>
-                <CardContent className="p-0">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="border-b bg-muted/40">
-                          <th className="px-3 py-2 text-left font-medium">ID</th>
-                          <th className="px-3 py-2 text-left font-medium">ControlaSubmit</th>
-                          <th className="px-3 py-2 text-left font-medium">Data</th>
-                          <th className="px-3 py-2 text-left font-medium">SE</th>
-                          <th className="px-3 py-2 text-left font-medium">Município</th>
-                          <th className="px-3 py-2 text-left font-medium">GVE</th>
-                          <th className="px-3 py-2 text-left font-medium">Problema</th>
-                          <th className="px-3 py-2 text-left font-medium">Sugestão</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(quality.data?.records ?? []).map((r) => (
-                          <tr key={r.recordId} className="border-b last:border-0 hover:bg-muted/30">
-                            <td className="px-3 py-2 font-mono font-medium whitespace-nowrap">{r.recordId}</td>
-                            <td className="px-3 py-2 font-mono font-medium whitespace-nowrap text-primary">{r.controlaSubmit ?? "—"}</td>
-                            <td className="px-3 py-2 tabular-nums">{r.dtNotificacao ?? "—"}</td>
-                            <td className="px-3 py-2 tabular-nums">{r.semEpidemio ?? "—"}</td>
-                            <td className="px-3 py-2 max-w-[120px] truncate" title={r.municipio ?? undefined}>{r.municipio ?? "—"}</td>
-                            <td className="px-3 py-2 text-muted-foreground">{r.gve ?? "—"}</td>
-                            <td className="px-3 py-2 text-amber-700">{r.issue}</td>
-                            <td className="px-3 py-2">
-                              {r.suggestedField ? (
-                                <span className="rounded bg-green-100 px-1.5 py-0.5 text-green-800 font-mono">
-                                  {r.suggestedField} → {r.suggestedValue}
-                                </span>
-                              ) : (
-                                <span className="text-muted-foreground">Verificar</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="space-y-4">
-                <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-base">Principais inconsistências</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      {qualityTop.length ? qualityTop.map((item) => (
-                        <div key={item.label} className="flex justify-between gap-3 rounded-md border p-3 text-sm">
-                          <span>{item.label}</span>
-                          <strong className="tabular-nums">{num(item.total)}</strong>
-                        </div>
-                      )) : <p className="text-sm text-muted-foreground">Nenhuma inconsistência detectada.</p>}
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-base">GVEs para qualificação</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      {(quality.data?.byGve ?? []).slice(0, 8).map((item) => (
-                        <div key={item.gve} className="flex justify-between gap-3 rounded-md border p-3 text-sm">
-                          <span>{item.gve}</span>
-                          <strong className="tabular-nums">{num(item.count)}</strong>
-                        </div>
-                      ))}
-                    </CardContent>
-                  </Card>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button asChild>
-                    <Link href="/conjuntivite?tab=qualidade">
-                      <ShieldCheck className="h-4 w-4" />
-                      Abrir auditoria técnica
-                    </Link>
-                  </Button>
-                  <Button asChild variant="outline">
-                    <Link href="/correcoes">
-                      <ClipboardCheck className="h-4 w-4" />
-                      Fila de correções
-                    </Link>
-                  </Button>
-                </div>
-              </div>
-            )}
           </div>
         )}
 

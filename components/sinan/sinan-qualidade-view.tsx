@@ -1407,7 +1407,7 @@ function QualidadeDadosTab({ data, clinicalMappingMissing, yearChartData }: {
 
 // ── Componente principal ──────────────────────────────────────────────────────
 
-type PageTab = "situacao" | "qualidade" | "mapa";
+type PageTab = "situacao" | "auditoria" | "mapa";
 
 export function SinanQualidadeView() {
   const [municipio, setMunicipio] = useState("");
@@ -1482,7 +1482,7 @@ export function SinanQualidadeView() {
 
   const pageTabs: { id: PageTab; label: string; icon: React.ReactNode; badge?: number }[] = [
     { id: "situacao",  label: "Situação atual",      icon: <Target className="h-4 w-4" />,  badge: priorities.length > 0 ? priorities.length : undefined },
-    { id: "qualidade", label: "Qualidade dos dados", icon: <Activity className="h-4 w-4" />, badge: highRisk > 0 ? highRisk : undefined },
+    { id: "auditoria", label: "Auditoria", icon: <Activity className="h-4 w-4" />, badge: highRisk > 0 ? highRisk : undefined },
     { id: "mapa",      label: "Mapa epidemiológico", icon: <MapPin className="h-4 w-4" /> },
   ];
 
@@ -1498,7 +1498,7 @@ export function SinanQualidadeView() {
           <div>
             <h1 className="text-xl font-semibold">Tracoma</h1>
             <p className="text-sm text-muted-foreground">
-              Situação atual, qualidade dos dados e mapa epidemiológico do tracoma.
+              Situação atual, auditoria e mapa epidemiológico do tracoma.
             </p>
             <Link href="/dashboard" className="mt-1 inline-flex text-xs font-medium text-primary underline">
               Voltar para a Sala de Situação
@@ -1720,7 +1720,7 @@ END;`}</pre>
               )}
 
               {/* ── Aba: Qualidade dos dados ─────────────────────────────────── */}
-              {pageTab === "qualidade" && (
+              {pageTab === "auditoria" && (
                 <QualidadeDadosTab data={data} clinicalMappingMissing={clinicalMappingMissing} yearChartData={yearChartData} />
               )}
 
