@@ -495,37 +495,6 @@ export function TracomaAnaliseView() {
                     ]
               }
             />
-            {((taxaMapView === "municipio" ? rates.data!.byMunicipality?.length : rates.data!.byGve?.length) ?? 0) > 0 && (
-              <div className="overflow-x-auto rounded-md border">
-                <table className="w-full min-w-[860px] text-sm">
-                  <thead>
-                    <tr className="border-b bg-muted/40 text-left">
-                      <th className="px-3 py-2">{taxaMapView === "municipio" ? "Município" : "GVE"}</th>
-                      {taxaMapView === "municipio" && <th className="px-3 py-2">GVE</th>}
-                      <th className="px-3 py-2 text-right">Examinados</th>
-                      <th className="px-3 py-2 text-right">Positivos</th>
-                      <th className="px-3 py-2 text-right">Prevalência %</th>
-                      <th className="px-3 py-2 text-right">Detecção/100 mil</th>
-                      <th className="px-3 py-2 text-right">Cobertura %</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                    {((taxaMapView === "municipio" ? rates.data!.byMunicipality ?? [] : rates.data!.byGve ?? []) as any[]).map((row) => (
-                      <tr key={taxaMapView === "municipio" ? `${row.codigoIbge}-${row.municipio}` : row.gve} className="border-b last:border-0">
-                        <td className="px-3 py-2 font-medium">{taxaMapView === "municipio" ? row.municipio : row.gve}</td>
-                        {taxaMapView === "municipio" && <td className="px-3 py-2 text-xs text-muted-foreground">{row.gve}</td>}
-                        <td className="px-3 py-2 text-right tabular-nums">{num(row.examinados)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{num(row.positivos)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{pct(row.prevalencia, 2)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{Number(row.taxaDeteccao100k ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{pct(row.coberturaExame, 2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
           </div>
         </>
       )}
