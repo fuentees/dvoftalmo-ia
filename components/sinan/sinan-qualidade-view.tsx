@@ -981,7 +981,11 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
       </div>
 
       {/* ── Seção 1: Forma clínica ── */}
-      <Collapsible title="Forma clínica" icon={<Stethoscope className="h-4 w-4 text-primary" />} defaultOpen={true}>
+      <div>
+        <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+          <Stethoscope className="h-4 w-4 text-primary" />
+          Forma clínica — onde corrigir
+        </h3>
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
           <Card>
             <CardHeader className="pb-0">
@@ -1125,10 +1129,14 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
             </CardContent>
           </Card>
         </div>
-      </Collapsible>
+      </div>
 
       {/* ── Seção 2: Alertas clínicos ── */}
-      <Collapsible title="Alertas clínicos" icon={<AlertTriangle className="h-4 w-4 text-amber-500" />} defaultOpen={true}>
+      <div>
+        <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+          <AlertTriangle className="h-4 w-4 text-amber-500" />
+          Alertas clínicos
+        </h3>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {alertas.map((a) => {
             const icon = a.tone === "red"
@@ -1155,20 +1163,18 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
             );
           })}
         </div>
-      </Collapsible>
+      </div>
 
       {/* ── Seção 3: Notificações para corrigir ── */}
       {correctionRecords.length > 0 && (
-        <Collapsible
-          title="Notificações para solicitar correção"
-          icon={<ClipboardList className="h-4 w-4 text-primary" />}
-          badge={
+        <div>
+          <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+            <ClipboardList className="h-4 w-4 text-primary" />
+            Notificações para solicitar correção
             <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
               {correctionRecords.length.toLocaleString("pt-BR")}
             </span>
-          }
-          defaultOpen={correctionRecords.length > 0}
-        >
+          </h3>
           <Card>
             <CardContent className="overflow-x-auto p-0">
               <table className="w-full text-sm">
@@ -1212,12 +1218,16 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
               )}
             </CardContent>
           </Card>
-        </Collapsible>
+        </div>
       )}
 
       {/* ── Seção 4: TT sem TS detalhado ── */}
       {ttSemTsDetalhe.length > 0 && (
-        <Collapsible title="TT sem TS — onde revisar" icon={<MapPin className="h-4 w-4 text-red-500" />} defaultOpen={true}>
+        <div>
+          <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+            <MapPin className="h-4 w-4 text-red-500" />
+            TT sem TS — onde revisar
+          </h3>
           <Card>
             <CardContent className="overflow-x-auto p-0">
               <table className="w-full text-sm">
@@ -1245,7 +1255,7 @@ function QualidadeClinicaTab({ data, clinicalMappingMissing }: {
               </table>
             </CardContent>
           </Card>
-        </Collapsible>
+        </div>
       )}
 
     </div>
