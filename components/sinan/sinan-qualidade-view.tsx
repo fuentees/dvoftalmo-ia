@@ -16,25 +16,10 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { RateMap, type RateMapRow } from "@/components/epidemiology/rate-map";
 import { listarGvesSp, listarMunicipiosPorGve } from "@/lib/municipios-sp";
 import type { SinanAuditResult } from "@/services/sinan-tracoma";
 
 interface ApiError { error: string; message?: string }
-
-type SinanRatesData = {
-  missingPopulation?: boolean;
-  message?: string;
-  analysisYear?: number;
-  periodStart?: number | null;
-  periodEnd?: number | null;
-  populationYear?: number | null;
-  populationYears?: number[];
-  byMunicipality?: RateMapRow[];
-  byGve?: RateMapRow[];
-  mapRows?: RateMapRow[];
-  methodology?: string;
-};
 
 // ── Helpers visuais ───────────────────────────────────────────────────────────
 
@@ -1407,7 +1392,7 @@ function QualidadeDadosTab({ data, clinicalMappingMissing, yearChartData }: {
 
 // ── Componente principal ──────────────────────────────────────────────────────
 
-type PageTab = "situacao" | "auditoria" | "mapa";
+type PageTab = "situacao" | "auditoria";
 
 export function SinanQualidadeView() {
   const [municipio, setMunicipio] = useState("");
@@ -1416,8 +1401,6 @@ export function SinanQualidadeView() {
   const [yearEnd,   setYearEnd]   = useState("");
   const [filters,   setFilters]   = useState<Record<string, string>>({});
   const [pageTab,   setPageTab]   = useState<PageTab>("situacao");
-  const [taxaMapView, setTaxaMapView] = useState<"municipio" | "gve">("municipio");
-  const [taxaMetric, setTaxaMetric] = useState<"prevalencia" | "taxaDeteccao100k" | "coberturaExame">("prevalencia");
   const gveOptions = useMemo(() => listarGvesSp(), []);
   const municipioOptions = useMemo(() => listarMunicipiosPorGve(gve), [gve]);
 
@@ -1439,18 +1422,6 @@ export function SinanQualidadeView() {
       return res.json() as Promise<SinanAuditResult>;
     },
     retry: false
-  });
-
-  const rates = useQuery<SinanRatesData, ApiError>({
-    queryKey: ["sinan-taxas", filters],
-    queryFn: async () => {
-      const params = buildFilterParams(filters);
-      const res = await fetch(`/api/sinan/taxas?${params}`);
-      if (!res.ok) throw await res.json().catch(() => ({})) as ApiError;
-      return res.json() as Promise<SinanRatesData>;
-    },
-    retry: false,
-    staleTime: 5 * 60 * 1000
   });
 
   const apiError = error as ApiError | null;
@@ -1483,7 +1454,6 @@ export function SinanQualidadeView() {
   const pageTabs: { id: PageTab; label: string; icon: React.ReactNode; badge?: number }[] = [
     { id: "situacao",  label: "Situação atual",      icon: <Target className="h-4 w-4" />,  badge: priorities.length > 0 ? priorities.length : undefined },
     { id: "auditoria", label: "Auditoria", icon: <Activity className="h-4 w-4" />, badge: highRisk > 0 ? highRisk : undefined },
-    { id: "mapa",      label: "Mapa epidemiológico", icon: <MapPin className="h-4 w-4" /> },
   ];
 
   return (
@@ -1498,7 +1468,7 @@ export function SinanQualidadeView() {
           <div>
             <h1 className="text-xl font-semibold">Tracoma</h1>
             <p className="text-sm text-muted-foreground">
-              Situação atual, auditoria e mapa epidemiológico do tracoma.
+              Situação atual e auditoria dos dados do tracoma.
             </p>
             <Link href="/dashboard" className="mt-1 inline-flex text-xs font-medium text-primary underline">
               Voltar para a Sala de Situação
@@ -1528,8 +1498,8 @@ export function SinanQualidadeView() {
               </Button>
             </>
           )}
-          <Button variant="outline" size="sm" onClick={() => { refetch(); rates.refetch(); }} disabled={isFetching || rates.isFetching}>
-            <RefreshCw className={`mr-1.5 h-4 w-4 ${isFetching || rates.isFetching ? "animate-spin" : ""}`} />
+          <Button variant="outline" size="sm" onClick={() => { refetch(); }} disabled={isFetching}>
+            <RefreshCw className={`mr-1.5 h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
             Atualizar
           </Button>
         </div>
@@ -1724,128 +1694,6 @@ END;`}</pre>
                 <QualidadeDadosTab data={data} clinicalMappingMissing={clinicalMappingMissing} yearChartData={yearChartData} />
               )}
 
-              {/* ── Aba: Mapa epidemiológico ─────────────────────────────────── */}
-              {pageTab === "mapa" && (
-                <div className="space-y-4">
-                  {rates.isLoading && (
-                    <div className="flex h-28 items-center justify-center gap-2 text-sm text-muted-foreground">
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                      Calculando taxas epidemiologicas...
-                    </div>
-                  )}
-                  {rates.error && (
-                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                      Não foi possível calcular as taxas: {rates.error.message ?? rates.error.error}
-                    </div>
-                  )}
-                  {rates.data && (
-                    <>
-                      <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <p className="text-sm font-semibold">Mapa de taxas do tracoma</p>
-                          <p className="text-xs text-muted-foreground">
-                            O mapa por municipio usa o shapefile municipal de SP; o mapa por GVE consolida os municipios do grupo.
-                          </p>
-                        </div>
-                        <div className="inline-flex w-fit rounded-md border bg-background p-1">
-                          {(["municipio", "gve"] as const).map((mode) => (
-                            <button
-                              key={mode}
-                              type="button"
-                              onClick={() => setTaxaMapView(mode)}
-                              className={`rounded px-3 py-1 text-xs font-semibold transition ${
-                                taxaMapView === mode ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
-                              }`}
-                            >
-                              {mode === "municipio" ? "Municipio" : "GVE"}
-                            </button>
-                          ))}
-                        </div>
-                        <select
-                          value={taxaMetric}
-                          onChange={(event) => setTaxaMetric(event.target.value as typeof taxaMetric)}
-                          className="h-8 rounded-md border bg-background px-2 text-xs font-medium"
-                        >
-                          <option value="prevalencia">Prevalencia %</option>
-                          <option value="taxaDeteccao100k">Taxa de deteccao/100 mil</option>
-                          <option value="coberturaExame">Cobertura de exame %</option>
-                        </select>
-                      </div>
-                      <RateMap
-                        title={`Mapa operacional de ${
-                          taxaMetric === "prevalencia"
-                            ? "prevalencia"
-                            : taxaMetric === "taxaDeteccao100k"
-                              ? "taxa de detecção"
-                              : "cobertura de exame"
-                        } por ${taxaMapView === "municipio" ? "municipio" : "GVE"}${
-                          rates.data.periodStart && rates.data.periodEnd
-                            ? ` - ${rates.data.periodStart === rates.data.periodEnd ? rates.data.periodStart : `${rates.data.periodStart} a ${rates.data.periodEnd}`}`
-                            : ""
-                        }`}
-                        description={`Prevalencia entre examinados, taxa de deteccao e cobertura. Populacao IBGE: ${(rates.data.populationYears ?? []).join(", ") || rates.data.populationYear || "-"}.`}
-                        rows={taxaMapView === "municipio" ? rates.data.byMunicipality ?? [] : rates.data.byGve ?? []}
-                        valueKey={taxaMetric}
-                        valueLabel={taxaMetric === "taxaDeteccao100k" ? "por 100 mil hab." : "%"}
-                        missingPopulation={rates.data.missingPopulation}
-                        message={rates.data.message}
-                        tableColumns={
-                          taxaMapView === "municipio"
-                            ? [
-                                { key: "municipio", label: "Municipio" },
-                                { key: "gve", label: "GVE" },
-                                { key: "examinados", label: "Examinados" },
-                                { key: "positivos", label: "Positivos" },
-                                { key: "prevalencia", label: "Prevalencia %", decimals: 2 },
-                                { key: "taxaDeteccao100k", label: "Deteccao/100 mil", decimals: 2 },
-                                { key: "coberturaExame", label: "Cobertura %", decimals: 2 },
-                                { key: "populacao", label: "Populacao acumulada" }
-                              ]
-                            : [
-                                { key: "gve", label: "GVE" },
-                                { key: "examinados", label: "Examinados" },
-                                { key: "positivos", label: "Positivos" },
-                                { key: "prevalencia", label: "Prevalencia %", decimals: 2 },
-                                { key: "taxaDeteccao100k", label: "Deteccao/100 mil", decimals: 2 },
-                                { key: "coberturaExame", label: "Cobertura %", decimals: 2 },
-                                { key: "populacao", label: "Populacao acumulada" }
-                              ]
-                        }
-                      />
-                      {((taxaMapView === "municipio" ? rates.data.byMunicipality?.length : rates.data.byGve?.length) ?? 0) > 0 && (
-                        <div className="overflow-x-auto rounded-md border">
-                          <table className="w-full min-w-[860px] text-sm">
-                            <thead>
-                              <tr className="border-b bg-muted/40 text-left">
-                                <th className="px-3 py-2">{taxaMapView === "municipio" ? "Municipio" : "GVE"}</th>
-                                {taxaMapView === "municipio" && <th className="px-3 py-2">GVE</th>}
-                                <th className="px-3 py-2 text-right">Examinados</th>
-                                <th className="px-3 py-2 text-right">Positivos</th>
-                                <th className="px-3 py-2 text-right">Prevalencia %</th>
-                                <th className="px-3 py-2 text-right">Deteccao/100 mil</th>
-                                <th className="px-3 py-2 text-right">Cobertura %</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {(taxaMapView === "municipio" ? rates.data.byMunicipality ?? [] : rates.data.byGve ?? []).map((row) => (
-                                <tr key={taxaMapView === "municipio" ? `${row.codigoIbge}-${row.municipio}` : row.gve} className="border-b last:border-0">
-                                  <td className="px-3 py-2 font-medium">{taxaMapView === "municipio" ? row.municipio : row.gve}</td>
-                                  {taxaMapView === "municipio" && <td className="px-3 py-2 text-xs text-muted-foreground">{row.gve}</td>}
-                                  <td className="px-3 py-2 text-right tabular-nums">{Number(row.examinados ?? 0).toLocaleString("pt-BR")}</td>
-                                  <td className="px-3 py-2 text-right tabular-nums">{Number(row.positivos ?? 0).toLocaleString("pt-BR")}</td>
-                                  <td className="px-3 py-2 text-right tabular-nums">{Number(row.prevalencia ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}</td>
-                                  <td className="px-3 py-2 text-right tabular-nums">{Number(row.taxaDeteccao100k ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}</td>
-                                  <td className="px-3 py-2 text-right tabular-nums">{Number(row.coberturaExame ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
             </div>
           </div>
         </>
