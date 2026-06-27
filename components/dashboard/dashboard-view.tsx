@@ -84,7 +84,7 @@ const tabs: Array<{ id: Tab; label: string; icon: React.ReactNode }> = [
 
 const quickActions = [
   { href: "/sincronizacao", label: "Importar bases", detail: "CEVESP, TRACONET e consolidado", icon: Database },
-  { href: "/notificacoes", label: "Consultar CEVESP", detail: "Tabelas, canal e boletim", icon: Eye },
+  { href: "/conjuntivite", label: "Consultar CEVESP", detail: "Tabelas, canal e boletim", icon: Eye },
   { href: "/qualidade-dados", label: "Qualidade dos dados", detail: "CEVESP e SINAN em uma central", icon: ShieldAlert },
   { href: "/chat", label: "Perguntar ao agente", detail: "Análise em texto, tabela ou relatório", icon: BarChart2 }
 ];
@@ -329,7 +329,7 @@ export function DashboardView() {
               Atualizar
             </Button>
             <Button size="sm" asChild>
-              <Link href={tab === "tracoma" ? "/sinan-qualidade" : tab === "conjuntivites" ? "/notificacoes" : "/sincronizacao"}>
+              <Link href={tab === "tracoma" ? "/tracoma" : tab === "conjuntivites" ? "/conjuntivite" : "/sincronizacao"}>
                 {tab === "geral" ? "Atualizar bases" : "Abrir análise"}
               </Link>
             </Button>

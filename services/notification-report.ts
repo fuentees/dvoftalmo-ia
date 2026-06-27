@@ -71,17 +71,28 @@ function groupSum(rows: Row[], groupKey: string, valueKey = "TotalCaso", limit =
     .slice(0, limit);
 }
 
+function weekKeyFromRow(row: Row) {
+  const ano = toNumber(row.ANO);
+  const se = toNumber(row.SemEpidemio);
+  if (ano > 1900 && se >= 1 && se <= 53) {
+    return `${ano}-SE${String(se).padStart(2, "0")}`;
+  }
+
+  const rawDate = row.DtNotificacao;
+  const date = rawDate ? new Date(String(rawDate)) : null;
+  if (!date || Number.isNaN(date.getTime())) return null;
+
+  const firstDay = new Date(date.getFullYear(), 0, 1);
+  const days = Math.floor((date.getTime() - firstDay.getTime()) / 86400000);
+  const week = Math.ceil((days + firstDay.getDay() + 1) / 7);
+  return `${date.getFullYear()}-SE${String(week).padStart(2, "0")}`;
+}
+
 function weeklySeries(rows: Row[]) {
   const totals = new Map<string, number>();
   for (const row of rows) {
-    const rawDate = row.DtNotificacao;
-    const date = rawDate ? new Date(String(rawDate)) : null;
-    if (!date || Number.isNaN(date.getTime())) continue;
-
-    const firstDay = new Date(date.getFullYear(), 0, 1);
-    const days = Math.floor((date.getTime() - firstDay.getTime()) / 86400000);
-    const week = Math.ceil((days + firstDay.getDay() + 1) / 7);
-    const key = `${date.getFullYear()}-SE${String(week).padStart(2, "0")}`;
+    const key = weekKeyFromRow(row);
+    if (!key) continue;
     totals.set(key, (totals.get(key) ?? 0) + toNumber(row.TotalCaso));
   }
 

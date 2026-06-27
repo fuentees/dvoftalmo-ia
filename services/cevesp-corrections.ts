@@ -204,6 +204,18 @@ export async function findInvalidRecords(limit?: number, ano?: number, gve?: str
       ((now.getTime() - startOfYear.getTime()) / 86_400_000 + startOfYear.getDay() + 1) / 7
     );
 
+    const scopeConditions: string[] = [];
+    const scopeParams: unknown[] = [];
+    if (ano) {
+      scopeConditions.push("ANO = ?");
+      scopeParams.push(ano);
+    }
+    if (gve) {
+      scopeConditions.push("GVE_NOME = ?");
+      scopeParams.push(gve);
+    }
+    const scopeClause = scopeConditions.length ? `${scopeConditions.join(" AND ")} AND ` : "";
+
     const sql = `SELECT \`${pkCol}\`, ControlaSubmit,
               DtNotificacao, SemEpidemio, MunicipioNotificacao,
               GVE_NOME, ANO, TotalCaso,
@@ -238,7 +250,7 @@ export async function findInvalidRecords(limit?: number, ano?: number, gve?: str
                 ELSE 'outro'
               END AS problema
        FROM \`${tableName}\`
-       WHERE ${ano ? "ANO = ? AND (" : "("}
+       WHERE ${scopeClause}((
               DtNotificacao IS NOT NULL
               AND CAST(DtNotificacao AS CHAR) REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
               AND STR_TO_DATE(CAST(DtNotificacao AS CHAR), '%Y-%m-%d') IS NULL
@@ -256,12 +268,10 @@ export async function findInvalidRecords(limit?: number, ano?: number, gve?: str
           OR (TotalCaso = 0 AND (COALESCE(SexMasc,0)+COALESCE(SexFem,0)) > 0)
           OR (TotalCaso > 0 AND (COALESCE(FxMenorUmAno,0)+COALESCE(FxUmQuatro,0)+COALESCE(FxCincoNove,0)+COALESCE(FxDezQuatorze,0)+COALESCE(FxQuizeOuMais,0)) = 0)
           OR (TotalCaso > 0 AND (COALESCE(SexMasc,0)+COALESCE(SexFem,0)) <> TotalCaso)
-       ${ano ? ")" : ""}
+       )
        ${limit ? "LIMIT ?" : ""}`;
     // param order: CASE uses currentYear/currentSe first (in SELECT), then WHERE ANO (if ano), then WHERE se_futura pair
-    const queryParams: unknown[] = ano
-      ? [currentYear, currentSe, ano, currentYear, currentSe]
-      : [currentYear, currentSe, currentYear, currentSe];
+    const queryParams: unknown[] = [currentYear, currentSe, ...scopeParams, currentYear, currentSe];
     if (limit) queryParams.push(limit);
     const [rows] = await conn.query(sql, queryParams);
 
@@ -338,7 +348,7 @@ export async function findInvalidRecords(limit?: number, ano?: number, gve?: str
         suggestedValue
       };
     });
-    return gve ? allRecords.filter((r) => r.gve === gve) : allRecords;
+    return allRecords;
   } catch (error) {
     if (isNotificationConnectionError(error)) {
       return findInvalidRecordsFromCache(limit, ano, gve);

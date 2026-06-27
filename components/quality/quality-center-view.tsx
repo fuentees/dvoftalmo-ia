@@ -238,20 +238,20 @@ function buildTerritoryRows(cevesp?: CevespQuality, sinan?: SinanAuditResult): T
   }
 
   for (const item of cevesp?.byMunicipio ?? []) {
-    const row = ensure(item.municipio, item.gve, "/cevesp-qualidade");
+    const row = ensure(item.municipio, item.gve, "/conjuntivite?tab=qualidade");
     row.cevesp += item.count;
     addProblem(row, "qualidade CEVESP", item.count >= 20 ? "Alta" : "Media");
   }
 
   for (const item of sinan?.correctionRecords ?? []) {
-    const row = ensure(item.municipioNome || item.municipio, item.gve, "/sinan-qualidade");
+    const row = ensure(item.municipioNome || item.municipio, item.gve, "/tracoma?tab=qualidade");
     row.sinan += 1;
     addProblem(row, item.problem, normalizePriority(item.priority));
   }
 
   for (const item of sinan?.crossBankDivergences ?? []) {
     if (item.risco !== "alto") continue;
-    const row = ensure(item.municipioNome || item.municipio, item.gve, "/sinan-qualidade");
+    const row = ensure(item.municipioNome || item.municipio, item.gve, "/tracoma?tab=qualidade");
     row.divergencias += Math.abs(item.diff);
     addProblem(row, "divergência entre bancos", "Alta");
   }

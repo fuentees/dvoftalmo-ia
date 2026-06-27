@@ -142,7 +142,19 @@ function riskColor(value: number | null, thresholds: [number, number, number]) {
   return "#14b8a6";
 }
 
-export async function buildCevespRates(ano?: number, gve?: string) {
+export type CevespRatesFilter = {
+  ano?: number;
+  gve?: string;
+  municipio?: string;
+  seInicio?: number;
+  seFim?: number;
+};
+
+export async function buildCevespRates(filterOrAno?: CevespRatesFilter | number, legacyGve?: string) {
+  const filter = typeof filterOrAno === "object"
+    ? filterOrAno
+    : { ano: filterOrAno, gve: legacyGve };
+  const { ano, gve, municipio, seInicio, seFim } = filter;
   const population = await loadPopulation();
   if (population.missing) {
     return { missingPopulation: true, message: "Tabela ibge_municipio_populacao ainda nao aplicada no Supabase." };
@@ -150,12 +162,15 @@ export async function buildCevespRates(ano?: number, gve?: string) {
 
   const rows = await fetchAll(
     "cevesp_notificacoes",
-    '"ANO","TotalCaso","MunicipioNotificacao","IbgeNotificacao","GVE_NOME","Excluido"',
+    '"ANO","SemEpidemio","TotalCaso","MunicipioNotificacao","IbgeNotificacao","GVE_NOME","Excluido"',
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (q: any) => {
       let next = q;
       if (ano) next = next.eq('"ANO"', ano);
       if (gve) next = next.eq('"GVE_NOME"', gve);
+      if (municipio) next = next.ilike('"MunicipioNotificacao"', `%${municipio}%`);
+      if (seInicio != null) next = next.gte('"SemEpidemio"', seInicio);
+      if (seFim != null) next = next.lte('"SemEpidemio"', seFim);
       return next;
     }
   );

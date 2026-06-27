@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { QualityCenterView } from "@/components/quality/quality-center-view";
 
 export default function QualidadeDadosPage() {
-  redirect("/dashboard");
+  return <QualityCenterView />;
 }

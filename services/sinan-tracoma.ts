@@ -188,7 +188,7 @@ export function normalizeSinanTracomaRow(row: RawRow, bank: SinanTracomaBank): N
 
   // classificacao: no TRACONET as flags FORMA_TF/TI/TS/TT/CO sao a fonte clinica principal.
   const derivedClassificacao = bank === "traconet" ? deriveTraconetClassificacao(row) : null;
-  let classificacao = derivedClassificacao ?? toStringOrNull(getValue(row, fieldCandidates.classificacao));
+  const classificacao = derivedClassificacao ?? toStringOrNull(getValue(row, fieldCandidates.classificacao));
 
   // conclusao: para TRACONET, inclui o encaminhamento cirúrgico se disponível
   let conclusao = toStringOrNull(getValue(row, fieldCandidates.conclusao));

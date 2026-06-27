@@ -148,6 +148,13 @@ function pct(part: number, total: number) {
   return `${((part / total) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
 }
 
+function sanitizeSe(value: string) {
+  if (!value) return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return undefined;
+  return Math.min(53, Math.max(1, Math.trunc(parsed)));
+}
+
 function riskFromReport(report?: ReportData, quality?: QualityData) {
   const highAlerts = report?.alerts.filter((item) => item.severity === "alta").length ?? 0;
   const qualityTotal = quality?.total ?? 0;
@@ -315,6 +322,8 @@ export function NotificationsReportView() {
   const [seFim, setSeFim] = useState<number | undefined>(undefined);
   const [selectedMunicipio, setSelectedMunicipio] = useState<string>("");
   const municipioOptions = useMemo(() => listarMunicipiosPorGve(selectedGve), [selectedGve]);
+  const seStart = seInicio != null && seFim != null ? Math.min(seInicio, seFim) : seInicio;
+  const seEnd = seInicio != null && seFim != null ? Math.max(seInicio, seFim) : seFim;
 
   const anosQuery = useQuery<{ anos: number[] }>({
     queryKey: ["cevesp-anos"],
@@ -340,13 +349,13 @@ export function NotificationsReportView() {
     if (selectedYear) params.set("ano", String(selectedYear));
     if (selectedGve) params.set("gve", selectedGve);
     if (selectedMunicipio) params.set("municipio", selectedMunicipio);
-    if (seInicio != null) params.set("seInicio", String(seInicio));
-    if (seFim != null) params.set("seFim", String(seFim));
+    if (seStart != null) params.set("seInicio", String(seStart));
+    if (seEnd != null) params.set("seFim", String(seEnd));
     return params.toString();
   }
 
   const report = useQuery<ReportData>({
-    queryKey: ["notifications-report", selectedYear, selectedGve, selectedMunicipio, seInicio, seFim],
+    queryKey: ["notifications-report", selectedYear, selectedGve, selectedMunicipio, seStart, seEnd],
     queryFn: async () => {
       const qs = buildQueryParams();
       const response = await fetch(`/api/notificacoes/relatorio${qs ? `?${qs}` : ""}`);
@@ -358,11 +367,14 @@ export function NotificationsReportView() {
   });
 
   const quality = useQuery<QualityData>({
-    queryKey: ["cevesp-qualidade-resumo", selectedYear, selectedGve],
+    queryKey: ["cevesp-qualidade-resumo", selectedYear, selectedGve, selectedMunicipio, seStart, seEnd],
     queryFn: async () => {
       const params = new URLSearchParams({ limit: "200" });
       if (selectedYear) params.set("ano", String(selectedYear));
       if (selectedGve) params.set("gve", selectedGve);
+      if (selectedMunicipio) params.set("municipio", selectedMunicipio);
+      if (seStart != null) params.set("seInicio", String(seStart));
+      if (seEnd != null) params.set("seFim", String(seEnd));
       const response = await fetch(`/api/cevesp/qualidade?${params}`);
       const data = await response.json();
       if (!response.ok) throw new Error(data.message ?? data.error ?? "Erro ao carregar qualidade");
@@ -383,11 +395,14 @@ export function NotificationsReportView() {
   });
 
   const rates = useQuery<CevespRatesData>({
-    queryKey: ["cevesp-taxas", selectedYear, selectedGve],
+    queryKey: ["cevesp-taxas", selectedYear, selectedGve, selectedMunicipio, seStart, seEnd],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (selectedYear) params.set("ano", String(selectedYear));
       if (selectedGve) params.set("gve", selectedGve);
+      if (selectedMunicipio) params.set("municipio", selectedMunicipio);
+      if (seStart != null) params.set("seInicio", String(seStart));
+      if (seEnd != null) params.set("seFim", String(seEnd));
       const qs = params.toString();
       const response = await fetch(`/api/cevesp/taxas${qs ? `?${qs}` : ""}`);
       const data = await response.json();
@@ -482,7 +497,7 @@ export function NotificationsReportView() {
     link.href = URL.createObjectURL(blob);
     const gveSuffix = selectedGve ? `-${selectedGve.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 20)}` : "";
     const muniSuffix = selectedMunicipio ? `-${selectedMunicipio.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 20)}` : "";
-    const seSuffix = (seInicio || seFim) ? `-SE${seInicio ?? 1}-${seFim ?? 53}` : "";
+    const seSuffix = (seStart || seEnd) ? `-SE${seStart ?? 1}-${seEnd ?? 53}` : "";
     link.download = `cevesp-situacao${selectedYear ? `-${selectedYear}` : ""}${gveSuffix}${muniSuffix}${seSuffix}.csv`;
     link.click();
     URL.revokeObjectURL(link.href);
@@ -521,7 +536,7 @@ export function NotificationsReportView() {
               Conjuntivites - CEVESP{selectedYear ? ` · ${selectedYear}` : ""}
               {selectedGve ? ` · ${selectedGve}` : ""}
               {selectedMunicipio ? ` · ${selectedMunicipio}` : ""}
-              {(seInicio || seFim) ? ` · SE ${seInicio ?? 1}–${seFim ?? 53}` : ""}
+              {(seStart || seEnd) ? ` · SE ${seStart ?? 1}-${seEnd ?? 53}` : ""}
             </h1>
             <p className="mt-0.5 text-sm text-muted-foreground">
               Aprofundamento da Sala de Situação: consulta ao banco, canal endêmico, qualidade e saídas técnicas.
@@ -578,7 +593,7 @@ export function NotificationsReportView() {
                   max={53}
                   placeholder="01"
                   value={seInicio ?? ""}
-                  onChange={e => setSeInicio(e.target.value ? Number(e.target.value) : undefined)}
+                  onChange={e => setSeInicio(sanitizeSe(e.target.value))}
                   className="h-9 w-14 rounded-md border bg-background px-2 text-sm text-center"
                 />
                 <span className="text-xs text-muted-foreground">a</span>
@@ -588,13 +603,21 @@ export function NotificationsReportView() {
                   max={53}
                   placeholder="53"
                   value={seFim ?? ""}
-                  onChange={e => setSeFim(e.target.value ? Number(e.target.value) : undefined)}
+                  onChange={e => setSeFim(sanitizeSe(e.target.value))}
                   className="h-9 w-14 rounded-md border bg-background px-2 text-sm text-center"
                 />
               </div>
             )}
-            <Button variant="outline" onClick={() => void report.refetch()} disabled={report.isFetching}>
-              <RefreshCw className={`h-4 w-4 ${report.isFetching ? "animate-spin" : ""}`} />
+            <Button
+              variant="outline"
+              onClick={() => {
+                void report.refetch();
+                void quality.refetch();
+                void rates.refetch();
+              }}
+              disabled={report.isFetching || quality.isFetching || rates.isFetching}
+            >
+              <RefreshCw className={`h-4 w-4 ${report.isFetching || quality.isFetching || rates.isFetching ? "animate-spin" : ""}`} />
               Atualizar
             </Button>
             <Button variant="outline" onClick={printPdf}>
@@ -681,7 +704,7 @@ export function NotificationsReportView() {
               <MetricCard
                 label="Casos analisados"
                 value={totalCases}
-                detail={`${num(report.data.sampledRows)} notificações avaliadas`}
+                detail={`${num(report.data.indicators.notifications)} notificações no recorte`}
                 change={casesChange ?? undefined}
               />
               <MetricCard
@@ -692,7 +715,7 @@ export function NotificationsReportView() {
                 change={muniChange ?? undefined}
               />
               <MetricCard label="Notificações com surto" value={report.data.indicators.outbreakNotifications} detail={`${outbreakRate} das notificações`} tone={report.data.indicators.outbreakNotifications > 0 ? "amber" : "green"} />
-              <MetricCard label="Coletas biológicas" value={report.data.indicators.biologicalCollectionTotal} detail={`${num(report.data.indicators.biologicalCollectionNotifications)} notificações com coleta`} />
+              <MetricCard label="Materiais coletados" value={report.data.indicators.biologicalCollectionTotal} detail={`${num(report.data.indicators.biologicalCollectionNotifications)} notificações com coleta`} />
               <MetricCard label="Problemas de qualidade" value={quality.data?.total ?? 0} detail="Registros que precisam revisão" tone={(quality.data?.total ?? 0) > 0 ? "amber" : "green"} />
             </div>
 

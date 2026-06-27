@@ -105,6 +105,20 @@ function filterRecords(records: InvalidRecord[], issueFilter: string, query: str
   });
 }
 
+function applyScopeFilters(
+  records: InvalidRecord[],
+  filters: { municipio?: string; seInicio?: number; seFim?: number }
+) {
+  const selectedMunicipio = normalizeSearch(filters.municipio);
+  return records.filter((record) => {
+    const matchesMunicipio = !selectedMunicipio || normalizeSearch(record.municipio).includes(selectedMunicipio);
+    const se = typeof record.semEpidemio === "number" ? record.semEpidemio : Number(record.semEpidemio);
+    const matchesSeInicio = filters.seInicio == null || (Number.isFinite(se) && se >= filters.seInicio);
+    const matchesSeFim = filters.seFim == null || (Number.isFinite(se) && se <= filters.seFim);
+    return matchesMunicipio && matchesSeInicio && matchesSeFim;
+  });
+}
+
 export async function GET(req: NextRequest) {
   const supabase = await createClient();
   const user = await getCurrentUser(supabase);
@@ -120,9 +134,13 @@ export async function GET(req: NextRequest) {
     const anoParam = searchParams.get("ano");
     const ano = anoParam ? Number(anoParam) : undefined;
     const gve = searchParams.get("gve") ?? undefined;
+    const municipio = searchParams.get("municipio") ?? undefined;
+    const seInicio = searchParams.get("seInicio") ? Number(searchParams.get("seInicio")) : undefined;
+    const seFim = searchParams.get("seFim") ? Number(searchParams.get("seFim")) : undefined;
 
     const records = await findInvalidRecords(undefined, ano, gve);
-    const filteredRecords = filterRecords(records, issueFilter, query);
+    const scopedRecords = applyScopeFilters(records, { municipio, seInicio, seFim });
+    const filteredRecords = filterRecords(scopedRecords, issueFilter, query);
 
     if (format === "csv") {
       return new NextResponse(recordsToCsv(filteredRecords), {
@@ -135,8 +153,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       records: filteredRecords.slice(offset, offset + limit),
-      ...summarize(records),
-      total: records.length,
+      ...summarize(scopedRecords),
+      total: scopedRecords.length,
       filteredTotal: filteredRecords.length,
       limit,
       offset,
