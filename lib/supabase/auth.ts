@@ -14,7 +14,22 @@ type SupabaseLike = {
   };
 };
 
+export function isAuthDisabledForDev() {
+  return process.env.DISABLE_AUTH === "true" && process.env.NODE_ENV !== "production";
+}
+
+function devUser(): AuthUser {
+  return {
+    id: "dev-user",
+    email: "dev@local.test",
+    user_metadata: { full_name: "Desenvolvimento local" },
+    app_metadata: { provider: "dev-bypass" }
+  };
+}
+
 export async function getCurrentUser(supabase: SupabaseLike) {
+  if (isAuthDisabledForDev()) return devUser();
+
   // getSession reads from the cookie first, avoiding a network call when possible.
   try {
     const { data } = await supabase.auth.getSession();

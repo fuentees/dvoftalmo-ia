@@ -8,6 +8,8 @@ import { navigationGroups } from "@/components/navigation/nav-items";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 
+const authDisabledForDev = process.env.NEXT_PUBLIC_DISABLE_AUTH === "true" && process.env.NODE_ENV !== "production";
+
 export function AppSidebar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -19,6 +21,11 @@ export function AppSidebar() {
 
   useEffect(() => {
     setDark(document.documentElement.classList.contains("dark"));
+    if (authDisabledForDev) {
+      setUserEmail("dev@local.test");
+      setUserName("Desenvolvimento local");
+      return;
+    }
     supabase.auth.getUser().then(({ data }) => {
       if (data.user) {
         setUserEmail(data.user.email ?? "");
@@ -38,6 +45,10 @@ export function AppSidebar() {
   }
 
   async function handleLogout() {
+    if (authDisabledForDev) {
+      router.push("/dashboard");
+      return;
+    }
     setLoggingOut(true);
     await supabase.auth.signOut();
     router.push("/login");
