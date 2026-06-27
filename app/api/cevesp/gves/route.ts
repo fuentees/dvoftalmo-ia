@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createNotificationConnection, getNotificationTableName, isNotificationConnectionError } from "@/lib/external/notification-db";
+import { createNotificationConnection, getNotificationTableName } from "@/lib/external/notification-db";
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -33,8 +33,9 @@ export async function GET(request: NextRequest) {
       } finally {
         await conn.end();
       }
-    } catch (mysqlError) {
-      if (!isNotificationConnectionError(mysqlError)) throw mysqlError;
+    } catch {
+      // MySQL can be unavailable or not configured in local/preview environments.
+      // In that case, keep the Sala de Situacao alive with the Supabase cache.
     }
 
     // Fallback: Supabase cache — scan GVE_NOME in batches
@@ -50,7 +51,12 @@ export async function GET(request: NextRequest) {
         .range(from, from + pageSize - 1);
       if (ano) q = q.eq('"ANO"', ano);
       const { data, error } = await q;
-      if (error) break;
+      if (error) {
+        return NextResponse.json(
+          { gves: [], missingData: true, message: "Cache CEVESP indisponivel ou ainda nao sincronizado." },
+          { headers: { "Cache-Control": "s-maxage=120" } }
+        );
+      }
       for (const row of (data ?? []) as Array<{ GVE_NOME?: string }>) {
         const gve = String(row.GVE_NOME ?? "").trim();
         if (gve) gveSet.add(gve);
@@ -60,9 +66,10 @@ export async function GET(request: NextRequest) {
     const gves = Array.from(gveSet).sort();
     return NextResponse.json({ gves }, { headers: { "Cache-Control": "s-maxage=600" } });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Erro ao listar GVEs.", gves: [] },
-      { status: 500 }
-    );
+    return NextResponse.json({
+      gves: [],
+      missingData: true,
+      message: error instanceof Error ? error.message : "Erro ao listar GVEs."
+    });
   }
 }

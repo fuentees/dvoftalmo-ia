@@ -69,6 +69,53 @@ function auditToCsv(result: SinanAuditResult) {
   return rows.map((row) => row.map(csvEscape).join(";")).join("\n");
 }
 
+function emptyAuditResult(message: string): SinanAuditResult & { missingData: true; message: string } {
+  return {
+    missingData: true,
+    message,
+    totalTraconet: 0,
+    totalNottraconetRows: 0,
+    totalNottraconet: 0,
+    totalTraconetComparable: 0,
+    totalTraconetPositive: 0,
+    totalTraconetInvalidYear: 0,
+    totalNottraconetInvalidYear: 0,
+    consolidatedMetrics: {},
+    consolidatedMetricsByYear: [],
+    diagnostico: {
+      traconet: { colunas: [], municipiosAmostra: [], anosAmostra: [], camposPreenchidos: [], camposNumericos: [] },
+      nottraconet: { colunas: [], municipiosAmostra: [], anosAmostra: [], camposPreenchidos: [], camposNumericos: [] },
+      aviso: message
+    },
+    crossBankDivergences: [],
+    comparisonsByMunicipalityYear: [],
+    divergencesByYear: [],
+    divergencesByGve: [],
+    fieldCompleteness: {},
+    fieldCompletenessNottraconet: {},
+    fieldCompletenessByGve: [],
+    fieldCompletenessByYear: [],
+    casosComFormaClinica: 0,
+    casosSemFormaPositiva: 0,
+    formaClinicaResumo: [],
+    semGraduacao: 0,
+    semTratamento: 0,
+    semConclusao: 0,
+    tfSemTratamento: 0,
+    ttSemCircurgia: 0,
+    ttSemTs: 0,
+    anoImpossivel: 0,
+    semFormaClinicaDetalhe: [],
+    ttSemTsDetalhe: [],
+    consolidatedPositiveField: null,
+    consolidatedRowsWithoutPositiveField: 0,
+    duplicateNotificationIds: [],
+    missingNotificationId: 0,
+    correctionRecords: [],
+    recommendations: [message]
+  };
+}
+
 export async function GET(req: NextRequest) {
   const supabase = await createClient();
   const user = await getCurrentUser(supabase);
@@ -94,12 +141,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(result);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes("sinan_tracoma_rows")) {
-      return NextResponse.json(
-        { error: "tabela_ausente", message: "A tabela SINAN Tracoma ainda não foi criada. Execute a migration no Supabase SQL Editor." },
-        { status: 503 }
-      );
-    }
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json(emptyAuditResult(msg.includes("sinan_tracoma_rows")
+      ? "A tabela SINAN Tracoma ainda nao foi criada ou sincronizada."
+      : msg));
   }
 }

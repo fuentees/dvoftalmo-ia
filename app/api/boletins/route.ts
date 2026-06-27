@@ -27,7 +27,13 @@ export async function GET(request: Request) {
   }
 
   const { data, error } = await query;
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    return NextResponse.json([], {
+      headers: {
+        "X-DvOftalmo-Warning": `Boletins indisponiveis: ${error.message}`
+      }
+    });
+  }
   return NextResponse.json(data ?? []);
 }
 

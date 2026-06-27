@@ -65,6 +65,7 @@ interface SinanSnapshot {
 }
 
 type RateAnalysis = {
+  missingData?: boolean;
   missingPopulation?: boolean;
   message?: string;
   analysisYear?: number;
@@ -74,6 +75,19 @@ type RateAnalysis = {
   byMunicipality?: RateMapRow[];
   byGve?: RateMapRow[];
   mapRows?: RateMapRow[];
+};
+
+type DiagnosticCheck = {
+  label: string;
+  status: "ok" | "warning" | "error";
+  message: string;
+  detail?: string;
+};
+
+type SituationDiagnostic = {
+  status: "ok" | "warning" | "error";
+  generatedAt: string;
+  checks: DiagnosticCheck[];
 };
 
 const tabs: Array<{ id: Tab; label: string; icon: React.ReactNode }> = [
@@ -206,6 +220,58 @@ function EmptyState({ title, detail }: { title: string; detail: string }) {
   );
 }
 
+function diagnosticStyle(status: DiagnosticCheck["status"]) {
+  if (status === "ok") return "border-teal-200 bg-teal-50 text-teal-700";
+  if (status === "error") return "border-red-200 bg-red-50 text-red-700";
+  return "border-amber-200 bg-amber-50 text-amber-700";
+}
+
+function DataHealthPanel({ diagnostic }: { diagnostic?: SituationDiagnostic }) {
+  const checks = diagnostic?.checks ?? [];
+  const statusLabel = diagnostic?.status === "ok" ? "Operacional" : diagnostic?.status === "error" ? "Erro" : "Atenção";
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle>Saúde da sala</CardTitle>
+            <CardDescription>Conexões, bases e caches usados nos painéis</CardDescription>
+          </div>
+          <Badge className={diagnosticStyle(diagnostic?.status === "error" ? "error" : diagnostic?.status === "ok" ? "ok" : "warning")}>
+            {statusLabel}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {checks.length === 0 ? (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            {["Autenticacao", "CEVESP", "SINAN Tracoma", "Populacao IBGE", "Boletins"].map((label) => (
+              <div key={label} className="rounded-md border p-3">
+                <p className="text-xs font-medium text-muted-foreground">{label}</p>
+                <p className="mt-1 text-sm font-semibold">Verificando...</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            {checks.map((check) => (
+              <div key={check.label} className={`rounded-md border p-3 ${diagnosticStyle(check.status)}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-medium">{check.label}</p>
+                  {check.status === "ok" ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+                </div>
+                <p className="mt-2 text-sm font-semibold leading-snug">{check.message}</p>
+                {check.detail && <p className="mt-1 line-clamp-2 text-xs opacity-80">{check.detail}</p>}
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 
 export function DashboardView() {
   const [tab, setTab] = useState<Tab>("geral");
@@ -260,8 +326,21 @@ export function DashboardView() {
     staleTime: 5 * 60 * 1000
   });
 
+  const diagnostic = useQuery<SituationDiagnostic>({
+    queryKey: ["situacao-diagnostico"],
+    queryFn: async () => {
+      const response = await fetch("/api/situacao/diagnostico");
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Erro ao buscar diagnostico");
+      return data;
+    },
+    retry: false,
+    staleTime: 5 * 60 * 1000
+  });
+
   const cevespMapLoaded = !!cevespRates.data?.mapRows?.length && !cevespRates.data.missingPopulation;
   const sinanMapLoaded = !!sinanRates.data?.mapRows?.length && !sinanRates.data.missingPopulation;
+  const localAuthMode = process.env.NEXT_PUBLIC_DISABLE_AUTH === "true" && process.env.NODE_ENV !== "production";
 
   const missingSignals = [
     ...(cevespRates.isError || (!cevespMapLoaded && !cevespRates.isLoading) ? ["Mapa por município/GVE (CEVESP)"] : []),
@@ -307,6 +386,7 @@ export function DashboardView() {
               <Badge className="border-primary/30 bg-primary/10 text-primary">Sala de Situação</Badge>
               <Badge className={cevespState.cls}>CEVESP: {cevespState.label}</Badge>
               <Badge className={tracomaState.cls}>Tracoma: {tracomaState.label}</Badge>
+              {localAuthMode && <Badge className="border-amber-200 bg-amber-50 text-amber-700">Login desativado</Badge>}
             </div>
             <h1 className="text-xl font-semibold tracking-tight">Vigilância oftalmológica</h1>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -322,10 +402,11 @@ export function DashboardView() {
                 sinan.refetch();
                 cevespRates.refetch();
                 sinanRates.refetch();
+                diagnostic.refetch();
               }}
-              disabled={kpis.isFetching || sinan.isFetching || cevespRates.isFetching || sinanRates.isFetching}
+              disabled={kpis.isFetching || sinan.isFetching || cevespRates.isFetching || sinanRates.isFetching || diagnostic.isFetching}
             >
-              <RefreshCw className={`h-4 w-4 ${kpis.isFetching || sinan.isFetching || cevespRates.isFetching || sinanRates.isFetching ? "animate-spin" : ""}`} />
+              <RefreshCw className={`h-4 w-4 ${kpis.isFetching || sinan.isFetching || cevespRates.isFetching || sinanRates.isFetching || diagnostic.isFetching ? "animate-spin" : ""}`} />
               Atualizar
             </Button>
             <Button size="sm" asChild>
@@ -392,6 +473,7 @@ export function DashboardView() {
         {tab === "geral" && (
           <>
             <AlertsPanel />
+            <DataHealthPanel diagnostic={diagnostic.data} />
 
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <KpiCard
