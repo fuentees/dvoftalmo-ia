@@ -10,6 +10,16 @@ type PopulationRow = {
   populacao: number;
 };
 
+type SupabasePagedQuery = PromiseLike<{
+  data: unknown[] | null;
+  error: { message: string } | null;
+}> & {
+  eq(column: string, value: unknown): SupabasePagedQuery;
+  gte(column: string, value: unknown): SupabasePagedQuery;
+  ilike(column: string, pattern: string): SupabasePagedQuery;
+  lte(column: string, value: unknown): SupabasePagedQuery;
+};
+
 function normalizeText(value: unknown) {
   return String(value ?? "")
     .toLowerCase()
@@ -40,13 +50,13 @@ function rawValue(row: Record<string, unknown>, candidates: string[]) {
   return null;
 }
 
-async function fetchAll(table: string, select: string, build?: (query: any) => any) {
+async function fetchAll(table: string, select: string, build?: (query: SupabasePagedQuery) => SupabasePagedQuery) {
   const supabase = createAdminClient();
   const pageSize = 1000;
   const rows: Array<Record<string, unknown>> = [];
 
   for (let from = 0; ; from += pageSize) {
-    let query = supabase.from(table).select(select).range(from, from + pageSize - 1);
+    let query = supabase.from(table).select(select).range(from, from + pageSize - 1) as unknown as SupabasePagedQuery;
     if (build) query = build(query);
     const { data, error } = await query;
     if (error) throw new Error(error.message);
@@ -163,8 +173,7 @@ export async function buildCevespRates(filterOrAno?: CevespRatesFilter | number,
   const rows = await fetchAll(
     "cevesp_notificacoes",
     '"ANO","SemEpidemio","TotalCaso","MunicipioNotificacao","IbgeNotificacao","GVE_NOME","Excluido"',
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (q: any) => {
+    (q) => {
       let next = q;
       if (ano) next = next.eq('"ANO"', ano);
       if (gve) next = next.eq('"GVE_NOME"', gve);

@@ -1,7 +1,7 @@
 import type OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
 import type { AiSource, TracomaSurveyResult } from "@/lib/types";
-import { getOpenAI, chatModel } from "@/services/ai/openai";
+import { chatModel } from "@/services/ai/openai";
 import { buildSystemPrompt } from "@/services/ai/prompts";
 import { getAIConfig, generateCompletion } from "@/services/ai/provider";
 import { runCevespAnalysis } from "@/services/cevesp-analytics";
@@ -487,7 +487,7 @@ async function executeTool(
   if (name === "propor_correcao_cevesp") {
     try {
       const tableName = getNotificationTableName();
-      const { saved, skipped } = await saveCorrectionsToQueue(
+      const { saved } = await saveCorrectionsToQueue(
         [{
           recordId: String(args.record_id),
           tableName,

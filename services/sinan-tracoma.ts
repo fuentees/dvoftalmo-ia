@@ -682,16 +682,6 @@ function sumConsolidatedExamined(rows: Array<Record<string, unknown>>) {
   return { value, field, rowsMissing };
 }
 
-function normalizeBankLabel(v: unknown): string {
-  const forms = clinicalFormsFromValue(v);
-  if (forms.length > 0) return forms.join("+");
-  const s = String(v ?? "").toLowerCase().trim();
-  const normalized = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  if (s === "4" || normalized.includes("nao tracoma")) return "Nao tracoma";
-  if (s === "5" || s.includes("inconclusivo")) return "Inconclusivo";
-  return s || "Nao preenchido";
-}
-
 function clinicalFormsFromValue(value: unknown): ClinicalForm[] {
   const raw = String(value ?? "").trim();
   if (!raw) return [];

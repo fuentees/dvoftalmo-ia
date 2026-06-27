@@ -7,6 +7,37 @@ interface ColumnSummary {
 }
 
 type Row = Record<string, unknown>;
+type RankItem = { name: string; total: number };
+type DistributionItem = { label: string; total: number };
+type WeeklyPoint = { week: string; total: number };
+type ReportAlert = { severity: "alta" | "media" | "baixa"; title: string; description: string };
+type NotificationIndicators = {
+  notifications: number;
+  sampledRows: number;
+  totalRowsInDatabase: number;
+  totalCases: number;
+  reportingMunicipalities: number;
+  topMunicipalities: RankItem[];
+  topGves: RankItem[];
+  topUnits: RankItem[];
+  sexDistribution: DistributionItem[];
+  ageDistribution: DistributionItem[];
+  outbreakNotifications: number;
+  outbreakTotal: number;
+  biologicalCollectionNotifications: number;
+  biologicalCollectionTotal: number;
+  educationalActions: number;
+  trainings: number;
+  symptomaticStaffRemoval: number;
+  specializedReferrals: number;
+  weeklySeries: WeeklyPoint[];
+  weeklyStats: { average: number; median: number; standardDeviation: number };
+  trend: {
+    firstWeek: WeeklyPoint;
+    lastWeek: WeeklyPoint;
+    percentageGrowth: number | null;
+  } | null;
+};
 
 const ageFields = [
   { key: "FxMenorUmAno", label: "Menor de 1 ano" },
@@ -138,8 +169,8 @@ function buildColumnSummaries(rows: Row[]) {
   });
 }
 
-function buildAlerts(rows: Row[], indicators: any) {
-  const alerts: Array<{ severity: "alta" | "media" | "baixa"; title: string; description: string }> = [];
+function buildAlerts(rows: Row[], indicators: NotificationIndicators) {
+  const alerts: ReportAlert[] = [];
   const rowsWithoutEducation = rows.filter((row) => toNumber(row.NuAcaoEducativa) === 0).length;
   const rowsWithoutTraining = rows.filter((row) => toNumber(row.NuTreinamento) === 0).length;
   const outbreaksWithoutCollection = rows.filter((row) => isYes(row.Surto) && toNumber(row.NuColetaMaterialBio) === 0 && !isYes(row.ColetaMaterialBio)).length;
@@ -190,7 +221,7 @@ function buildAlerts(rows: Row[], indicators: any) {
   return alerts;
 }
 
-function buildInterpretation(indicators: any, alerts: any[]) {
+function buildInterpretation(indicators: NotificationIndicators, alerts: ReportAlert[]) {
   const topMunicipality = indicators.topMunicipalities[0];
   const topGve = indicators.topGves[0];
   const dominantAge = indicators.ageDistribution[0];
