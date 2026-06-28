@@ -11,8 +11,10 @@ import {
   GraduationCap,
   LayoutDashboard,
   Library,
+  Map,
   Newspaper,
-  Settings
+  Settings,
+  ShieldAlert
 } from "lucide-react";
 
 export const navigationGroups = [
@@ -37,21 +39,33 @@ export const navigationGroups = [
     label: "Análises",
     items: [
       {
+        href: "/conjuntivite",
+        label: "Conjuntivite — CEVESP",
+        description: "Análise epidemiológica e qualidade dos dados",
+        icon: Eye
+      },
+      {
         href: "/tracoma",
         label: "Tracoma — SINAN",
         description: "TRACONET, NOTTRACONET e qualidade dos dados",
         icon: Activity
       },
       {
-        href: "/conjuntivite",
-        label: "Conjuntivite — CEVESP",
-        description: "Análise epidemiológica e qualidade dos dados",
-        icon: Eye
+        href: "/territorios",
+        label: "Territórios",
+        description: "Ranking operacional por município e GVE",
+        icon: Map
+      },
+      {
+        href: "/qualidade-dados",
+        label: "Qualidade dos Dados",
+        description: "Pendências que afetam a decisão",
+        icon: ShieldAlert
       }
     ]
   },
   {
-    label: "Trabalho",
+    label: "Execução",
     items: [
       {
         href: "/correcoes",

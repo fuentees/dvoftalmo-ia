@@ -1,46 +1,29 @@
 "use client";
 
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis
-} from "recharts";
-import {
-  Activity,
   AlertTriangle,
   ArrowDownRight,
   ArrowRight,
   ArrowUpRight,
-  BarChart2,
   CheckCircle2,
   Database,
   Eye,
-  Microscope,
+  Map,
   RefreshCw,
   ShieldAlert,
-  Stethoscope,
-  TrendingUp
+  Stethoscope
 } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertsPanel } from "@/components/dashboard/alerts-panel";
-import { RateMap, type RateMapRow } from "@/components/epidemiology/rate-map";
 import type { CevespKpis } from "@/services/cevesp-kpis";
-
-type Tab = "geral" | "conjuntivites" | "tracoma";
 
 interface SinanSnapshot {
   totalTraconet?: number;
   totalNottraconet?: number;
-  totalNottraconetRows?: number;
   consolidatedMetrics?: Record<string, { value: number; field: string | null; rowsMissing: number }>;
   consolidatedMetricsByYear?: Array<{
     ano: number;
@@ -50,32 +33,12 @@ interface SinanSnapshot {
     linhas: number;
   }>;
   crossBankDivergences?: Array<{ risco?: string }>;
-  divergencesByYear?: Array<{
-    ano: number;
-    traconet: number;
-    nottraconet: number;
-    diff: number;
-    risco: "alto" | "medio" | "baixo";
-  }>;
   semGraduacao?: number;
   tfSemTratamento?: number;
   ttSemCircurgia?: number;
   semConclusao?: number;
   duplicateNotificationIds?: Array<unknown>;
 }
-
-type RateAnalysis = {
-  missingData?: boolean;
-  missingPopulation?: boolean;
-  message?: string;
-  analysisYear?: number;
-  populationYear?: number | null;
-  metric?: string;
-  methodology?: string;
-  byMunicipality?: RateMapRow[];
-  byGve?: RateMapRow[];
-  mapRows?: RateMapRow[];
-};
 
 type DiagnosticCheck = {
   label: string;
@@ -110,45 +73,16 @@ type SituationPriorities = {
   summary: { total: number; critica: number; alta: number; media: number };
 };
 
-const tabs: Array<{ id: Tab; label: string; icon: React.ReactNode }> = [
-  { id: "geral", label: "Visão geral", icon: <Activity className="h-4 w-4" /> },
-  { id: "conjuntivites", label: "CEVESP", icon: <Eye className="h-4 w-4" /> },
-  { id: "tracoma", label: "SINAN Tracoma", icon: <Stethoscope className="h-4 w-4" /> }
-];
-
 const quickActions = [
-  { href: "/sincronizacao", label: "Importar bases", detail: "CEVESP, TRACONET e consolidado", icon: Database },
-  { href: "/conjuntivite", label: "Consultar CEVESP", detail: "Tabelas, canal e boletim", icon: Eye },
-  { href: "/qualidade-dados", label: "Qualidade dos dados", detail: "CEVESP e SINAN em uma central", icon: ShieldAlert },
-  { href: "/chat", label: "Perguntar ao agente", detail: "Análise em texto, tabela ou relatório", icon: BarChart2 }
+  { href: "/territorios", label: "Territórios", detail: "Ranking operacional por risco e evidência", icon: Map },
+  { href: "/conjuntivite", label: "Analisar CEVESP", detail: "Séries, mapas, canal e boletim", icon: Eye },
+  { href: "/tracoma", label: "Analisar Tracoma", detail: "Prevalência, bancos e qualidade clínica", icon: Stethoscope },
+  { href: "/qualidade-dados", label: "Qualidade", detail: "Pendências que afetam a decisão", icon: ShieldAlert }
 ];
 
 function formatValue(value: number | undefined) {
   if (value === undefined) return "-";
   return value.toLocaleString("pt-BR");
-}
-
-function riskSummary(rows?: RateMapRow[]) {
-  const summary = { baixo: 0, atencao: 0, medio: 0, alto: 0, indefinido: 0 };
-  rows?.forEach((row) => {
-    switch (row.riskColor) {
-      case "#14b8a6":
-        summary.baixo += 1;
-        break;
-      case "#84cc16":
-        summary.atencao += 1;
-        break;
-      case "#f59e0b":
-        summary.medio += 1;
-        break;
-      case "#dc2626":
-        summary.alto += 1;
-        break;
-      default:
-        summary.indefinido += 1;
-    }
-  });
-  return summary;
 }
 
 function DeltaBadge({ delta }: { delta: number | null }) {
@@ -164,31 +98,30 @@ function DeltaBadge({ delta }: { delta: number | null }) {
 }
 
 function cevespRisk(data?: CevespKpis) {
-  if (!data) return { label: "Sem dados", cls: "bg-muted text-foreground", note: "sincronizar base" };
+  if (!data) return { label: "Sem dados", cls: "bg-muted text-foreground" };
   if ((data.weekDelta ?? 0) >= 30 || data.outbreaksCurrentYear > 0) {
-    return { label: "Atenção", cls: "border-red-200 bg-red-50 text-red-700", note: "validar território" };
+    return { label: "Atenção", cls: "border-red-200 bg-red-50 text-red-700" };
   }
   if ((data.weekDelta ?? 0) >= 10) {
-    return { label: "Observação", cls: "border-amber-200 bg-amber-50 text-amber-700", note: "acompanhar tendência" };
+    return { label: "Observação", cls: "border-amber-200 bg-amber-50 text-amber-700" };
   }
-  return { label: "Estável", cls: "border-teal-200 bg-teal-50 text-teal-700", note: "manter rotina" };
+  return { label: "Estável", cls: "border-teal-200 bg-teal-50 text-teal-700" };
 }
 
 function tracomaRisk(data?: SinanSnapshot) {
-  if (!data) return { label: "Sem dados", cls: "bg-muted text-foreground", note: "importar/auditar base" };
+  if (!data) return { label: "Sem dados", cls: "bg-muted text-foreground" };
   const highRisk = data.crossBankDivergences?.filter((item) => item.risco === "alto").length ?? 0;
   const clinicalAlerts =
     (data.tfSemTratamento ?? 0) +
-    (data.ttSemCircurgia ?? 0) +
     (data.semConclusao ?? 0) +
     (data.duplicateNotificationIds?.length ?? 0);
   if (highRisk > 0 || clinicalAlerts > 0) {
-    return { label: "Atenção", cls: "border-red-200 bg-red-50 text-red-700", note: "corrigir divergências" };
+    return { label: "Atenção", cls: "border-red-200 bg-red-50 text-red-700" };
   }
   if ((data.semGraduacao ?? 0) > 0) {
-    return { label: "Qualificar", cls: "border-amber-200 bg-amber-50 text-amber-700", note: "revisar forma clínica" };
+    return { label: "Qualificar", cls: "border-amber-200 bg-amber-50 text-amber-700" };
   }
-  return { label: "Estável", cls: "border-teal-200 bg-teal-50 text-teal-700", note: "manter auditoria" };
+  return { label: "Estável", cls: "border-teal-200 bg-teal-50 text-teal-700" };
 }
 
 function KpiCard({
@@ -219,27 +152,6 @@ function KpiCard({
   );
 }
 
-function ActionButton({ href, label }: { href: string; label: string }) {
-  return (
-    <Button asChild variant="outline" size="sm" className="justify-between">
-      <Link href={href}>
-        {label}
-        <ArrowRight className="h-4 w-4" />
-      </Link>
-    </Button>
-  );
-}
-
-function EmptyState({ title, detail }: { title: string; detail: string }) {
-  return (
-    <div className="flex h-[230px] flex-col items-center justify-center rounded-md border border-dashed text-center text-sm text-muted-foreground">
-      <AlertTriangle className="mb-2 h-7 w-7 opacity-40" />
-      <p className="font-medium text-foreground">{title}</p>
-      <p className="mt-1 max-w-xs">{detail}</p>
-    </div>
-  );
-}
-
 function diagnosticStyle(status: DiagnosticCheck["status"]) {
   if (status === "ok") return "border-teal-200 bg-teal-50 text-teal-700";
   if (status === "error") return "border-red-200 bg-red-50 text-red-700";
@@ -262,7 +174,7 @@ function DataHealthPanel({ diagnostic }: { diagnostic?: SituationDiagnostic }) {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <CardTitle>Saúde da sala</CardTitle>
-            <CardDescription>Conexões, bases e caches usados nos painéis</CardDescription>
+            <CardDescription>Conexões, bases e caches usados para decidir</CardDescription>
           </div>
           <Badge className={diagnosticStyle(diagnostic?.status === "error" ? "error" : diagnostic?.status === "ok" ? "ok" : "warning")}>
             {statusLabel}
@@ -270,29 +182,24 @@ function DataHealthPanel({ diagnostic }: { diagnostic?: SituationDiagnostic }) {
         </div>
       </CardHeader>
       <CardContent>
-        {checks.length === 0 ? (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            {["Autenticacao", "CEVESP", "SINAN Tracoma", "Populacao IBGE", "Boletins"].map((label) => (
-              <div key={label} className="rounded-md border p-3">
-                <p className="text-xs font-medium text-muted-foreground">{label}</p>
-                <p className="mt-1 text-sm font-semibold">Verificando...</p>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          {(checks.length ? checks : [
+            { label: "Autenticacao", status: "warning" as const, message: "Verificando..." },
+            { label: "CEVESP", status: "warning" as const, message: "Verificando..." },
+            { label: "SINAN Tracoma", status: "warning" as const, message: "Verificando..." },
+            { label: "Populacao IBGE", status: "warning" as const, message: "Verificando..." },
+            { label: "Boletins", status: "warning" as const, message: "Verificando..." }
+          ]).map((check) => (
+            <div key={check.label} className={`rounded-md border p-3 ${diagnosticStyle(check.status)}`}>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-medium">{check.label}</p>
+                {check.status === "ok" ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
               </div>
-            ))}
-          </div>
-        ) : (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            {checks.map((check) => (
-              <div key={check.label} className={`rounded-md border p-3 ${diagnosticStyle(check.status)}`}>
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-medium">{check.label}</p>
-                  {check.status === "ok" ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
-                </div>
-                <p className="mt-2 text-sm font-semibold leading-snug">{check.message}</p>
-                {check.detail && <p className="mt-1 line-clamp-2 text-xs opacity-80">{check.detail}</p>}
-              </div>
-            ))}
-          </div>
-        )}
+              <p className="mt-2 text-sm font-semibold leading-snug">{check.message}</p>
+              {check.detail && <p className="mt-1 line-clamp-2 text-xs opacity-80">{check.detail}</p>}
+            </div>
+          ))}
+        </div>
       </CardContent>
     </Card>
   );
@@ -313,7 +220,7 @@ function TodayPrioritiesPanel({
         <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <CardTitle>Prioridades de hoje</CardTitle>
-            <CardDescription>Fila operacional consolidada por risco, qualidade e evidência disponível</CardDescription>
+            <CardDescription>Cockpit operacional: o que exige decisão agora</CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
             <Badge className={data?.summary.critica ? "border-red-200 bg-red-50 text-red-700" : "border-teal-200 bg-teal-50 text-teal-700"}>
@@ -372,12 +279,7 @@ function TodayPrioritiesPanel({
   );
 }
 
-
 export function DashboardView() {
-  const [tab, setTab] = useState<Tab>("geral");
-  const [cevespMapView, setCevespMapView] = useState<"municipio" | "gve">("municipio");
-  const [sinanMapView, setSinanMapView] = useState<"municipio" | "gve">("gve");
-
   const kpis = useQuery<CevespKpis>({
     queryKey: ["cevesp-kpis"],
     queryFn: async () => {
@@ -396,30 +298,6 @@ export function DashboardView() {
       const response = await fetch("/api/sinan/auditoria");
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Erro ao buscar SINAN");
-      return data;
-    },
-    retry: false,
-    staleTime: 5 * 60 * 1000
-  });
-
-  const cevespRates = useQuery<RateAnalysis>({
-    queryKey: ["cevesp-rates"],
-    queryFn: async () => {
-      const response = await fetch("/api/cevesp/taxas");
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Erro ao buscar taxas CEVESP");
-      return data;
-    },
-    retry: false,
-    staleTime: 5 * 60 * 1000
-  });
-
-  const sinanRates = useQuery<RateAnalysis>({
-    queryKey: ["sinan-rates"],
-    queryFn: async () => {
-      const response = await fetch("/api/sinan/taxas");
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Erro ao buscar taxas SINAN");
       return data;
     },
     retry: false,
@@ -450,44 +328,11 @@ export function DashboardView() {
     staleTime: 2 * 60 * 1000
   });
 
-  const cevespMapLoaded = !!cevespRates.data?.mapRows?.length && !cevespRates.data.missingPopulation;
-  const sinanMapLoaded = !!sinanRates.data?.mapRows?.length && !sinanRates.data.missingPopulation;
-  const localAuthMode = process.env.NEXT_PUBLIC_DISABLE_AUTH === "true" && process.env.NODE_ENV !== "production";
-
-  const missingSignals = [
-    ...(cevespRates.isError || (!cevespMapLoaded && !cevespRates.isLoading) ? ["Mapa por município/GVE (CEVESP)"] : []),
-    ...(sinanRates.isError || (!sinanMapLoaded && !sinanRates.isLoading) ? ["Mapa por município/GVE (Tracoma)"] : []),
-    ...(kpis.isError ? ["Taxas com população"] : []),
-    ...(sinan.isError ? ["Oportunidade da notificação"] : []),
-    ...(cevespRates.isLoading || sinanRates.isLoading ? ["Carregando mapas de SP"] : [])
-  ];
-
-  const cevespMapRows = cevespMapView === "municipio" ? cevespRates.data?.byMunicipality ?? [] : cevespRates.data?.byGve ?? [];
-  const sinanMapRows = sinanMapView === "municipio" ? sinanRates.data?.byMunicipality ?? [] : sinanRates.data?.byGve ?? [];
-  const cevespRiskCounts = riskSummary(cevespMapRows);
-  const sinanRiskCounts = riskSummary(sinanMapRows);
-
-  const weekData = kpis.data
-    ? [
-        { label: `SE ${kpis.data.previousWeek.se}`, cases: kpis.data.previousWeek.cases },
-        { label: `SE ${kpis.data.currentWeek.se}`, cases: kpis.data.currentWeek.cases }
-      ]
-    : [];
-
-  const topMunicipalities = kpis.data?.topMunicipalitiesCurrentWeek ?? [];
   const cevespState = cevespRisk(kpis.data);
   const tracomaState = tracomaRisk(sinan.data);
-  const generatedAt = kpis.data?.generatedAt
-    ? new Date(kpis.data.generatedAt).toLocaleString("pt-BR")
-    : "sem atualização";
-  const tracomaHighRisk = sinan.data?.crossBankDivergences?.filter((item) => item.risco === "alto").length;
   const consolidatedByYear = sinan.data?.consolidatedMetricsByYear ?? [];
   const latestConsolidated = consolidatedByYear[consolidatedByYear.length - 1];
-  const tracomaClinicalAlerts =
-    (sinan.data?.tfSemTratamento ?? 0) +
-    (sinan.data?.ttSemCircurgia ?? 0) +
-    (sinan.data?.semConclusao ?? 0) +
-    (sinan.data?.duplicateNotificationIds?.length ?? 0);
+  const localAuthMode = process.env.NEXT_PUBLIC_DISABLE_AUTH === "true" && process.env.NODE_ENV !== "production";
 
   return (
     <div className="flex flex-col">
@@ -502,7 +347,7 @@ export function DashboardView() {
             </div>
             <h1 className="text-xl font-semibold tracking-tight">Vigilância oftalmológica</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Porta de entrada única: visão geral, aprofundamento por agravo e qualidade do banco no lugar certo.
+              Cockpit para priorizar decisões. As análises detalhadas ficam nas páginas de investigação.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -512,42 +357,24 @@ export function DashboardView() {
               onClick={() => {
                 kpis.refetch();
                 sinan.refetch();
-                cevespRates.refetch();
-                sinanRates.refetch();
                 diagnostic.refetch();
                 priorities.refetch();
               }}
-              disabled={kpis.isFetching || sinan.isFetching || cevespRates.isFetching || sinanRates.isFetching || diagnostic.isFetching || priorities.isFetching}
+              disabled={kpis.isFetching || sinan.isFetching || diagnostic.isFetching || priorities.isFetching}
             >
-              <RefreshCw className={`h-4 w-4 ${kpis.isFetching || sinan.isFetching || cevespRates.isFetching || sinanRates.isFetching || diagnostic.isFetching || priorities.isFetching ? "animate-spin" : ""}`} />
+              <RefreshCw className={`h-4 w-4 ${kpis.isFetching || sinan.isFetching || diagnostic.isFetching || priorities.isFetching ? "animate-spin" : ""}`} />
               Atualizar
             </Button>
             <Button size="sm" asChild>
-              <Link href={tab === "tracoma" ? "/tracoma" : tab === "conjuntivites" ? "/conjuntivite" : "/sincronizacao"}>
-                {tab === "geral" ? "Atualizar bases" : "Abrir análise"}
-              </Link>
+              <Link href="/territorios">Abrir territórios</Link>
             </Button>
           </div>
         </div>
       </div>
 
       <div className="space-y-5 p-6">
-        <div className="flex flex-wrap gap-2 rounded-md border bg-card p-1">
-          {tabs.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setTab(item.id)}
-              className={`flex h-9 items-center gap-2 rounded px-3 text-sm font-medium transition-colors ${
-                tab === item.id
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-            >
-              {item.icon}
-              {item.label}
-            </button>
-          ))}
-        </div>
+        <AlertsPanel />
+        <TodayPrioritiesPanel data={priorities.data} loading={priorities.isLoading} />
 
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           {quickActions.map((action) => {
@@ -583,441 +410,64 @@ export function DashboardView() {
           </Card>
         )}
 
-        {tab === "geral" && (
-          <>
-            <AlertsPanel />
-            <TodayPrioritiesPanel data={priorities.data} loading={priorities.isLoading} />
-            <DataHealthPanel diagnostic={diagnostic.data} />
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <KpiCard
+            label="Conjuntivites no ano"
+            value={kpis.isFetching ? "..." : formatValue(kpis.data?.currentYear.cases)}
+            icon={<Eye className="h-4 w-4 text-primary" />}
+            delta={kpis.data?.yearDelta ?? null}
+          />
+          <KpiCard
+            label="Surtos CEVESP"
+            value={kpis.isFetching ? "..." : formatValue(kpis.data?.outbreaksCurrentYear)}
+            icon={<ShieldAlert className="h-4 w-4 text-red-500" />}
+            tone="red"
+          />
+          <KpiCard
+            label={`Examinados ${latestConsolidated?.ano ?? ""}`.trim()}
+            value={sinan.isFetching ? "..." : formatValue(latestConsolidated?.examinados)}
+            icon={<Stethoscope className="h-4 w-4 text-primary" />}
+          />
+          <KpiCard
+            label={`Casos tracoma ${latestConsolidated?.ano ?? ""}`.trim()}
+            value={sinan.isFetching ? "..." : formatValue(latestConsolidated?.positivos ?? sinan.data?.totalNottraconet)}
+            icon={<AlertTriangle className="h-4 w-4 text-amber-600" />}
+            tone="amber"
+          />
+        </div>
 
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <KpiCard
-                label="Conjuntivites no ano"
-                value={kpis.isFetching ? "..." : formatValue(kpis.data?.currentYear.cases)}
-                icon={<Eye className="h-4 w-4 text-primary" />}
-                delta={kpis.data?.yearDelta ?? null}
-              />
-              <KpiCard
-                label="Surtos CEVESP"
-                value={kpis.isFetching ? "..." : formatValue(kpis.data?.outbreaksCurrentYear)}
-                icon={<ShieldAlert className="h-4 w-4 text-red-500" />}
-                tone="red"
-              />
-              <KpiCard
-                label={`Examinados ${latestConsolidated?.ano ?? ""}`.trim()}
-                value={sinan.isFetching ? "..." : formatValue(latestConsolidated?.examinados)}
-                icon={<Stethoscope className="h-4 w-4 text-primary" />}
-              />
-              <KpiCard
-                label={`Casos tracoma ${latestConsolidated?.ano ?? ""}`.trim()}
-                value={sinan.isFetching ? "..." : formatValue(latestConsolidated?.positivos)}
-                icon={<AlertTriangle className="h-4 w-4 text-amber-600" />}
-                tone="amber"
-              />
-            </div>
-
-            <div className="grid gap-4 xl:grid-cols-[1fr_1fr_0.8fr]">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle>Agravos monitorados</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {[
-                    { name: "Conjuntivites", source: "CEVESP", state: cevespState },
-                    { name: "Tracoma", source: "SINAN", state: tracomaState }
-                  ].map((item) => (
-                    <div key={item.name} className="flex items-center justify-between rounded-md border p-3">
-                      <div>
-                        <p className="text-sm font-medium">{item.name}</p>
-                        <p className="text-xs text-muted-foreground">{item.source}</p>
-                      </div>
-                      <Badge className={item.state.cls}>{item.state.label}</Badge>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle>Mapa de SP</CardTitle>
-                  <CardDescription>Disponibilidade dos mapas municipais e GVE</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <div className="rounded-md border p-3">
-                    <p className="text-sm text-muted-foreground">CEVESP</p>
-                    <p className="text-base font-semibold">{cevespRates.isLoading ? "Carregando..." : cevespMapLoaded ? "Disponível" : "Indisponível"}</p>
-                  </div>
-                  <div className="rounded-md border p-3">
-                    <p className="text-sm text-muted-foreground">SINAN Tracoma</p>
-                    <p className="text-base font-semibold">{sinanRates.isLoading ? "Carregando..." : sinanMapLoaded ? "Disponível" : "Indisponível"}</p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle>Sinais ausentes</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {missingSignals.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">Todos os principais indicadores estão disponíveis.</div>
-                  ) : (
-                    missingSignals.map((signal) => (
-                      <div key={signal} className="flex items-center gap-2 text-sm">
-                        <CheckCircle2 className="h-4 w-4 text-amber-600" />
-                        <span>{signal}</span>
-                      </div>
-                    ))
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          </>
-        )}
-
-        {tab !== "geral" && <AlertsPanel />}
-
-        {tab === "conjuntivites" && (
-          <>
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <KpiCard
-                label={`Casos SE ${kpis.data?.currentWeek.se ?? "atual"}`}
-                value={kpis.isFetching ? "..." : formatValue(kpis.data?.currentWeek.cases)}
-                icon={<BarChart2 className="h-4 w-4 text-primary" />}
-                delta={kpis.data?.weekDelta ?? null}
-              />
-              <KpiCard
-                label="Casos no ano"
-                value={kpis.isFetching ? "..." : formatValue(kpis.data?.currentYear.cases)}
-                icon={<TrendingUp className="h-4 w-4 text-primary" />}
-                delta={kpis.data?.yearDelta ?? null}
-              />
-              <KpiCard
-                label="Surtos"
-                value={kpis.isFetching ? "..." : formatValue(kpis.data?.outbreaksCurrentYear)}
-                icon={<ShieldAlert className="h-4 w-4 text-red-500" />}
-                tone="red"
-              />
-              <KpiCard
-                label="Coletas"
-                value={kpis.isFetching ? "..." : formatValue(kpis.data?.collectionsCurrentYear)}
-                icon={<Microscope className="h-4 w-4 text-primary" />}
-              />
-            </div>
-
-            <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-              <Card>
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <CardTitle>Semana epidemiológica</CardTitle>
-                      <CardDescription>Atual vs anterior</CardDescription>
-                    </div>
-                    <Badge className={cevespState.cls}>{cevespState.note}</Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="h-[250px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={weekData}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis dataKey="label" />
-                      <YAxis />
-                      <Tooltip formatter={(value: number) => [value, "Casos"]} />
-                      <Bar dataKey="cases" fill="#0f766e" name="Casos" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle>Territórios críticos</CardTitle>
-                  <CardDescription>Prioridade da semana</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {topMunicipalities.length === 0 ? (
-                    <EmptyState title="Sem ranking disponível" detail="Sincronize o CEVESP ou revise o cache." />
-                  ) : (
-                    <div className="space-y-2">
-                      {topMunicipalities.slice(0, 5).map((item, index) => (
-                        <div key={item.name} className="grid grid-cols-[28px_1fr_auto] items-center gap-3 rounded-md border p-3">
-                          <span className="text-sm font-semibold text-muted-foreground">{index + 1}</span>
-                          <span className="truncate text-sm font-medium">{item.name}</span>
-                          <span className="text-lg font-semibold tabular-nums">{item.cases}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle>Decisão CEVESP</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-2 sm:grid-cols-3">
-                <ActionButton href="/conjuntivite" label="Análise CEVESP completa" />
-                <ActionButton href="/conjuntivite" label="Auditoria de dados" />
-                <ActionButton href="/correcoes" label="Tratar correções" />
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle>Agravos monitorados</CardTitle>
+              <CardDescription>Resumo executivo; o detalhe fica em Análises</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {[
+                { name: "Conjuntivites", source: "CEVESP", state: cevespState, href: "/conjuntivite" },
+                { name: "Tracoma", source: "SINAN", state: tracomaState, href: "/tracoma" }
+              ].map((item) => (
+                <Link key={item.name} href={item.href} className="flex items-center justify-between rounded-md border p-3 transition-colors hover:bg-muted/40">
                   <div>
-                    <CardTitle>Mapa operacional SP</CardTitle>
-                    <CardDescription>CEVESP - taxas por município e GVE</CardDescription>
+                    <p className="text-sm font-medium">{item.name}</p>
+                    <p className="text-xs text-muted-foreground">{item.source}</p>
                   </div>
-                  <div className="inline-flex rounded-md border bg-background p-1">
-                    {(["municipio", "gve"] as const).map((mode) => (
-                      <button
-                        key={mode}
-                        type="button"
-                        onClick={() => setCevespMapView(mode)}
-                        className={`rounded px-3 py-1 text-xs font-semibold transition ${cevespMapView === mode ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
-                      >
-                        {mode === "municipio" ? "Município" : "GVE"}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {cevespRates.isLoading ? (
-                  <EmptyState title="Carregando mapa CEVESP" detail="Aguarde a atualização dos dados." />
-                ) : cevespRates.isError || !cevespRates.data?.mapRows?.length ? (
-                  <EmptyState title="Mapa CEVESP indisponível" detail="Não foi possível carregar o mapa de SP." />
-                ) : (
-                  <>
-                    <div className="mb-3 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-                      <span>{cevespMapView === "municipio" ? `${cevespRates.data.byMunicipality?.length ?? 0} municípios` : `${cevespRates.data.byGve?.length ?? 0} GVE`}</span>
-                      <span className="text-[11px] uppercase tracking-[0.16em]">População IBGE {cevespRates.data.populationYear ?? "-"}</span>
-                      <span className="inline-flex items-center gap-2 rounded-full border px-2 py-1 text-xs">
-                        <span className="h-2.5 w-2.5 rounded-sm bg-[#dc2626]" />{cevespRiskCounts.alto}
-                        <span className="h-2.5 w-2.5 rounded-sm bg-[#f59e0b]" />{cevespRiskCounts.medio}
-                        <span className="h-2.5 w-2.5 rounded-sm bg-[#84cc16]" />{cevespRiskCounts.atencao}
-                        <span className="h-2.5 w-2.5 rounded-sm bg-[#14b8a6]" />{cevespRiskCounts.baixo}
-                      </span>
-                    </div>
-                    <RateMap
-                      title={`CEVESP SP - ${cevespMapView === "municipio" ? "Municípios" : "GVE"}`}
-                      description="Incidência de conjuntivite por 100 mil habitantes"
-                      rows={cevespMapRows}
-                      valueKey="incidencia100k"
-                      valueLabel="incidência/100k"
-                      tableColumns={
-                        cevespMapView === "municipio"
-                          ? [
-                              { key: "municipio", label: "Município" },
-                              { key: "gve", label: "GVE" },
-                              { key: "incidencia100k", label: "Incidência/100k", decimals: 1 }
-                            ]
-                          : [
-                              { key: "gve", label: "GVE" },
-                              { key: "incidencia100k", label: "Incidência/100k", decimals: 1 }
-                            ]
-                      }
-                    />
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          </>
-        )}
+                  <Badge className={item.state.cls}>{item.state.label}</Badge>
+                </Link>
+              ))}
+            </CardContent>
+          </Card>
 
-        {tab === "tracoma" && (
-          <>
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <KpiCard
-                label={`Examinados ${latestConsolidated?.ano ?? ""}`.trim()}
-                value={sinan.isFetching ? "..." : formatValue(latestConsolidated?.examinados ?? sinan.data?.consolidatedMetrics?.examinados?.value)}
-                icon={<Database className="h-4 w-4 text-primary" />}
-              />
-              <KpiCard
-                label={`Casos positivos ${latestConsolidated?.ano ?? ""}`.trim()}
-                value={sinan.isFetching ? "..." : formatValue(latestConsolidated?.positivos ?? sinan.data?.totalNottraconet)}
-                icon={<BarChart2 className="h-4 w-4 text-primary" />}
-              />
-              <KpiCard
-                label="Individuais TRACONET"
-                value={sinan.isFetching ? "..." : formatValue(sinan.data?.totalTraconet)}
-                icon={<Stethoscope className="h-4 w-4 text-primary" />}
-              />
-              <KpiCard
-                label="Diferenças alto risco"
-                value={sinan.isFetching ? "..." : formatValue(tracomaHighRisk)}
-                icon={<AlertTriangle className="h-4 w-4 text-red-500" />}
-                tone="red"
-              />
-            </div>
-
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle>Série histórica por ano</CardTitle>
-                <CardDescription>
-                  NOTTRACONET (examinados/positivos) × TRACONET (casos individuais)
-                  {sinan.data?.consolidatedMetrics?.examinados?.field
-                    ? ` · campo examinados: ${sinan.data.consolidatedMetrics.examinados.field}`
-                    : ""}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {consolidatedByYear.length === 0 ? (
-                  <EmptyState title="SINAN indisponível" detail="Importe os bancos ou acesse com sessão válida." />
-                ) : (
-                  <div className="overflow-x-auto rounded-md border">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b bg-muted/50 text-left text-xs">
-                          <th className="px-3 py-2">Ano</th>
-                          <th className="px-3 py-2 text-right">Examinados</th>
-                          <th className="px-3 py-2 text-right">Positivos</th>
-                          <th className="px-3 py-2 text-right">% Prev.</th>
-                          <th className="px-3 py-2 text-right border-l">TRACONET</th>
-                          <th className="px-3 py-2 text-right">Diferença</th>
-                          <th className="px-3 py-2 text-center">Risco</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {consolidatedByYear.slice(-6).map((row) => {
-                          const divRow = (sinan.data?.divergencesByYear ?? []).find((d) => d.ano === row.ano);
-                          return (
-                            <tr key={row.ano} className="border-b last:border-0 hover:bg-muted/20">
-                              <td className="px-3 py-2 font-medium">{row.ano}</td>
-                              <td className="px-3 py-2 text-right tabular-nums">{formatValue(row.examinados)}</td>
-                              <td className="px-3 py-2 text-right tabular-nums">{formatValue(row.positivos)}</td>
-                              <td className="px-3 py-2 text-right tabular-nums">
-                                {row.examinados > 0 ? `${((row.positivos / row.examinados) * 100).toFixed(1)}%` : "—"}
-                              </td>
-                              <td className="px-3 py-2 text-right tabular-nums border-l text-muted-foreground">
-                                {divRow ? formatValue(divRow.traconet) : "—"}
-                              </td>
-                              <td className={`px-3 py-2 text-right font-semibold tabular-nums ${!divRow || divRow.diff === 0 ? "text-muted-foreground" : divRow.diff > 0 ? "text-red-600" : "text-amber-700"}`}>
-                                {divRow ? `${divRow.diff > 0 ? "+" : ""}${formatValue(divRow.diff)}` : "—"}
-                              </td>
-                              <td className="px-3 py-2 text-center">
-                                {divRow ? (
-                                  <Badge className={divRow.risco === "alto" ? "border-red-200 bg-red-50 text-red-700" : divRow.risco === "medio" ? "border-amber-200 bg-amber-50 text-amber-700" : "bg-muted text-foreground"}>
-                                    {divRow.risco}
-                                  </Badge>
-                                ) : <span className="text-xs text-muted-foreground">—</span>}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle>Qualidade clínica</CardTitle>
-                </CardHeader>
-                <CardContent className="grid gap-3 sm:grid-cols-2">
-                  {[
-                    { label: "Alertas clínicos", value: tracomaClinicalAlerts },
-                    { label: "Sem forma clínica", value: sinan.data?.semGraduacao },
-                    { label: "TF sem tratamento", value: sinan.data?.tfSemTratamento },
-                    { label: "TT sem cirurgia", value: sinan.data?.ttSemCircurgia }
-                  ].map((item) => (
-                    <div key={item.label} className="rounded-md border p-3">
-                      <p className="text-xs text-muted-foreground">{item.label}</p>
-                      <p className="mt-1 text-2xl font-semibold tabular-nums">{formatValue(item.value)}</p>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle>Decisão Tracoma</CardTitle>
-                  <CardDescription>Foco em eliminação, tratamento e consistência</CardDescription>
-                </CardHeader>
-                <CardContent className="grid gap-2 sm:grid-cols-2">
-                  <ActionButton href="/tracoma" label="Análise SINAN completa" />
-                  <ActionButton href="/sincronizacao" label="Importar bancos" />
-                  <ActionButton href="/chat" label="Perguntar ao agente" />
-                  <ActionButton href="/boletins" label="Registrar boletim" />
-                </CardContent>
-              </Card>
-            </div>
-
-            <Card>
-              <CardHeader className="pb-2">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <CardTitle>Mapa operacional SP</CardTitle>
-                    <CardDescription>SINAN Tracoma - prevalência por município e GVE</CardDescription>
-                  </div>
-                  <div className="inline-flex rounded-md border bg-background p-1">
-                    {(["municipio", "gve"] as const).map((mode) => (
-                      <button
-                        key={mode}
-                        type="button"
-                        onClick={() => setSinanMapView(mode)}
-                        className={`rounded px-3 py-1 text-xs font-semibold transition ${sinanMapView === mode ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
-                      >
-                        {mode === "municipio" ? "Município" : "GVE"}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {sinanRates.isLoading ? (
-                  <EmptyState title="Carregando mapa Tracoma" detail="Aguarde a atualização dos dados." />
-                ) : sinanRates.isError || !sinanRates.data?.mapRows?.length ? (
-                  <EmptyState title="Mapa Tracoma indisponível" detail="Não foi possível carregar o mapa de SP." />
-                ) : (
-                  <>
-                    <div className="mb-3 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-                      <span>{sinanMapView === "municipio" ? `${sinanRates.data.byMunicipality?.length ?? 0} municípios` : `${sinanRates.data.byGve?.length ?? 0} GVE`}</span>
-                      <span className="text-[11px] uppercase tracking-[0.16em]">População IBGE {sinanRates.data.populationYear ?? "-"}</span>
-                      <span className="inline-flex items-center gap-2 rounded-full border px-2 py-1 text-xs">
-                        <span className="h-2.5 w-2.5 rounded-sm bg-[#dc2626]" />{sinanRiskCounts.alto}
-                        <span className="h-2.5 w-2.5 rounded-sm bg-[#f59e0b]" />{sinanRiskCounts.medio}
-                        <span className="h-2.5 w-2.5 rounded-sm bg-[#84cc16]" />{sinanRiskCounts.atencao}
-                        <span className="h-2.5 w-2.5 rounded-sm bg-[#14b8a6]" />{sinanRiskCounts.baixo}
-                      </span>
-                    </div>
-                    <RateMap
-                      title={`SINAN Tracoma SP - ${sinanMapView === "municipio" ? "Municípios" : "GVE"}`}
-                      description="Prevalência de tracoma entre examinados"
-                      rows={sinanMapRows}
-                      valueKey="prevalencia"
-                      valueLabel="prevalência %"
-                      tableColumns={
-                        sinanMapView === "municipio"
-                          ? [
-                              { key: "municipio", label: "Município" },
-                              { key: "gve", label: "GVE" },
-                              { key: "prevalencia", label: "Prevalência %", decimals: 1 }
-                            ]
-                          : [
-                              { key: "gve", label: "GVE" },
-                              { key: "prevalencia", label: "Prevalência %", decimals: 1 }
-                            ]
-                      }
-                    />
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          </>
-        )}
+          <DataHealthPanel diagnostic={diagnostic.data} />
+        </div>
 
         <Card>
           <CardContent className="flex flex-col gap-2 py-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
             <span className="inline-flex items-center gap-2">
               <Database className="h-3.5 w-3.5" />
-              Bases: CEVESP e SINAN/Tracoma
+              Sala sem repetição: decisão aqui, investigação em Análises.
             </span>
-            <span>Última atualização CEVESP: {generatedAt}</span>
+            <span>Última atualização CEVESP: {kpis.data?.generatedAt ? new Date(kpis.data.generatedAt).toLocaleString("pt-BR") : "sem atualização"}</span>
           </CardContent>
         </Card>
       </div>
