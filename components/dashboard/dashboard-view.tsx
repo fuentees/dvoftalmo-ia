@@ -90,6 +90,26 @@ type SituationDiagnostic = {
   checks: DiagnosticCheck[];
 };
 
+type SituationPriority = {
+  id: string;
+  level: "critica" | "alta" | "media";
+  source: "alerta" | "cevesp" | "sinan" | "qualidade";
+  agravo: "Conjuntivite" | "Tracoma" | "Dados";
+  territorio: string;
+  motivo: string;
+  acao: string;
+  prazo: string;
+  evidenciaHref: string;
+  score: number;
+  detalhe?: string;
+};
+
+type SituationPriorities = {
+  generatedAt: string;
+  priorities: SituationPriority[];
+  summary: { total: number; critica: number; alta: number; media: number };
+};
+
 const tabs: Array<{ id: Tab; label: string; icon: React.ReactNode }> = [
   { id: "geral", label: "Visão geral", icon: <Activity className="h-4 w-4" /> },
   { id: "conjuntivites", label: "CEVESP", icon: <Eye className="h-4 w-4" /> },
@@ -226,6 +246,12 @@ function diagnosticStyle(status: DiagnosticCheck["status"]) {
   return "border-amber-200 bg-amber-50 text-amber-700";
 }
 
+function priorityStyle(level: SituationPriority["level"]) {
+  if (level === "critica") return "border-red-200 bg-red-50 text-red-700";
+  if (level === "alta") return "border-amber-200 bg-amber-50 text-amber-700";
+  return "border-sky-200 bg-sky-50 text-sky-700";
+}
+
 function DataHealthPanel({ diagnostic }: { diagnostic?: SituationDiagnostic }) {
   const checks = diagnostic?.checks ?? [];
   const statusLabel = diagnostic?.status === "ok" ? "Operacional" : diagnostic?.status === "error" ? "Erro" : "Atenção";
@@ -264,6 +290,80 @@ function DataHealthPanel({ diagnostic }: { diagnostic?: SituationDiagnostic }) {
                 <p className="mt-2 text-sm font-semibold leading-snug">{check.message}</p>
                 {check.detail && <p className="mt-1 line-clamp-2 text-xs opacity-80">{check.detail}</p>}
               </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function TodayPrioritiesPanel({
+  data,
+  loading
+}: {
+  data?: SituationPriorities;
+  loading: boolean;
+}) {
+  const priorities = data?.priorities ?? [];
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <CardTitle>Prioridades de hoje</CardTitle>
+            <CardDescription>Fila operacional consolidada por risco, qualidade e evidência disponível</CardDescription>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Badge className={data?.summary.critica ? "border-red-200 bg-red-50 text-red-700" : "border-teal-200 bg-teal-50 text-teal-700"}>
+              {data?.summary.critica ?? 0} críticas
+            </Badge>
+            <Badge className="border-amber-200 bg-amber-50 text-amber-700">{data?.summary.alta ?? 0} altas</Badge>
+            <Badge className="bg-muted text-foreground">{data?.summary.total ?? 0} total</Badge>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <div className="flex h-28 items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">
+            <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+            Consolidando prioridades...
+          </div>
+        ) : priorities.length === 0 ? (
+          <div className="flex h-28 flex-col items-center justify-center rounded-md border border-dashed text-center text-sm text-muted-foreground">
+            <CheckCircle2 className="mb-2 h-7 w-7 text-teal-600" />
+            Nenhuma prioridade operacional crítica com os dados carregados.
+          </div>
+        ) : (
+          <div className="grid gap-3">
+            {priorities.slice(0, 5).map((item, index) => (
+              <Link
+                key={item.id}
+                href={item.evidenciaHref}
+                className="group grid gap-3 rounded-md border p-3 transition-colors hover:border-primary/40 hover:bg-primary/5 lg:grid-cols-[44px_140px_1fr_220px_auto]"
+              >
+                <div className="flex h-10 w-10 items-center justify-center rounded-md bg-muted text-sm font-semibold tabular-nums">
+                  {index + 1}
+                </div>
+                <div className="space-y-1">
+                  <Badge className={priorityStyle(item.level)}>{item.level}</Badge>
+                  <p className="text-xs text-muted-foreground">{item.agravo}</p>
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold">{item.territorio}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{item.motivo}</p>
+                  {item.detalhe && <p className="mt-1 text-xs text-muted-foreground">{item.detalhe}</p>}
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Ação</p>
+                  <p className="mt-1 text-sm leading-snug">{item.acao}</p>
+                </div>
+                <div className="flex items-center justify-between gap-3 lg:justify-end">
+                  <Badge className="bg-muted text-foreground">{item.prazo}</Badge>
+                  <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary" />
+                </div>
+              </Link>
             ))}
           </div>
         )}
@@ -338,6 +438,18 @@ export function DashboardView() {
     staleTime: 5 * 60 * 1000
   });
 
+  const priorities = useQuery<SituationPriorities>({
+    queryKey: ["situacao-prioridades"],
+    queryFn: async () => {
+      const response = await fetch("/api/situacao/prioridades");
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Erro ao buscar prioridades");
+      return data;
+    },
+    retry: false,
+    staleTime: 2 * 60 * 1000
+  });
+
   const cevespMapLoaded = !!cevespRates.data?.mapRows?.length && !cevespRates.data.missingPopulation;
   const sinanMapLoaded = !!sinanRates.data?.mapRows?.length && !sinanRates.data.missingPopulation;
   const localAuthMode = process.env.NEXT_PUBLIC_DISABLE_AUTH === "true" && process.env.NODE_ENV !== "production";
@@ -403,10 +515,11 @@ export function DashboardView() {
                 cevespRates.refetch();
                 sinanRates.refetch();
                 diagnostic.refetch();
+                priorities.refetch();
               }}
-              disabled={kpis.isFetching || sinan.isFetching || cevespRates.isFetching || sinanRates.isFetching || diagnostic.isFetching}
+              disabled={kpis.isFetching || sinan.isFetching || cevespRates.isFetching || sinanRates.isFetching || diagnostic.isFetching || priorities.isFetching}
             >
-              <RefreshCw className={`h-4 w-4 ${kpis.isFetching || sinan.isFetching || cevespRates.isFetching || sinanRates.isFetching || diagnostic.isFetching ? "animate-spin" : ""}`} />
+              <RefreshCw className={`h-4 w-4 ${kpis.isFetching || sinan.isFetching || cevespRates.isFetching || sinanRates.isFetching || diagnostic.isFetching || priorities.isFetching ? "animate-spin" : ""}`} />
               Atualizar
             </Button>
             <Button size="sm" asChild>
@@ -473,6 +586,7 @@ export function DashboardView() {
         {tab === "geral" && (
           <>
             <AlertsPanel />
+            <TodayPrioritiesPanel data={priorities.data} loading={priorities.isLoading} />
             <DataHealthPanel diagnostic={diagnostic.data} />
 
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
