@@ -252,8 +252,14 @@ function parseQuestion(question: string) {
   const relativeYears = lower.match(/ultimos?\s+(\d+)\s+anos?/);
   const singleYear = lower.match(/\b(?:em|no|ano de|ano)\s+(20\d{2}|19\d{2})\b/) ?? lower.match(/\b(20\d{2}|19\d{2})\b/);
   const currentYear = new Date().getFullYear();
-  const municipio = lower.match(/(?:municipio|munic)\s+(?:de\s+)?([a-z0-9\s]+?)(?=\s+(?:em|no|na|por|de|entre|ano|anos)\b|$)/)?.[1]?.trim();
-  const gve = lower.match(/\bgve\s+(?:de\s+)?([a-z0-9\s]+?)(?=\s+(?:em|no|na|por|de|entre|ano|anos|municipio|munic)\b|$)/)?.[1]?.trim();
+  // Só extrai filtro de municipio/GVE quando NÃO é dimensão de agrupamento
+  // ("por GVE" = agrupar por GVE, não filtrar por um GVE específico)
+  const municipio = dimension !== "municipio"
+    ? lower.match(/(?:municipio|munic)\s+(?:de\s+)?([a-z0-9\s]+?)(?=\s+(?:em|no|na|por|de|entre|ano|anos)\b|$)/)?.[1]?.trim()
+    : undefined;
+  const gve = dimension !== "gve"
+    ? lower.match(/\bgve\s+(?:de\s+)?([a-z0-9\s]+?)(?=\s+(?:em|no|na|por|de|entre|ano|anos|municipio|munic)\b|$)/)?.[1]?.trim()
+    : undefined;
   const agravo = lower.match(/agravo\s+(?:de\s+)?([a-z0-9\s]+?)(?=\s+(?:em|no|na|por|de|entre|ano|anos|banco)\b|$)/)?.[1]?.trim()
     ?? (lower.includes("tracoma") ? "tracoma" : undefined);
 
