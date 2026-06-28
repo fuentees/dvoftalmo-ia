@@ -56,6 +56,22 @@ type Bulletin = {
   created_at: string;
 };
 
+type DemographicBucket = { label: string; total: number };
+type DemographicCross = { label: string; TF: number; TI: number; TS: number; TT: number; CO: number; semForma: number; total: number };
+type TracomaDemographics = {
+  missingData?: boolean;
+  message?: string;
+  totalRows: number;
+  withSex: number;
+  withAge: number;
+  withClinicalForm: number;
+  sexDistribution: DemographicBucket[];
+  ageDistribution: DemographicBucket[];
+  clinicalForms: DemographicBucket[];
+  sexByForm: DemographicCross[];
+  ageByForm: DemographicCross[];
+};
+
 function num(value: unknown) {
   return Number(value ?? 0).toLocaleString("pt-BR");
 }
@@ -92,6 +108,130 @@ function MetricCard({
         {detail && <div className="mt-1 text-xs text-muted-foreground">{detail}</div>}
       </CardContent>
     </Card>
+  );
+}
+
+function DistributionList({ title, rows }: { title: string; rows: DemographicBucket[] }) {
+  const max = Math.max(...rows.map((row) => row.total), 1);
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Sem dados mapeados.</p>
+        ) : rows.map((row) => (
+          <div key={row.label} className="space-y-1">
+            <div className="flex justify-between gap-3 text-sm">
+              <span className="truncate">{row.label}</span>
+              <strong className="tabular-nums">{num(row.total)}</strong>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-muted">
+              <div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(4, Math.round((row.total / max) * 100))}%` }} />
+            </div>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function CrossTable({ title, rows }: { title: string; rows: DemographicCross[] }) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm">{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Sem cruzamento disponível.</p>
+        ) : (
+          <div className="overflow-x-auto rounded-md border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 text-xs text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2 text-left">Grupo</th>
+                  <th className="px-3 py-2 text-right">TF</th>
+                  <th className="px-3 py-2 text-right">TI</th>
+                  <th className="px-3 py-2 text-right">TS</th>
+                  <th className="px-3 py-2 text-right">TT</th>
+                  <th className="px-3 py-2 text-right">CO</th>
+                  <th className="px-3 py-2 text-right">Sem forma</th>
+                  <th className="px-3 py-2 text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.label} className="border-t">
+                    <td className="px-3 py-2 font-medium">{row.label}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{num(row.TF)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{num(row.TI)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{num(row.TS)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{num(row.TT)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{num(row.CO)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{num(row.semForma)}</td>
+                    <td className="px-3 py-2 text-right font-semibold tabular-nums">{num(row.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function DemographicsPanel({ data, loading }: { data?: TracomaDemographics; loading: boolean }) {
+  if (loading) {
+    return (
+      <Card>
+        <CardContent className="flex h-32 items-center justify-center text-sm text-muted-foreground">
+          <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+          Carregando perfil demográfico...
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!data || data.missingData) {
+    return (
+      <Card className="border-amber-300 bg-amber-50">
+        <CardHeader>
+          <CardTitle className="text-amber-900">Perfil demográfico indisponível</CardTitle>
+          <CardDescription className="text-amber-800">
+            {data?.message ?? "Importe o TRACONET para visualizar sexo, idade e forma clínica."}
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-1">
+        <h2 className="text-base font-semibold">Perfil demográfico TRACONET</h2>
+        <p className="text-sm text-muted-foreground">
+          Sexo, faixa etária e forma clínica dos casos individuais. Use para orientar busca ativa, educação em saúde e revisão clínica.
+        </p>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <MetricCard label="Casos individuais" value={data.totalRows} detail="TRACONET no recorte" />
+        <MetricCard label="Com sexo mapeado" value={data.withSex} detail={`${data.totalRows ? ((data.withSex / data.totalRows) * 100).toFixed(1) : "0"}% dos casos`} tone={data.withSex < data.totalRows ? "amber" : "green"} />
+        <MetricCard label="Com idade mapeada" value={data.withAge} detail={`${data.totalRows ? ((data.withAge / data.totalRows) * 100).toFixed(1) : "0"}% dos casos`} tone={data.withAge < data.totalRows ? "amber" : "green"} />
+        <MetricCard label="Com forma clínica" value={data.withClinicalForm} detail="TF/TI/TS/TT/CO detectados" tone={data.withClinicalForm < data.totalRows ? "amber" : "green"} />
+      </div>
+      <div className="grid gap-4 lg:grid-cols-3">
+        <DistributionList title="Distribuição por sexo" rows={data.sexDistribution} />
+        <DistributionList title="Distribuição por faixa etária" rows={data.ageDistribution} />
+        <DistributionList title="Forma clínica" rows={data.clinicalForms} />
+      </div>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <CrossTable title="Forma clínica por sexo" rows={data.sexByForm} />
+        <CrossTable title="Forma clínica por faixa etária" rows={data.ageByForm} />
+      </div>
+    </div>
   );
 }
 
@@ -152,6 +292,23 @@ export function TracomaAnaliseView() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Erro ao carregar dados SINAN tracoma");
       return data as TracomaRates;
+    },
+    staleTime: 5 * 60 * 1000
+  });
+
+  const demographics = useQuery<TracomaDemographics>({
+    queryKey: ["sinan-demografia", gve, municipio, yearStart, yearEnd],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (gve) params.set("gve", gve);
+      if (municipio) params.set("municipio", municipio);
+      if (yearStart) params.set("yearStart", String(yearStart));
+      if (yearEnd) params.set("yearEnd", String(yearEnd));
+      const qs = params.toString();
+      const res = await fetch(`/api/sinan/demografia${qs ? `?${qs}` : ""}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Erro ao carregar demografia SINAN tracoma");
+      return data as TracomaDemographics;
     },
     staleTime: 5 * 60 * 1000
   });
@@ -414,6 +571,8 @@ export function TracomaAnaliseView() {
               tone={muniAcimaMeta > 0 ? "red" : "green"}
             />
           </div>
+
+          <DemographicsPanel data={demographics.data} loading={demographics.isLoading} />
 
           {/* ── Mapa epidemiológico ── */}
           <div className="space-y-4">
