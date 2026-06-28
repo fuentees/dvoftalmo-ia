@@ -140,10 +140,10 @@ const tabs: Array<{ id: HubTab; label: string; icon: React.ElementType }> = [
 ];
 
 const guidedQuestions = [
-  "Total de casos por município nos últimos 5 anos separado por ano",
+  "Total de casos por GVE dos últimos 5 anos separado por ano",
+  "Total de casos por município dos últimos 5 anos separado por ano",
   "Total de casos por GVE dos últimos 5 anos por mês, com total geral",
   "Casos por semana epidemiológica no ano atual por GVE",
-  "Municípios com maior número de surtos este ano",
   "Distribuição por sexo e faixa etária no último ano",
   "Taxa de incidência por município no último ano"
 ];
@@ -158,13 +158,23 @@ const structuredMetrics = [
 ];
 
 const structuredDimensions = [
+  "por GVE",
+  "por município",
+  "por unidade notificadora",
   "por ano",
   "por mês",
   "por semana epidemiológica",
-  "por GVE",
-  "por município",
-  "por unidade notificadora"
 ];
+
+const structuredPeriods = [
+  "últimos 5 anos",
+  "últimos 3 anos",
+  "últimos 10 anos",
+  "este ano",
+  "ano passado",
+];
+
+const spatialDimensions = new Set(["por GVE", "por município", "por unidade notificadora"]);
 
 function num(value: unknown) {
   return Number(value ?? 0).toLocaleString("pt-BR");
@@ -369,9 +379,10 @@ function CevespRatesPanel({ data }: { data: CevespRatesData }) {
 export function NotificationsReportView({ section, externalFilters, hideFilters = false }: NotificationsReportViewProps = {}) {
   const [tab, setTab] = useState<HubTab>("situacao");
   const activeTab: HubTab = section ?? tab;
-  const [question, setQuestion] = useState("Total de casos por GVE dos últimos 5 anos por mês");
+  const [question, setQuestion] = useState("Total de casos por GVE dos últimos 5 anos separado por ano");
   const [structuredMetric, setStructuredMetric] = useState("Total de casos");
   const [structuredDimension, setStructuredDimension] = useState("por GVE");
+  const [structuredPeriod, setStructuredPeriod] = useState("últimos 5 anos");
   const [showEndemic, setShowEndemic] = useState(false);
   const [selectedYear, setSelectedYear] = useState<number | undefined>(undefined);
   const [selectedGve, setSelectedGve] = useState<string>("");
@@ -430,7 +441,15 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
   }
 
   function applyStructuredQuestion() {
-    setQuestion(`${structuredMetric} ${structuredDimension}`);
+    const isSpatial = spatialDimensions.has(structuredDimension);
+    const isMultiYear = structuredPeriod.startsWith("últimos");
+    if (isSpatial && isMultiYear) {
+      setQuestion(`${structuredMetric} ${structuredDimension} dos ${structuredPeriod} separado por ano`);
+    } else if (isSpatial) {
+      setQuestion(`${structuredMetric} ${structuredDimension} ${structuredPeriod}`);
+    } else {
+      setQuestion(`${structuredMetric} ${structuredDimension} dos ${structuredPeriod}`);
+    }
   }
 
   const report = useQuery<ReportData>({
@@ -927,7 +946,7 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+              <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto]">
                 <select
                   value={structuredMetric}
                   onChange={(event) => setStructuredMetric(event.target.value)}
@@ -942,8 +961,15 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
                 >
                   {structuredDimensions.map((item) => <option key={item} value={item}>{item}</option>)}
                 </select>
+                <select
+                  value={structuredPeriod}
+                  onChange={(event) => setStructuredPeriod(event.target.value)}
+                  className="h-9 rounded-md border bg-background px-2 text-sm"
+                >
+                  {structuredPeriods.map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
                 <Button type="button" variant="outline" onClick={applyStructuredQuestion}>
-                  Montar tabela
+                  Montar tabela 2×2
                 </Button>
               </div>
               <Textarea

@@ -237,25 +237,41 @@ function parseQuestion(question: string) {
     /gve/.test(lower) ? "gve" :
     /drs/.test(lower) ? "drs" :
     "registros";
+  // Spatial dimensions take priority — "separado por ano" must not override them
   const dimension =
-    /\bpor\s+ano\b|ano a ano|anual/.test(lower) ? "ano" :
     /\bpor\s+municipio\b|municipios? com|ranking de municipios?/.test(lower) ? "municipio" :
     /\bpor\s+gve\b|\bgve\b/.test(lower) ? "gve" :
     /\bpor\s+drs\b|\bdrs\b/.test(lower) ? "drs" :
+    /\bpor\s+ano\b|ano a ano|anual/.test(lower) ? "ano" :
     bank ? "ano" : "source_bank";
+  const pivotByYear =
+    /separado por ano|cruzado por ano/.test(lower) &&
+    ["gve", "municipio", "drs"].includes(dimension);
   const yearBetween = lower.match(/\b(?:de|entre)\s+(20\d{2}|19\d{2})\s+(?:a|ate|e)\s+(20\d{2}|19\d{2})\b/);
+  const relativeYears = lower.match(/ultimos?\s+(\d+)\s+anos?/);
   const singleYear = lower.match(/\b(?:em|no|ano de|ano)\s+(20\d{2}|19\d{2})\b/) ?? lower.match(/\b(20\d{2}|19\d{2})\b/);
+  const currentYear = new Date().getFullYear();
   const municipio = lower.match(/(?:municipio|munic)\s+(?:de\s+)?([a-z0-9\s]+?)(?=\s+(?:em|no|na|por|de|entre|ano|anos)\b|$)/)?.[1]?.trim();
   const gve = lower.match(/\bgve\s+(?:de\s+)?([a-z0-9\s]+?)(?=\s+(?:em|no|na|por|de|entre|ano|anos|municipio|munic)\b|$)/)?.[1]?.trim();
   const agravo = lower.match(/agravo\s+(?:de\s+)?([a-z0-9\s]+?)(?=\s+(?:em|no|na|por|de|entre|ano|anos|banco)\b|$)/)?.[1]?.trim()
     ?? (lower.includes("tracoma") ? "tracoma" : undefined);
 
+  const yearStart = yearBetween ? Number(yearBetween[1])
+    : relativeYears ? currentYear - Number(relativeYears[1]) + 1
+    : singleYear ? Number(singleYear[1])
+    : undefined;
+  const yearEnd = yearBetween ? Number(yearBetween[2])
+    : relativeYears ? currentYear
+    : singleYear ? Number(singleYear[1])
+    : undefined;
+
   return {
     bank,
     metric,
     dimension,
-    yearStart: yearBetween ? Number(yearBetween[1]) : singleYear ? Number(singleYear[1]) : undefined,
-    yearEnd: yearBetween ? Number(yearBetween[2]) : singleYear ? Number(singleYear[1]) : undefined,
+    pivotByYear,
+    yearStart,
+    yearEnd,
     municipio,
     gve,
     agravo,
@@ -350,6 +366,62 @@ export async function runSinanTracomaAnalysis(question: string) {
   const rows = (data ?? []) as Array<Record<string, unknown>>;
 
   const groupField = parsed.dimension;
+  const banks2 = Array.from(new Set(rows.map((row) => String(row.source_bank ?? "")))).join(", ") || "nao identificado";
+  const agravos = Array.from(new Set(rows.map((row) => String(row.agravo ?? "")).filter(Boolean))).slice(0, 5).join(", ") || "nao informado";
+  const quality = buildQualityFindings(rows);
+  const timeLabel = parsed.yearStart ? `${parsed.yearStart} a ${parsed.yearEnd ?? parsed.yearStart}` : "todo o cache";
+
+  // Pivot table: dimension (rows) × year (columns)
+  if (parsed.pivotByYear) {
+    const dimLabel = labelForDimension(groupField);
+    const yearGroups = new Map<string, Map<number, number>>();
+    const allYears = new Set<number>();
+    for (const row of rows) {
+      const label = String(row[groupField] ?? "Nao informado");
+      const ano = Number(row.ano ?? 0);
+      if (!yearGroups.has(label)) yearGroups.set(label, new Map());
+      yearGroups.get(label)!.set(ano, (yearGroups.get(label)!.get(ano) ?? 0) + sinanCaseWeight(row));
+      if (ano > 2000 && ano <= new Date().getFullYear() + 1) allYears.add(ano);
+    }
+    const years = Array.from(allYears).sort((a, b) => a - b);
+    const pivotRows: Array<Record<string, unknown>> = [];
+    for (const [label, yearMap] of yearGroups.entries()) {
+      const pivotRow: Record<string, unknown> = { [dimLabel]: label };
+      let total = 0;
+      for (const year of years) {
+        const val = yearMap.get(year) ?? 0;
+        pivotRow[String(year)] = val;
+        total += val;
+      }
+      pivotRow.Total = total;
+      pivotRows.push(pivotRow);
+    }
+    pivotRows.sort((a, b) => Number(b.Total) - Number(a.Total));
+    const totalRow: Record<string, unknown> = { [dimLabel]: "Total" };
+    let grandTotal = 0;
+    for (const year of years) {
+      const val = pivotRows.reduce((sum, r) => sum + Number(r[String(year)] ?? 0), 0);
+      totalRow[String(year)] = val;
+      grandTotal += val;
+    }
+    totalRow.Total = grandTotal;
+    pivotRows.push(totalRow);
+    return {
+      question,
+      parsed,
+      metricLabel: "Casos SINAN Tracoma",
+      timeLabel,
+      columns: [dimLabel, ...years.map(String), "Total"],
+      rows: pivotRows,
+      quality,
+      interpretation: [
+        `Tabela cruzada: ${dimLabel} nas linhas, anos nas colunas. Total no período: ${grandTotal} caso(s).`,
+        `Banco(s): ${banks2}. Agravo(s): ${agravos}.`,
+        ...quality.recommendations
+      ]
+    };
+  }
+
   const groups = new Map<string, number>();
   for (const row of rows) {
     const label = String(row[groupField] ?? "Nao informado");
@@ -362,21 +434,18 @@ export async function runSinanTracomaAnalysis(question: string) {
 
   const totalCases = rows.reduce((sum, row) => sum + sinanCaseWeight(row), 0);
   const totalRow = { [labelForDimension(groupField)]: "Total", Valor: totalCases };
-  const banks = Array.from(new Set(rows.map((row) => String(row.source_bank ?? "")))).join(", ") || "nao identificado";
-  const agravos = Array.from(new Set(rows.map((row) => String(row.agravo ?? "")).filter(Boolean))).slice(0, 5).join(", ") || "nao informado";
-  const quality = buildQualityFindings(rows);
 
   return {
     question,
     parsed,
     metricLabel: "Casos SINAN Tracoma",
-    timeLabel: parsed.yearStart ? `${parsed.yearStart} a ${parsed.yearEnd}` : "todo o cache",
+    timeLabel,
     columns: [labelForDimension(groupField), "Valor"],
     rows: [...resultRows, totalRow],
     quality,
     interpretation: [
       `Foram considerados ${totalCases} caso(s) SINAN Tracoma em ${rows.length} linha(s) do cache.`,
-      `Banco(s) considerados: ${banks}. Agravo(s) observado(s): ${agravos}.`,
+      `Banco(s) considerados: ${banks2}. Agravo(s) observado(s): ${agravos}.`,
       parsed.agravo
         ? `A consulta aplicou filtro de agravo contendo "${parsed.agravo}".`
         : "Nenhum filtro de agravo foi identificado na pergunta; para bancos SINAN com multiplos agravos, recomenda-se informar o agravo.",

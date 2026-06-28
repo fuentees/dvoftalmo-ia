@@ -24,10 +24,10 @@ type AskData = {
 };
 
 const guidedQuestions = [
+  "Total de casos por GVE no TRACONET dos últimos 5 anos separado por ano",
+  "Total de casos por município no NOTTRACONET dos últimos 5 anos separado por ano",
   "Total de casos por ano no TRACONET",
   "Total de positivos por município no NOTTRACONET",
-  "Casos por GVE entre 2020 e 2026",
-  "Registros individuais por município e ano",
   "Casos com forma clínica por ano",
   "Qualidade dos registros individuais por município"
 ];
@@ -45,11 +45,21 @@ const indicators = [
 ];
 
 const dimensions = [
-  { value: "por ano", label: "Ano" },
   { value: "por GVE", label: "GVE" },
   { value: "por município", label: "Município" },
+  { value: "por ano", label: "Ano" },
   { value: "por banco", label: "Banco" }
 ];
+
+const periods = [
+  { value: "últimos 5 anos", label: "Últimos 5 anos" },
+  { value: "últimos 3 anos", label: "Últimos 3 anos" },
+  { value: "últimos 10 anos", label: "Últimos 10 anos" },
+  { value: "este ano", label: "Este ano" },
+  { value: "ano passado", label: "Ano passado" },
+];
+
+const spatialDimensions = new Set(["por GVE", "por município"]);
 
 function buildQuestion(question: string, filters: { gve: string; municipio: string; yearStart: string; yearEnd: string }) {
   const parts = [question.trim()];
@@ -113,10 +123,11 @@ type TracomaConsultaViewProps = {
 };
 
 export function TracomaConsultaView({ externalFilters, hideFilters = false }: TracomaConsultaViewProps = {}) {
-  const [question, setQuestion] = useState("Total de casos por ano no TRACONET");
+  const [question, setQuestion] = useState("Total de casos por GVE no TRACONET dos últimos 5 anos separado por ano");
   const [bank, setBank] = useState("TRACONET");
   const [indicator, setIndicator] = useState("Total de casos");
-  const [dimension, setDimension] = useState("por ano");
+  const [dimension, setDimension] = useState("por GVE");
+  const [period, setPeriod] = useState("últimos 5 anos");
   const [gve, setGve] = useState("");
   const [municipio, setMunicipio] = useState("");
   const [yearStart, setYearStart] = useState("");
@@ -134,7 +145,15 @@ export function TracomaConsultaView({ externalFilters, hideFilters = false }: Tr
   }, [externalFilters]);
 
   function applyStructuredQuestion() {
-    setQuestion(`${indicator} ${dimension} no ${bank}`);
+    const isSpatial = spatialDimensions.has(dimension);
+    const isMultiYear = period.startsWith("últimos");
+    if (isSpatial && isMultiYear) {
+      setQuestion(`${indicator} ${dimension} no ${bank} dos ${period} separado por ano`);
+    } else if (isSpatial) {
+      setQuestion(`${indicator} ${dimension} no ${bank} ${period}`);
+    } else {
+      setQuestion(`${indicator} ${dimension} no ${bank} dos ${period}`);
+    }
   }
 
   const ask = useMutation<AskData>({
@@ -199,7 +218,7 @@ export function TracomaConsultaView({ externalFilters, hideFilters = false }: Tr
             />
           </div>}
 
-          <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto]">
+          <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_1fr_auto]">
             <select
               value={bank}
               onChange={(event) => setBank(event.target.value)}
@@ -221,8 +240,15 @@ export function TracomaConsultaView({ externalFilters, hideFilters = false }: Tr
             >
               {dimensions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
             </select>
+            <select
+              value={period}
+              onChange={(event) => setPeriod(event.target.value)}
+              className="h-9 rounded-md border bg-background px-2 text-sm"
+            >
+              {periods.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+            </select>
             <Button type="button" variant="outline" onClick={applyStructuredQuestion}>
-              Montar tabela
+              Montar tabela 2×2
             </Button>
           </div>
 
