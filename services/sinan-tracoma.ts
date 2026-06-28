@@ -348,37 +348,57 @@ export async function getSinanTracomaStatus() {
   };
 }
 
+async function fetchSinanRows(params: {
+  bank?: string;
+  agravo?: string;
+  yearStart?: number;
+  yearEnd?: number;
+  municipio?: string;
+  gve?: string;
+}): Promise<Array<Record<string, unknown>>> {
+  const supabase = createAdminClient();
+  const pageSize = 1000;
+  const rows: Array<Record<string, unknown>> = [];
+  for (let from = 0; ; from += pageSize) {
+    let q = supabase
+      .from("sinan_tracoma_rows")
+      .select("source_bank, agravo, ano, dt_notificacao, municipio, gve, drs, unidade, classificacao, criterio, evolucao, tratamento, conclusao, raw");
+    if (params.bank) q = q.eq("source_bank", params.bank);
+    if (params.agravo) q = q.ilike("agravo", `%${params.agravo}%`);
+    if (params.yearStart) q = q.or(`ano.is.null,ano.gte.${params.yearStart}`);
+    if (params.yearEnd) q = q.or(`ano.is.null,ano.lte.${params.yearEnd}`);
+    if (params.municipio) q = q.ilike("municipio", `%${params.municipio}%`);
+    if (params.gve) q = q.ilike("gve", `%${params.gve}%`);
+    const { data, error } = await q.range(from, from + pageSize - 1);
+    if (error) throw new Error(`SINAN Tracoma: ${error.message}`);
+    const page = (data ?? []) as Array<Record<string, unknown>>;
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return rows;
+}
+
 export async function runSinanTracomaAnalysis(question: string) {
   const parsed = parseQuestion(question);
-  const supabase = createAdminClient();
-  let query = supabase
-    .from("sinan_tracoma_rows")
-    .select("source_bank, agravo, ano, dt_notificacao, municipio, gve, drs, unidade, classificacao, criterio, evolucao, tratamento, conclusao, raw");
 
-  if (parsed.bank) query = query.eq("source_bank", parsed.bank);
-  if (parsed.agravo) query = query.ilike("agravo", `%${parsed.agravo}%`);
-  // Inclui linhas com ano nulo para não perder registros sem data preenchida
-  if (parsed.yearStart) query = query.or(`ano.is.null,ano.gte.${parsed.yearStart}`);
-  if (parsed.yearEnd) query = query.or(`ano.is.null,ano.lte.${parsed.yearEnd}`);
-  if (parsed.municipio) query = query.ilike("municipio", `%${parsed.municipio}%`);
-  if (parsed.gve) query = query.ilike("gve", `%${parsed.gve}%`);
-
-  let { data, error } = await query.limit(100000);
-  if (error) throw new Error(`SINAN Tracoma: ${error.message}`);
-  let rows = (data ?? []) as Array<Record<string, unknown>>;
+  let rows = await fetchSinanRows({
+    bank: parsed.bank,
+    agravo: parsed.agravo,
+    yearStart: parsed.yearStart,
+    yearEnd: parsed.yearEnd,
+    municipio: parsed.municipio,
+    gve: parsed.gve,
+  });
 
   // Fallback: banco não encontrado → busca sem filtro de banco
   if (rows.length === 0 && parsed.bank) {
-    let fallbackQuery = supabase
-      .from("sinan_tracoma_rows")
-      .select("source_bank, agravo, ano, dt_notificacao, municipio, gve, drs, unidade, classificacao, criterio, evolucao, tratamento, conclusao, raw");
-    if (parsed.agravo) fallbackQuery = fallbackQuery.ilike("agravo", `%${parsed.agravo}%`);
-    if (parsed.yearStart) fallbackQuery = fallbackQuery.or(`ano.is.null,ano.gte.${parsed.yearStart}`);
-    if (parsed.yearEnd) fallbackQuery = fallbackQuery.or(`ano.is.null,ano.lte.${parsed.yearEnd}`);
-    if (parsed.municipio) fallbackQuery = fallbackQuery.ilike("municipio", `%${parsed.municipio}%`);
-    if (parsed.gve) fallbackQuery = fallbackQuery.ilike("gve", `%${parsed.gve}%`);
-    const fallback = await fallbackQuery.limit(100000);
-    if (!fallback.error) rows = (fallback.data ?? []) as Array<Record<string, unknown>>;
+    rows = await fetchSinanRows({
+      agravo: parsed.agravo,
+      yearStart: parsed.yearStart,
+      yearEnd: parsed.yearEnd,
+      municipio: parsed.municipio,
+      gve: parsed.gve,
+    });
   }
 
   const groupField = parsed.dimension;
