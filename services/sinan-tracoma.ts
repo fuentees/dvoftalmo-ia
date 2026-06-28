@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { nomeMunicipio, gvePorCodigo } from "@/lib/municipios-sp";
+import { nomeMunicipio, gvePorCodigo, gvePorNomeMunicipio } from "@/lib/municipios-sp";
 
 export type SinanTracomaBank = "traconet" | "nottraconet";
 
@@ -567,14 +567,16 @@ function labelForDimension(dimension: string) {
   return dimension;
 }
 
-// GVE não vem no DBF do SINAN — deriva do código IBGE do município quando nulo
+// GVE não vem no DBF do SINAN — deriva sempre pela tabela autorizada (código IBGE ou nome)
+// O campo row.gve bruto pode conter nome de município (dado incorreto do DBF) — ignorado
 function resolveGroupLabel(row: Record<string, unknown>, groupField: string): string {
+  if (groupField === "gve") {
+    const mun = String(row.municipio ?? "");
+    const derived = gvePorCodigo(mun) ?? gvePorNomeMunicipio(mun);
+    return derived ?? "Nao informado";
+  }
   const direct = row[groupField];
   if (direct != null && String(direct).trim()) return String(direct).trim();
-  if (groupField === "gve") {
-    const derived = gvePorCodigo(String(row.municipio ?? ""));
-    if (derived) return derived;
-  }
   return "Nao informado";
 }
 

@@ -417,6 +417,15 @@ export function gvePorCodigo(codigo: string | null | undefined): string | null {
   return infoMunicipio(codigo)?.gve ?? null;
 }
 
+/** Retorna o GVE pelo nome do município (busca case-insensitive sem acento) */
+export function gvePorNomeMunicipio(nome: string | null | undefined): string | null {
+  if (!nome) return null;
+  const normalize = (s: string) => s.trim().toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const needle = normalize(nome);
+  const entry = Object.values(MUNICIPIOS_SP).find((info) => normalize(info.nome) === needle);
+  return entry?.gve ?? null;
+}
+
 export function listarMunicipiosSp() {
   return Object.entries(MUNICIPIOS_SP)
     .map(([codigo, info]) => ({ codigo, nome: info.nome, gve: info.gve }))
