@@ -430,7 +430,7 @@ export async function runSinanTracomaAnalysis(question: string) {
     const NULL_YEAR = -1; // sentinel para ano desconhecido
 
     for (const row of rows) {
-      const label = String(row[groupField] ?? "Nao informado");
+      const label = resolveGroupLabel(row, groupField);
       const rawAno = Number(row.ano ?? 0);
       const ano = (rawAno > 2000 && rawAno <= curYear + 1) ? rawAno : NULL_YEAR;
       if (!yearGroups.has(label)) yearGroups.set(label, new Map());
@@ -487,7 +487,7 @@ export async function runSinanTracomaAnalysis(question: string) {
 
   const groups = new Map<string, number>();
   for (const row of rows) {
-    const label = String(row[groupField] ?? "Nao informado");
+    const label = resolveGroupLabel(row, groupField);
     groups.set(label, (groups.get(label) ?? 0) + sinanCaseWeight(row));
   }
   const resultRows = Array.from(groups.entries())
@@ -565,6 +565,17 @@ function labelForDimension(dimension: string) {
   if (dimension === "drs") return "DRS";
   if (dimension === "ano") return "Ano";
   return dimension;
+}
+
+// GVE não vem no DBF do SINAN — deriva do código IBGE do município quando nulo
+function resolveGroupLabel(row: Record<string, unknown>, groupField: string): string {
+  const direct = row[groupField];
+  if (direct != null && String(direct).trim()) return String(direct).trim();
+  if (groupField === "gve") {
+    const derived = gvePorCodigo(String(row.municipio ?? ""));
+    if (derived) return derived;
+  }
+  return "Nao informado";
 }
 
 // ── Cross-bank divergence + deep quality audit ────────────────────────────────
