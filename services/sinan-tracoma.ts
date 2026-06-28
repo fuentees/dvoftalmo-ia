@@ -357,14 +357,29 @@ export async function runSinanTracomaAnalysis(question: string) {
 
   if (parsed.bank) query = query.eq("source_bank", parsed.bank);
   if (parsed.agravo) query = query.ilike("agravo", `%${parsed.agravo}%`);
-  if (parsed.yearStart) query = query.gte("ano", parsed.yearStart);
-  if (parsed.yearEnd) query = query.lte("ano", parsed.yearEnd);
+  // Inclui linhas com ano nulo para não perder registros sem data preenchida
+  if (parsed.yearStart) query = query.or(`ano.is.null,ano.gte.${parsed.yearStart}`);
+  if (parsed.yearEnd) query = query.or(`ano.is.null,ano.lte.${parsed.yearEnd}`);
   if (parsed.municipio) query = query.ilike("municipio", `%${parsed.municipio}%`);
   if (parsed.gve) query = query.ilike("gve", `%${parsed.gve}%`);
 
-  const { data, error } = await query.limit(100000);
+  let { data, error } = await query.limit(100000);
   if (error) throw new Error(`SINAN Tracoma: ${error.message}`);
-  const rows = (data ?? []) as Array<Record<string, unknown>>;
+  let rows = (data ?? []) as Array<Record<string, unknown>>;
+
+  // Fallback: banco não encontrado → busca sem filtro de banco
+  if (rows.length === 0 && parsed.bank) {
+    let fallbackQuery = supabase
+      .from("sinan_tracoma_rows")
+      .select("source_bank, agravo, ano, dt_notificacao, municipio, gve, drs, unidade, classificacao, criterio, evolucao, tratamento, conclusao, raw");
+    if (parsed.agravo) fallbackQuery = fallbackQuery.ilike("agravo", `%${parsed.agravo}%`);
+    if (parsed.yearStart) fallbackQuery = fallbackQuery.or(`ano.is.null,ano.gte.${parsed.yearStart}`);
+    if (parsed.yearEnd) fallbackQuery = fallbackQuery.or(`ano.is.null,ano.lte.${parsed.yearEnd}`);
+    if (parsed.municipio) fallbackQuery = fallbackQuery.ilike("municipio", `%${parsed.municipio}%`);
+    if (parsed.gve) fallbackQuery = fallbackQuery.ilike("gve", `%${parsed.gve}%`);
+    const fallback = await fallbackQuery.limit(100000);
+    if (!fallback.error) rows = (fallback.data ?? []) as Array<Record<string, unknown>>;
+  }
 
   const groupField = parsed.dimension;
   const banks2 = Array.from(new Set(rows.map((row) => String(row.source_bank ?? "")))).join(", ") || "nao identificado";
@@ -377,47 +392,60 @@ export async function runSinanTracomaAnalysis(question: string) {
     const dimLabel = labelForDimension(groupField);
     const yearGroups = new Map<string, Map<number, number>>();
     const allYears = new Set<number>();
+    const curYear = new Date().getFullYear();
+    const NULL_YEAR = -1; // sentinel para ano desconhecido
+
     for (const row of rows) {
       const label = String(row[groupField] ?? "Nao informado");
-      const ano = Number(row.ano ?? 0);
+      const rawAno = Number(row.ano ?? 0);
+      const ano = (rawAno > 2000 && rawAno <= curYear + 1) ? rawAno : NULL_YEAR;
       if (!yearGroups.has(label)) yearGroups.set(label, new Map());
       yearGroups.get(label)!.set(ano, (yearGroups.get(label)!.get(ano) ?? 0) + sinanCaseWeight(row));
-      if (ano > 2000 && ano <= new Date().getFullYear() + 1) allYears.add(ano);
+      if (ano !== NULL_YEAR) allYears.add(ano);
     }
+
     const years = Array.from(allYears).sort((a, b) => a - b);
+    const hasNullYear = Array.from(yearGroups.values()).some((m) => (m.get(NULL_YEAR) ?? 0) > 0);
+    const yearColKeys: Array<number | string> = [...years, ...(hasNullYear ? ["Sem ano"] : [])];
+
     const pivotRows: Array<Record<string, unknown>> = [];
     for (const [label, yearMap] of yearGroups.entries()) {
       const pivotRow: Record<string, unknown> = { [dimLabel]: label };
-      let total = 0;
-      for (const year of years) {
-        const val = yearMap.get(year) ?? 0;
-        pivotRow[String(year)] = val;
-        total += val;
+      // Total = soma de TODOS os casos, independente de terem ano válido
+      const total = Array.from(yearMap.values()).reduce((s, v) => s + v, 0);
+      for (const col of yearColKeys) {
+        const key = col === "Sem ano" ? NULL_YEAR : Number(col);
+        pivotRow[String(col)] = yearMap.get(key) ?? 0;
       }
       pivotRow.Total = total;
       pivotRows.push(pivotRow);
     }
     pivotRows.sort((a, b) => Number(b.Total) - Number(a.Total));
+
     const totalRow: Record<string, unknown> = { [dimLabel]: "Total" };
-    let grandTotal = 0;
-    for (const year of years) {
-      const val = pivotRows.reduce((sum, r) => sum + Number(r[String(year)] ?? 0), 0);
-      totalRow[String(year)] = val;
-      grandTotal += val;
+    for (const col of yearColKeys) {
+      totalRow[String(col)] = pivotRows.reduce((sum, r) => sum + Number(r[String(col)] ?? 0), 0);
     }
+    const grandTotal = pivotRows.reduce((sum, r) => sum + Number(r.Total ?? 0), 0);
     totalRow.Total = grandTotal;
     pivotRows.push(totalRow);
+
+    const yearWarning = hasNullYear
+      ? `${Array.from(yearGroups.values()).reduce((s, m) => s + (m.get(NULL_YEAR) ?? 0), 0)} caso(s) sem ano preenchido aparece(m) na coluna "Sem ano".`
+      : null;
+
     return {
       question,
       parsed,
       metricLabel: "Casos SINAN Tracoma",
       timeLabel,
-      columns: [dimLabel, ...years.map(String), "Total"],
+      columns: [dimLabel, ...yearColKeys.map(String), "Total"],
       rows: pivotRows,
       quality,
       interpretation: [
         `Tabela cruzada: ${dimLabel} nas linhas, anos nas colunas. Total no período: ${grandTotal} caso(s).`,
         `Banco(s): ${banks2}. Agravo(s): ${agravos}.`,
+        ...(yearWarning ? [yearWarning] : []),
         ...quality.recommendations
       ]
     };
