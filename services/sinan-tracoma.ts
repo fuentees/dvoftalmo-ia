@@ -244,8 +244,9 @@ function parseQuestion(question: string) {
     /\bpor\s+drs\b|\bdrs\b/.test(lower) ? "drs" :
     /\bpor\s+ano\b|ano a ano|anual/.test(lower) ? "ano" :
     bank ? "ano" : "source_bank";
+  // Pivot quando dimensão espacial + qualquer referência temporal a "ano"
   const pivotByYear =
-    /separado por ano|cruzado por ano/.test(lower) &&
+    /separado por ano|cruzado por ano|\bpor\s+ano\b|ano a ano|anual/.test(lower) &&
     ["gve", "municipio", "drs"].includes(dimension);
   const yearBetween = lower.match(/\b(?:de|entre)\s+(20\d{2}|19\d{2})\s+(?:a|ate|e)\s+(20\d{2}|19\d{2})\b/);
   const relativeYears = lower.match(/ultimos?\s+(\d+)\s+anos?/);
@@ -275,7 +276,7 @@ function parseQuestion(question: string) {
     municipio,
     gve,
     agravo,
-    limit: Number(lower.match(/\btop\s*(\d+)/)?.[1] ?? 100)
+    limit: Number(lower.match(/\btop\s*(\d+)/)?.[1] ?? 500)
   };
 }
 
@@ -429,8 +430,7 @@ export async function runSinanTracomaAnalysis(question: string) {
   }
   const resultRows = Array.from(groups.entries())
     .map(([label, valor]) => ({ [labelForDimension(groupField)]: label, Valor: valor }))
-    .sort((a, b) => Number(b.Valor) - Number(a.Valor))
-    .slice(0, Math.min(parsed.limit, 500));
+    .sort((a, b) => Number(b.Valor) - Number(a.Valor));
 
   const totalCases = rows.reduce((sum, row) => sum + sinanCaseWeight(row), 0);
   const totalRow = { [labelForDimension(groupField)]: "Total", Valor: totalCases };
