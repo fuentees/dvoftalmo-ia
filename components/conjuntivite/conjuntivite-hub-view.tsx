@@ -2,20 +2,22 @@
 
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { Activity, ShieldAlert } from "lucide-react";
+import { Activity, Database, ShieldAlert } from "lucide-react";
 import { NotificationsReportView } from "@/components/notifications/notifications-report-view";
 import { CevespQualidadeView } from "@/components/cevesp/cevesp-qualidade-view";
 
-type OuterTab = "analise" | "qualidade";
+type OuterTab = "situacao" | "qualidade" | "consulta";
 
 const outerTabs: Array<{ id: OuterTab; label: string; icon: React.ElementType }> = [
-  { id: "analise",   label: "Análise Epidemiológica", icon: Activity    },
-  { id: "qualidade", label: "Qualidade dos Dados",    icon: ShieldAlert }
+  { id: "situacao",  label: "Situação Epidemiológica", icon: Activity },
+  { id: "qualidade", label: "Qualidade dos Dados",     icon: ShieldAlert },
+  { id: "consulta",  label: "Consulta",                icon: Database }
 ];
 
 export function ConjuntiviteHubView() {
   const searchParams = useSearchParams();
-  const initialTab = searchParams.get("tab") === "qualidade" ? "qualidade" : "analise";
+  const requestedTab = searchParams.get("tab");
+  const initialTab: OuterTab = requestedTab === "qualidade" || requestedTab === "consulta" ? requestedTab : "situacao";
   const [tab, setTab] = useState<OuterTab>(initialTab);
 
   return (
@@ -47,8 +49,9 @@ export function ConjuntiviteHubView() {
       </div>
 
       <div className="flex-1">
-        {tab === "analise"   && <NotificationsReportView />}
+        {tab === "situacao"  && <NotificationsReportView section="situacao" />}
         {tab === "qualidade" && <CevespQualidadeView />}
+        {tab === "consulta"  && <NotificationsReportView section="consulta" />}
       </div>
     </div>
   );

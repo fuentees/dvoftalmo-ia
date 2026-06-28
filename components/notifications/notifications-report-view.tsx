@@ -21,6 +21,9 @@ import { EndemicChannelChart, EpidemicCharts } from "@/components/notifications/
 import { listarMunicipiosPorGve } from "@/lib/municipios-sp";
 
 type HubTab = "situacao" | "consulta" | "canal" | "saidas";
+type NotificationsReportViewProps = {
+  section?: "situacao" | "consulta";
+};
 
 type ReportData = {
   generatedAt: string;
@@ -312,8 +315,9 @@ function CevespRatesPanel({ data }: { data: CevespRatesData }) {
   );
 }
 
-export function NotificationsReportView() {
+export function NotificationsReportView({ section }: NotificationsReportViewProps = {}) {
   const [tab, setTab] = useState<HubTab>("situacao");
+  const activeTab: HubTab = section ?? tab;
   const [question, setQuestion] = useState("Total de casos por GVE dos últimos 5 anos por mês");
   const [showEndemic, setShowEndemic] = useState(false);
   const [selectedYear, setSelectedYear] = useState<number | undefined>(undefined);
@@ -354,6 +358,15 @@ export function NotificationsReportView() {
     return params.toString();
   }
 
+  function buildFilteredQuestion() {
+    const parts = [question.trim()];
+    if (selectedYear) parts.push(`ano ${selectedYear}`);
+    if (selectedGve) parts.push(`GVE ${selectedGve}`);
+    if (selectedMunicipio) parts.push(`município ${selectedMunicipio}`);
+    if (seStart != null || seEnd != null) parts.push(`semana epidemiológica ${seStart ?? 1} a ${seEnd ?? 53}`);
+    return parts.filter(Boolean).join(" ");
+  }
+
   const report = useQuery<ReportData>({
     queryKey: ["notifications-report", selectedYear, selectedGve, selectedMunicipio, seStart, seEnd],
     queryFn: async () => {
@@ -391,7 +404,7 @@ export function NotificationsReportView() {
       if (!response.ok) throw new Error(data.error ?? "Erro ao calcular canal endemico");
       return data;
     },
-    enabled: showEndemic || tab === "canal"
+    enabled: showEndemic || activeTab === "canal" || activeTab === "situacao"
   });
 
   const rates = useQuery<CevespRatesData>({
@@ -417,7 +430,7 @@ export function NotificationsReportView() {
       const response = await fetch("/api/notificacoes/pergunta", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question })
+        body: JSON.stringify({ question: buildFilteredQuestion() })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Erro ao consultar banco");
@@ -539,7 +552,7 @@ export function NotificationsReportView() {
               {(seStart || seEnd) ? ` · SE ${seStart ?? 1}-${seEnd ?? 53}` : ""}
             </h1>
             <p className="mt-0.5 text-sm text-muted-foreground">
-              Aprofundamento da Sala de Situação: consulta ao banco, canal endêmico, qualidade e saídas técnicas.
+              Aprofundamento da Sala de Situação: indicadores, canal endêmico, qualidade e consulta ao banco.
             </p>
             <Link href="/dashboard" className="mt-1 inline-flex text-xs font-medium text-primary underline">
               Voltar para a Sala de Situação
@@ -637,7 +650,7 @@ export function NotificationsReportView() {
           </div>
         </div>
 
-        <div className="mt-4 flex gap-1 overflow-x-auto rounded-lg border bg-muted/30 p-1 print-hide" data-print-hide>
+        {!section && <div className="mt-4 flex gap-1 overflow-x-auto rounded-lg border bg-muted/30 p-1 print-hide" data-print-hide>
           {tabs.map((item) => {
             const Icon = item.icon;
             return (
@@ -648,7 +661,7 @@ export function NotificationsReportView() {
                   if (item.id === "canal") setShowEndemic(true);
                 }}
                 className={`flex h-9 items-center gap-2 whitespace-nowrap rounded-md px-3 text-sm transition-colors ${
-                  tab === item.id ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                  activeTab === item.id ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 <Icon className="h-4 w-4" />
@@ -656,7 +669,7 @@ export function NotificationsReportView() {
               </button>
             );
           })}
-        </div>
+        </div>}
       </div>
 
       <div className="space-y-6 p-6">
@@ -681,7 +694,7 @@ export function NotificationsReportView() {
           </Card>
         )}
 
-        {tab === "situacao" && report.data && (
+        {activeTab === "situacao" && report.data && (
           <div className="space-y-6">
             <div className="flex items-center justify-between gap-2 print-hide" data-print-hide>
               <div className="text-xs text-muted-foreground">
@@ -764,12 +777,81 @@ export function NotificationsReportView() {
             {rates.data && <CevespRatesPanel data={rates.data} />}
 
             <RankingList title="Unidades notificadoras" items={report.data.indicators.topUnits ?? []} />
+
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-base font-semibold">Canal endêmico</h2>
+                <p className="text-sm text-muted-foreground">Série histórica para detectar semanas acima do esperado e apoiar decisão de investigação.</p>
+              </div>
+              {endemic.isFetching && (
+                <Card><CardContent className="py-6 text-center text-sm text-muted-foreground">Calculando canal endêmico...</CardContent></Card>
+              )}
+              {endemic.isError && (
+                <Card className="border-destructive">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-destructive">
+                      <AlertTriangle className="h-5 w-5" />
+                      Erro no canal endêmico
+                    </CardTitle>
+                    <CardDescription>{(endemic.error as Error).message}</CardDescription>
+                  </CardHeader>
+                </Card>
+              )}
+              {endemic.data && endemic.data.length > 0 && <EndemicChannelChart data={endemic.data} />}
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-base font-semibold">Saídas técnicas</h2>
+                <p className="text-sm text-muted-foreground">Exportações, boletim e encaminhamentos do recorte selecionado.</p>
+              </div>
+              <div className="grid gap-4 md:grid-cols-3">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Boletim técnico</CardTitle>
+                    <CardDescription>Documento Word com situação epidemiológica e recomendações.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Button onClick={downloadBoletim}>
+                      <Download className="h-4 w-4" />
+                      Baixar boletim
+                    </Button>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Chat epidemiológico</CardTitle>
+                    <CardDescription>Para perguntas livres, interpretação e redação de relatório.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Button asChild variant="outline"><Link href="/chat">Abrir chat</Link></Button>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Sincronização</CardTitle>
+                    <CardDescription>Exportar/importar banco quando estiver fora da rede interna.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Button asChild variant="outline"><Link href="/sincronizacao">Abrir sincronização</Link></Button>
+                  </CardContent>
+                </Card>
+              </div>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Recomendações para boletim</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm text-muted-foreground">
+                  {report.data.bulletinSections.recomendacoes.map((item, index) => <p key={index}>{item}</p>)}
+                </CardContent>
+              </Card>
+            </div>
           </div>
         )}
 
-        {tab === "situacao" && !report.data && rates.data && <CevespRatesPanel data={rates.data} />}
+        {activeTab === "situacao" && !report.data && rates.data && <CevespRatesPanel data={rates.data} />}
 
-        {tab === "consulta" && (
+        {activeTab === "consulta" && (
           <Card>
             <CardHeader>
               <CardTitle>Perguntar ao banco CEVESP</CardTitle>
@@ -883,7 +965,7 @@ export function NotificationsReportView() {
           </Card>
         )}
 
-        {tab === "canal" && (
+        {activeTab === "canal" && (
           <div className="space-y-4">
             {endemic.isFetching && (
               <Card><CardContent className="py-6 text-center text-sm text-muted-foreground">Calculando canal endêmico...</CardContent></Card>
@@ -903,7 +985,7 @@ export function NotificationsReportView() {
           </div>
         )}
 
-        {tab === "saidas" && (
+        {activeTab === "saidas" && (
           <div className="space-y-4">
             <div className="grid gap-4 md:grid-cols-3">
               <Card>

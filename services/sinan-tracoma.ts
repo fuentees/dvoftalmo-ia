@@ -246,6 +246,7 @@ function parseQuestion(question: string) {
   const yearBetween = lower.match(/\b(?:de|entre)\s+(20\d{2}|19\d{2})\s+(?:a|ate|e)\s+(20\d{2}|19\d{2})\b/);
   const singleYear = lower.match(/\b(?:em|no|ano de|ano)\s+(20\d{2}|19\d{2})\b/) ?? lower.match(/\b(20\d{2}|19\d{2})\b/);
   const municipio = lower.match(/(?:municipio|munic)\s+(?:de\s+)?([a-z0-9\s]+?)(?=\s+(?:em|no|na|por|de|entre|ano|anos)\b|$)/)?.[1]?.trim();
+  const gve = lower.match(/\bgve\s+(?:de\s+)?([a-z0-9\s]+?)(?=\s+(?:em|no|na|por|de|entre|ano|anos|municipio|munic)\b|$)/)?.[1]?.trim();
   const agravo = lower.match(/agravo\s+(?:de\s+)?([a-z0-9\s]+?)(?=\s+(?:em|no|na|por|de|entre|ano|anos|banco)\b|$)/)?.[1]?.trim()
     ?? (lower.includes("tracoma") ? "tracoma" : undefined);
 
@@ -256,6 +257,7 @@ function parseQuestion(question: string) {
     yearStart: yearBetween ? Number(yearBetween[1]) : singleYear ? Number(singleYear[1]) : undefined,
     yearEnd: yearBetween ? Number(yearBetween[2]) : singleYear ? Number(singleYear[1]) : undefined,
     municipio,
+    gve,
     agravo,
     limit: Number(lower.match(/\btop\s*(\d+)/)?.[1] ?? 100)
   };
@@ -341,6 +343,7 @@ export async function runSinanTracomaAnalysis(question: string) {
   if (parsed.yearStart) query = query.gte("ano", parsed.yearStart);
   if (parsed.yearEnd) query = query.lte("ano", parsed.yearEnd);
   if (parsed.municipio) query = query.ilike("municipio", `%${parsed.municipio}%`);
+  if (parsed.gve) query = query.ilike("gve", `%${parsed.gve}%`);
 
   const { data, error } = await query.limit(100000);
   if (error) throw new Error(`SINAN Tracoma: ${error.message}`);

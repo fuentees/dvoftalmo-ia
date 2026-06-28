@@ -2,20 +2,23 @@
 
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Activity, ShieldAlert } from "lucide-react";
+import { Activity, Database, ShieldAlert } from "lucide-react";
 import { TracomaAnaliseView } from "@/components/tracoma/tracoma-analise-view";
+import { TracomaConsultaView } from "@/components/tracoma/tracoma-consulta-view";
 import { SinanQualidadeView } from "@/components/sinan/sinan-qualidade-view";
 
-type OuterTab = "analise" | "qualidade";
+type OuterTab = "situacao" | "qualidade" | "consulta";
 
 const outerTabs: Array<{ id: OuterTab; label: string; icon: React.ElementType }> = [
-  { id: "analise",   label: "Análise Epidemiológica", icon: Activity    },
-  { id: "qualidade", label: "Qualidade dos Dados",    icon: ShieldAlert }
+  { id: "situacao",  label: "Situação Epidemiológica", icon: Activity },
+  { id: "qualidade", label: "Qualidade dos Dados",     icon: ShieldAlert },
+  { id: "consulta",  label: "Consulta",                icon: Database }
 ];
 
 export function TracomaHubView() {
   const searchParams = useSearchParams();
-  const initial: OuterTab = searchParams.get("tab") === "qualidade" ? "qualidade" : "analise";
+  const requestedTab = searchParams.get("tab");
+  const initial: OuterTab = requestedTab === "qualidade" || requestedTab === "consulta" ? requestedTab : "situacao";
   const [tab, setTab] = useState<OuterTab>(initial);
 
   return (
@@ -47,8 +50,9 @@ export function TracomaHubView() {
       </div>
 
       <div className="flex-1">
-        {tab === "analise"   && <TracomaAnaliseView />}
+        {tab === "situacao"  && <TracomaAnaliseView />}
         {tab === "qualidade" && <SinanQualidadeView />}
+        {tab === "consulta"  && <TracomaConsultaView />}
       </div>
     </div>
   );

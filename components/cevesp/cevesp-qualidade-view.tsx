@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PagedTable, type PagedColumn } from "@/components/ui/paged-table";
+import { listarGvesSp, listarMunicipiosPorGve } from "@/lib/municipios-sp";
 import type { InvalidRecord } from "@/services/cevesp-corrections";
 
 type CevespTab = "registros" | "por_ano" | "por_gve" | "por_municipio" | "completude";
@@ -631,6 +632,9 @@ export function CevespQualidadeView() {
   const [tab, setTab]             = useState<CevespTab>("registros");
   const [filterType, setFilterType] = useState<string>("todos");
   const [recordQuery, setRecordQuery] = useState("");
+  const [anoFilter, setAnoFilter] = useState("");
+  const [gveFilter, setGveFilter] = useState("");
+  const [municipioFilter, setMunicipioFilter] = useState("");
   const [page, setPage] = useState(0);
   const [selected, setSelected]   = useState<Set<string>>(new Set());
   const [proposeMsg, setProposeMsg] = useState<{ type: "ok" | "error"; text: string } | null>(null);
@@ -642,9 +646,12 @@ export function CevespQualidadeView() {
     setSortKeyRec(key);
   };
   const pageSize = 100;
+  const gveOptions = useMemo(() => listarGvesSp(), []);
+  const municipioOptions = useMemo(() => listarMunicipiosPorGve(gveFilter), [gveFilter]);
 
   function handleSelectAno(ano: number) {
     setRecordQuery(String(ano));
+    setAnoFilter(String(ano));
     setPage(0);
     setSelected(new Set());
     setTab("registros");
@@ -658,7 +665,7 @@ export function CevespQualidadeView() {
   }
 
   const { data, isLoading, isError, error, refetch } = useQuery<QualidadeData, ApiError>({
-    queryKey: ["cevesp-qualidade", filterType, recordQuery, page],
+    queryKey: ["cevesp-qualidade", filterType, recordQuery, anoFilter, gveFilter, municipioFilter, page],
     queryFn: async () => {
       const params = new URLSearchParams({
         limit: String(pageSize),
@@ -666,6 +673,9 @@ export function CevespQualidadeView() {
         issue: filterType,
         q: recordQuery
       });
+      if (anoFilter) params.set("ano", anoFilter);
+      if (gveFilter) params.set("gve", gveFilter);
+      if (municipioFilter) params.set("municipio", municipioFilter);
       const res  = await fetch(`/api/cevesp/qualidade?${params.toString()}`);
       const json = await res.json();
       if (!res.ok) throw json as ApiError;
@@ -730,6 +740,9 @@ export function CevespQualidadeView() {
   function resetRecordFilters() {
     setFilterType("todos");
     setRecordQuery("");
+    setAnoFilter("");
+    setGveFilter("");
+    setMunicipioFilter("");
     setPage(0);
     setSelected(new Set());
   }
@@ -739,6 +752,9 @@ export function CevespQualidadeView() {
       q: recordQuery,
       format: "csv"
     });
+    if (anoFilter) params.set("ano", anoFilter);
+    if (gveFilter) params.set("gve", gveFilter);
+    if (municipioFilter) params.set("municipio", municipioFilter);
     window.location.href = `/api/cevesp/qualidade?${params.toString()}`;
   }
 
@@ -814,6 +830,55 @@ export function CevespQualidadeView() {
           </Button>
         )}
       </div>
+
+      <Card>
+        <CardContent className="pt-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-muted-foreground">Ano</label>
+              <input
+                type="number"
+                value={anoFilter}
+                onChange={(event) => { setAnoFilter(event.target.value); setPage(0); setSelected(new Set()); }}
+                placeholder="Todos"
+                className="h-9 w-28 rounded-md border bg-background px-2 text-sm"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-muted-foreground">GVE</label>
+              <select
+                value={gveFilter}
+                onChange={(event) => {
+                  setGveFilter(event.target.value);
+                  setMunicipioFilter("");
+                  setPage(0);
+                  setSelected(new Set());
+                }}
+                className="h-9 min-w-[180px] rounded-md border bg-background px-2 text-sm"
+              >
+                <option value="">Todos os GVEs</option>
+                {gveOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-muted-foreground">Município</label>
+              <select
+                value={municipioFilter}
+                onChange={(event) => { setMunicipioFilter(event.target.value); setPage(0); setSelected(new Set()); }}
+                className="h-9 min-w-[180px] rounded-md border bg-background px-2 text-sm"
+              >
+                <option value="">Todos os municípios</option>
+                {municipioOptions.map((item) => <option key={item.codigo} value={item.nome}>{item.nome}</option>)}
+              </select>
+            </div>
+            {(anoFilter || gveFilter || municipioFilter) && (
+              <Button variant="ghost" onClick={resetRecordFilters} className="text-muted-foreground">
+                Limpar recorte
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Summary cards */}
       <div className="grid gap-3 sm:grid-cols-3">
