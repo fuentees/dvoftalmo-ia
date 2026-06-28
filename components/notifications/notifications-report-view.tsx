@@ -11,7 +11,7 @@ import {
   MessageSquareText,
   RefreshCw
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,6 +23,12 @@ import { listarMunicipiosPorGve } from "@/lib/municipios-sp";
 type HubTab = "situacao" | "consulta" | "canal" | "saidas";
 type NotificationsReportViewProps = {
   section?: "situacao" | "consulta";
+  externalFilters?: {
+    year?: number;
+    gve?: string;
+    municipio?: string;
+  };
+  hideFilters?: boolean;
 };
 
 type ReportData = {
@@ -142,6 +148,24 @@ const guidedQuestions = [
   "Taxa de incidência por município no último ano"
 ];
 
+const structuredMetrics = [
+  "Total de casos",
+  "Notificações",
+  "Surtos",
+  "Distribuição por sexo",
+  "Distribuição por faixa etária",
+  "Taxa de incidência"
+];
+
+const structuredDimensions = [
+  "por ano",
+  "por mês",
+  "por semana epidemiológica",
+  "por GVE",
+  "por município",
+  "por unidade notificadora"
+];
+
 function num(value: unknown) {
   return Number(value ?? 0).toLocaleString("pt-BR");
 }
@@ -190,6 +214,33 @@ function MetricCard({ label, value, detail, tone = "default", change }: {
           </div>
         )}
         {detail && <div className="mt-1 text-xs text-muted-foreground">{detail}</div>}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ExecutiveSummary({ report, quality }: { report?: ReportData; quality?: QualityData }) {
+  const topGve = report?.indicators.topGves[0];
+  const topMuni = report?.indicators.topMunicipalities[0];
+  const alert = report?.alerts[0];
+  const qualityTotal = quality?.total ?? 0;
+  const risk = riskFromReport(report, quality);
+  const nextAction = alert
+    ? "Investigar alerta e validar município/GVE com maior carga."
+    : qualityTotal > 0
+      ? "Revisar pendências de qualidade antes de divulgar o recorte."
+      : "Manter monitoramento semanal e registrar devolutiva técnica.";
+  return (
+    <Card className="border-primary/20 bg-primary/5">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">Resumo executivo</CardTitle>
+        <CardDescription>Leitura rápida para decisão do recorte selecionado.</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3 md:grid-cols-4">
+        <InfoItem label="Risco" value={risk.label} />
+        <InfoItem label="Onde olhar primeiro" value={topMuni?.name ?? topGve?.name ?? "Sem território predominante"} />
+        <InfoItem label="Principal sinal" value={alert?.title ?? `${qualityTotal.toLocaleString("pt-BR")} pendência(s) de qualidade`} />
+        <InfoItem label="Próxima ação" value={nextAction} />
       </CardContent>
     </Card>
   );
@@ -315,10 +366,12 @@ function CevespRatesPanel({ data }: { data: CevespRatesData }) {
   );
 }
 
-export function NotificationsReportView({ section }: NotificationsReportViewProps = {}) {
+export function NotificationsReportView({ section, externalFilters, hideFilters = false }: NotificationsReportViewProps = {}) {
   const [tab, setTab] = useState<HubTab>("situacao");
   const activeTab: HubTab = section ?? tab;
   const [question, setQuestion] = useState("Total de casos por GVE dos últimos 5 anos por mês");
+  const [structuredMetric, setStructuredMetric] = useState("Total de casos");
+  const [structuredDimension, setStructuredDimension] = useState("por GVE");
   const [showEndemic, setShowEndemic] = useState(false);
   const [selectedYear, setSelectedYear] = useState<number | undefined>(undefined);
   const [selectedGve, setSelectedGve] = useState<string>("");
@@ -328,6 +381,15 @@ export function NotificationsReportView({ section }: NotificationsReportViewProp
   const municipioOptions = useMemo(() => listarMunicipiosPorGve(selectedGve), [selectedGve]);
   const seStart = seInicio != null && seFim != null ? Math.min(seInicio, seFim) : seInicio;
   const seEnd = seInicio != null && seFim != null ? Math.max(seInicio, seFim) : seFim;
+
+  useEffect(() => {
+    if (!externalFilters) return;
+    setSelectedYear(externalFilters.year);
+    setSelectedGve(externalFilters.gve ?? "");
+    setSelectedMunicipio(externalFilters.municipio ?? "");
+    setSeInicio(undefined);
+    setSeFim(undefined);
+  }, [externalFilters]);
 
   const anosQuery = useQuery<{ anos: number[] }>({
     queryKey: ["cevesp-anos"],
@@ -365,6 +427,10 @@ export function NotificationsReportView({ section }: NotificationsReportViewProp
     if (selectedMunicipio) parts.push(`município ${selectedMunicipio}`);
     if (seStart != null || seEnd != null) parts.push(`semana epidemiológica ${seStart ?? 1} a ${seEnd ?? 53}`);
     return parts.filter(Boolean).join(" ");
+  }
+
+  function applyStructuredQuestion() {
+    setQuestion(`${structuredMetric} ${structuredDimension}`);
   }
 
   const report = useQuery<ReportData>({
@@ -558,7 +624,7 @@ export function NotificationsReportView({ section }: NotificationsReportViewProp
               Voltar para a Sala de Situação
             </Link>
           </div>
-          <div className="flex flex-wrap items-center gap-2 print-hide" data-print-hide>
+          {!hideFilters && <div className="flex flex-wrap items-center gap-2 print-hide" data-print-hide>
             <select
               value={selectedYear ?? ""}
               onChange={e => {
@@ -647,7 +713,7 @@ export function NotificationsReportView({ section }: NotificationsReportViewProp
                 Perguntar ao agente
               </Link>
             </Button>
-          </div>
+          </div>}
         </div>
 
         {!section && <div className="mt-4 flex gap-1 overflow-x-auto rounded-lg border bg-muted/30 p-1 print-hide" data-print-hide>
@@ -696,6 +762,7 @@ export function NotificationsReportView({ section }: NotificationsReportViewProp
 
         {activeTab === "situacao" && report.data && (
           <div className="space-y-6">
+            <ExecutiveSummary report={report.data} quality={quality.data} />
             <div className="flex items-center justify-between gap-2 print-hide" data-print-hide>
               <div className="text-xs text-muted-foreground">
                 {(() => {
@@ -860,6 +927,25 @@ export function NotificationsReportView({ section }: NotificationsReportViewProp
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+                <select
+                  value={structuredMetric}
+                  onChange={(event) => setStructuredMetric(event.target.value)}
+                  className="h-9 rounded-md border bg-background px-2 text-sm"
+                >
+                  {structuredMetrics.map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+                <select
+                  value={structuredDimension}
+                  onChange={(event) => setStructuredDimension(event.target.value)}
+                  className="h-9 rounded-md border bg-background px-2 text-sm"
+                >
+                  {structuredDimensions.map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+                <Button type="button" variant="outline" onClick={applyStructuredQuestion}>
+                  Montar tabela
+                </Button>
+              </div>
               <Textarea
                 value={question}
                 onChange={(event) => setQuestion(event.target.value)}

@@ -627,7 +627,15 @@ function CompletudeCevespPanel({ data }: { data: CompletudeCevespData }) {
   );
 }
 
-export function CevespQualidadeView() {
+type CevespQualidadeViewProps = {
+  externalFilters?: {
+    year?: number;
+    gve?: string;
+    municipio?: string;
+  };
+};
+
+export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProps = {}) {
   const qc = useQueryClient();
   const [tab, setTab]             = useState<CevespTab>("registros");
   const [filterType, setFilterType] = useState<string>("todos");
@@ -648,6 +656,15 @@ export function CevespQualidadeView() {
   const pageSize = 100;
   const gveOptions = useMemo(() => listarGvesSp(), []);
   const municipioOptions = useMemo(() => listarMunicipiosPorGve(gveFilter), [gveFilter]);
+
+  useEffect(() => {
+    if (!externalFilters) return;
+    setAnoFilter(externalFilters.year ? String(externalFilters.year) : "");
+    setGveFilter(externalFilters.gve ?? "");
+    setMunicipioFilter(externalFilters.municipio ?? "");
+    setPage(0);
+    setSelected(new Set());
+  }, [externalFilters]);
 
   function handleSelectAno(ano: number) {
     setRecordQuery(String(ano));

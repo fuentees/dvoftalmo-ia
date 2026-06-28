@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Database, Download, MessageSquareText, RefreshCw, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +30,25 @@ const guidedQuestions = [
   "Registros individuais por município e ano",
   "Casos com forma clínica por ano",
   "Qualidade dos registros individuais por município"
+];
+
+const banks = [
+  { value: "TRACONET", label: "TRACONET individual" },
+  { value: "NOTTRACONET", label: "NOTTRACONET consolidado" }
+];
+
+const indicators = [
+  { value: "Total de casos", label: "Total de casos" },
+  { value: "Total de positivos", label: "Positivos" },
+  { value: "Registros individuais", label: "Registros individuais" },
+  { value: "Qualidade dos registros", label: "Qualidade" }
+];
+
+const dimensions = [
+  { value: "por ano", label: "Ano" },
+  { value: "por GVE", label: "GVE" },
+  { value: "por município", label: "Município" },
+  { value: "por banco", label: "Banco" }
 ];
 
 function buildQuestion(question: string, filters: { gve: string; municipio: string; yearStart: string; yearEnd: string }) {
@@ -83,8 +102,21 @@ function ResultTable({ columns, rows }: { columns: string[]; rows: Array<Record<
   );
 }
 
-export function TracomaConsultaView() {
+type TracomaConsultaViewProps = {
+  externalFilters?: {
+    yearStart?: string;
+    yearEnd?: string;
+    gve?: string;
+    municipio?: string;
+  };
+  hideFilters?: boolean;
+};
+
+export function TracomaConsultaView({ externalFilters, hideFilters = false }: TracomaConsultaViewProps = {}) {
   const [question, setQuestion] = useState("Total de casos por ano no TRACONET");
+  const [bank, setBank] = useState("TRACONET");
+  const [indicator, setIndicator] = useState("Total de casos");
+  const [dimension, setDimension] = useState("por ano");
   const [gve, setGve] = useState("");
   const [municipio, setMunicipio] = useState("");
   const [yearStart, setYearStart] = useState("");
@@ -92,6 +124,18 @@ export function TracomaConsultaView() {
 
   const gveOptions = useMemo(() => listarGvesSp(), []);
   const municipioOptions = useMemo(() => listarMunicipiosPorGve(gve), [gve]);
+
+  useEffect(() => {
+    if (!externalFilters) return;
+    setGve(externalFilters.gve ?? "");
+    setMunicipio(externalFilters.municipio ?? "");
+    setYearStart(externalFilters.yearStart ?? "");
+    setYearEnd(externalFilters.yearEnd ?? "");
+  }, [externalFilters]);
+
+  function applyStructuredQuestion() {
+    setQuestion(`${indicator} ${dimension} no ${bank}`);
+  }
 
   const ask = useMutation<AskData>({
     mutationFn: async () => {
@@ -122,7 +166,7 @@ export function TracomaConsultaView() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 md:grid-cols-4">
+          {!hideFilters && <div className="grid gap-3 md:grid-cols-4">
             <select
               value={gve}
               onChange={(event) => { setGve(event.target.value); setMunicipio(""); }}
@@ -153,6 +197,33 @@ export function TracomaConsultaView() {
               onChange={(event) => setYearEnd(event.target.value)}
               className="h-9 rounded-md border bg-background px-2 text-sm"
             />
+          </div>}
+
+          <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto]">
+            <select
+              value={bank}
+              onChange={(event) => setBank(event.target.value)}
+              className="h-9 rounded-md border bg-background px-2 text-sm"
+            >
+              {banks.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+            </select>
+            <select
+              value={indicator}
+              onChange={(event) => setIndicator(event.target.value)}
+              className="h-9 rounded-md border bg-background px-2 text-sm"
+            >
+              {indicators.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+            </select>
+            <select
+              value={dimension}
+              onChange={(event) => setDimension(event.target.value)}
+              className="h-9 rounded-md border bg-background px-2 text-sm"
+            >
+              {dimensions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+            </select>
+            <Button type="button" variant="outline" onClick={applyStructuredQuestion}>
+              Montar tabela
+            </Button>
           </div>
 
           <Textarea

@@ -1,10 +1,11 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Activity, Database, ShieldAlert } from "lucide-react";
 import { NotificationsReportView } from "@/components/notifications/notifications-report-view";
 import { CevespQualidadeView } from "@/components/cevesp/cevesp-qualidade-view";
+import { listarGvesSp, listarMunicipiosPorGve } from "@/lib/municipios-sp";
 
 type OuterTab = "situacao" | "qualidade" | "consulta";
 
@@ -19,6 +20,16 @@ export function ConjuntiviteHubView() {
   const requestedTab = searchParams.get("tab");
   const initialTab: OuterTab = requestedTab === "qualidade" || requestedTab === "consulta" ? requestedTab : "situacao";
   const [tab, setTab] = useState<OuterTab>(initialTab);
+  const [year, setYear] = useState("");
+  const [gve, setGve] = useState("");
+  const [municipio, setMunicipio] = useState("");
+  const gveOptions = useMemo(() => listarGvesSp(), []);
+  const municipioOptions = useMemo(() => listarMunicipiosPorGve(gve), [gve]);
+  const filters = useMemo(() => ({
+    year: year ? Number(year) : undefined,
+    gve,
+    municipio
+  }), [year, gve, municipio]);
 
   return (
     <div className="flex flex-col">
@@ -46,12 +57,46 @@ export function ConjuntiviteHubView() {
             );
           })}
         </div>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <input
+            type="number"
+            value={year}
+            onChange={(event) => setYear(event.target.value)}
+            placeholder="Ano"
+            className="h-8 w-24 rounded-md border bg-background px-2 text-xs"
+          />
+          <select
+            value={gve}
+            onChange={(event) => { setGve(event.target.value); setMunicipio(""); }}
+            className="h-8 min-w-40 rounded-md border bg-background px-2 text-xs"
+          >
+            <option value="">Todos os GVEs</option>
+            {gveOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>
+          <select
+            value={municipio}
+            onChange={(event) => setMunicipio(event.target.value)}
+            className="h-8 min-w-40 rounded-md border bg-background px-2 text-xs"
+          >
+            <option value="">Todos os municípios</option>
+            {municipioOptions.map((item) => <option key={item.codigo} value={item.nome}>{item.nome}</option>)}
+          </select>
+          {(year || gve || municipio) && (
+            <button
+              type="button"
+              onClick={() => { setYear(""); setGve(""); setMunicipio(""); }}
+              className="h-8 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              Limpar
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex-1">
-        {tab === "situacao"  && <NotificationsReportView section="situacao" />}
-        {tab === "qualidade" && <CevespQualidadeView />}
-        {tab === "consulta"  && <NotificationsReportView section="consulta" />}
+        {tab === "situacao"  && <NotificationsReportView section="situacao" externalFilters={filters} hideFilters />}
+        {tab === "qualidade" && <CevespQualidadeView externalFilters={filters} />}
+        {tab === "consulta"  && <NotificationsReportView section="consulta" externalFilters={filters} hideFilters />}
       </div>
     </div>
   );

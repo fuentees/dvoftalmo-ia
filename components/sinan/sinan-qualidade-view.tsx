@@ -8,7 +8,7 @@ import {
   MapPin, Stethoscope, BarChart2, Download, Search, Target, ChevronDown
 } from "lucide-react";
 import { PagedTable } from "@/components/ui/paged-table";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CartesianGrid, Line, LineChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -1711,7 +1711,16 @@ function QualidadeDadosTab({ data, clinicalMappingMissing, yearChartData }: {
 
 type PageTab = "situacao" | "auditoria";
 
-export function SinanQualidadeView() {
+type SinanQualidadeViewProps = {
+  externalFilters?: {
+    yearStart?: string;
+    yearEnd?: string;
+    gve?: string;
+    municipio?: string;
+  };
+};
+
+export function SinanQualidadeView({ externalFilters }: SinanQualidadeViewProps = {}) {
   const [municipio, setMunicipio] = useState("");
   const [gve,       setGve]       = useState("");
   const [yearStart, setYearStart] = useState("");
@@ -1720,6 +1729,21 @@ export function SinanQualidadeView() {
   const [pageTab,   setPageTab]   = useState<PageTab>("situacao");
   const gveOptions = useMemo(() => listarGvesSp(), []);
   const municipioOptions = useMemo(() => listarMunicipiosPorGve(gve), [gve]);
+
+  useEffect(() => {
+    if (!externalFilters) return;
+    const nextFilters = {
+      municipio: externalFilters.municipio ?? "",
+      gve: externalFilters.gve ?? "",
+      yearStart: externalFilters.yearStart ?? "",
+      yearEnd: externalFilters.yearEnd ?? ""
+    };
+    setMunicipio(nextFilters.municipio);
+    setGve(nextFilters.gve);
+    setYearStart(nextFilters.yearStart);
+    setYearEnd(nextFilters.yearEnd);
+    setFilters(nextFilters);
+  }, [externalFilters]);
 
   const buildFilterParams = (source: Record<string, string>) => {
     const params = new URLSearchParams();

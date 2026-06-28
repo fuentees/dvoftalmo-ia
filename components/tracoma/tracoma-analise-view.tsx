@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { listarGvesSp, listarMunicipiosPorGve } from "@/lib/municipios-sp";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
@@ -72,6 +72,13 @@ type TracomaDemographics = {
   ageByForm: DemographicCross[];
 };
 
+type TracomaFilters = {
+  yearStart?: string;
+  yearEnd?: string;
+  gve?: string;
+  municipio?: string;
+};
+
 function num(value: unknown) {
   return Number(value ?? 0).toLocaleString("pt-BR");
 }
@@ -106,6 +113,58 @@ function MetricCard({
           {typeof value === "number" ? num(value) : value}
         </div>
         {detail && <div className="mt-1 text-xs text-muted-foreground">{detail}</div>}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ExecutiveSummary({
+  totalPositivos,
+  prevMedia,
+  muniAcimaMeta,
+  demographics
+}: {
+  totalPositivos: number;
+  prevMedia: number | null;
+  muniAcimaMeta: number;
+  demographics?: TracomaDemographics;
+}) {
+  const missingClinical = demographics ? demographics.totalRows - demographics.withClinicalForm : 0;
+  const risk = muniAcimaMeta > 0 || (prevMedia ?? 0) >= 5 ? "Atenção alta" : totalPositivos > 0 ? "Monitorar" : "Estável";
+  const nextAction = muniAcimaMeta > 0
+    ? "Priorizar municípios acima de 5% e revisar estratégia de busca ativa."
+    : missingClinical > 0
+      ? "Completar forma clínica antes de consolidar leitura epidemiológica."
+      : "Manter vigilância e registrar acompanhamento dos territórios.";
+  const itemClass = "rounded-md border bg-background p-3";
+  const labelClass = "text-xs font-medium uppercase text-muted-foreground";
+  const valueClass = "mt-1 text-sm font-semibold leading-snug";
+  return (
+    <Card className="border-primary/20 bg-primary/5">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">Resumo executivo</CardTitle>
+        <CardDescription>Leitura rápida para decisão do recorte selecionado.</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3 md:grid-cols-4">
+        <div className={itemClass}>
+          <div className={labelClass}>Risco</div>
+          <div className={valueClass}>{risk}</div>
+          <div className="mt-1 text-xs text-muted-foreground">síntese operacional</div>
+        </div>
+        <div className={itemClass}>
+          <div className={labelClass}>Onde agir</div>
+          <div className={valueClass}>{muniAcimaMeta.toLocaleString("pt-BR")}</div>
+          <div className="mt-1 text-xs text-muted-foreground">municípios acima da meta OMS</div>
+        </div>
+        <div className={itemClass}>
+          <div className={labelClass}>Sinal principal</div>
+          <div className={valueClass}>{prevMedia != null ? pct(prevMedia) : "—"}</div>
+          <div className="mt-1 text-xs text-muted-foreground">prevalência média TF/TI</div>
+        </div>
+        <div className={itemClass}>
+          <div className={labelClass}>Próxima ação</div>
+          <div className={valueClass}>{nextAction}</div>
+        </div>
       </CardContent>
     </Card>
   );
@@ -235,7 +294,7 @@ function DemographicsPanel({ data, loading }: { data?: TracomaDemographics; load
   );
 }
 
-export function TracomaAnaliseView() {
+export function TracomaAnaliseView({ externalFilters, hideFilters = false }: { externalFilters?: TracomaFilters; hideFilters?: boolean } = {}) {
   const qc = useQueryClient();
 
   // Pending inputs (user edits before clicking Filtrar)
@@ -260,6 +319,22 @@ export function TracomaAnaliseView() {
 
   const gveOptions = useMemo(() => listarGvesSp(), []);
   const municipioOptions = useMemo(() => listarMunicipiosPorGve(pendingGve), [pendingGve]);
+
+  useEffect(() => {
+    if (!externalFilters) return;
+    const nextGve = externalFilters.gve ?? "";
+    const nextMunicipio = externalFilters.municipio ?? "";
+    const nextStart = externalFilters.yearStart ? Number(externalFilters.yearStart) : undefined;
+    const nextEnd = externalFilters.yearEnd ? Number(externalFilters.yearEnd) : undefined;
+    setPendingGve(nextGve);
+    setPendingMunicipio(nextMunicipio);
+    setPendingYearStart(nextStart);
+    setPendingYearEnd(nextEnd);
+    setGve(nextGve);
+    setMunicipio(nextMunicipio);
+    setYearStart(nextStart);
+    setYearEnd(nextEnd);
+  }, [externalFilters]);
 
 
   const [taxaMapView, setTaxaMapView] = useState<"municipio" | "gve">("municipio");
@@ -413,7 +488,7 @@ export function TracomaAnaliseView() {
   return (
     <div className="space-y-6 p-6">
       {/* ── Filtros ── */}
-      <Card>
+      {!hideFilters && <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm">Filtros de análise</CardTitle>
           <CardDescription className="text-xs">
@@ -485,7 +560,7 @@ export function TracomaAnaliseView() {
             </div>
           )}
         </CardContent>
-      </Card>
+      </Card>}
 
       {/* ── Loading / Error ── */}
       {rates.isLoading && (
@@ -534,6 +609,14 @@ export function TracomaAnaliseView() {
               Exportar CSV
             </Button>
           </div>
+
+          {/* ── Indicadores ── */}
+          <ExecutiveSummary
+            totalPositivos={totalPositivos}
+            prevMedia={prevMedia}
+            muniAcimaMeta={muniAcimaMeta}
+            demographics={demographics.data}
+          />
 
           {/* ── Indicadores ── */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">

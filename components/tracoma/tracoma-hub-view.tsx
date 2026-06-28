@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Activity, Database, ShieldAlert } from "lucide-react";
 import { TracomaAnaliseView } from "@/components/tracoma/tracoma-analise-view";
 import { TracomaConsultaView } from "@/components/tracoma/tracoma-consulta-view";
 import { SinanQualidadeView } from "@/components/sinan/sinan-qualidade-view";
+import { listarGvesSp, listarMunicipiosPorGve } from "@/lib/municipios-sp";
 
 type OuterTab = "situacao" | "qualidade" | "consulta";
 
@@ -20,6 +21,13 @@ export function TracomaHubView() {
   const requestedTab = searchParams.get("tab");
   const initial: OuterTab = requestedTab === "qualidade" || requestedTab === "consulta" ? requestedTab : "situacao";
   const [tab, setTab] = useState<OuterTab>(initial);
+  const [yearStart, setYearStart] = useState("");
+  const [yearEnd, setYearEnd] = useState("");
+  const [gve, setGve] = useState("");
+  const [municipio, setMunicipio] = useState("");
+  const gveOptions = useMemo(() => listarGvesSp(), []);
+  const municipioOptions = useMemo(() => listarMunicipiosPorGve(gve), [gve]);
+  const filters = useMemo(() => ({ yearStart, yearEnd, gve, municipio }), [yearStart, yearEnd, gve, municipio]);
 
   return (
     <div className="flex flex-col">
@@ -47,12 +55,53 @@ export function TracomaHubView() {
             );
           })}
         </div>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <input
+            type="number"
+            value={yearStart}
+            onChange={(event) => setYearStart(event.target.value)}
+            placeholder="Ano início"
+            className="h-8 w-24 rounded-md border bg-background px-2 text-xs"
+          />
+          <input
+            type="number"
+            value={yearEnd}
+            onChange={(event) => setYearEnd(event.target.value)}
+            placeholder="Ano fim"
+            className="h-8 w-24 rounded-md border bg-background px-2 text-xs"
+          />
+          <select
+            value={gve}
+            onChange={(event) => { setGve(event.target.value); setMunicipio(""); }}
+            className="h-8 min-w-40 rounded-md border bg-background px-2 text-xs"
+          >
+            <option value="">Todos os GVEs</option>
+            {gveOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>
+          <select
+            value={municipio}
+            onChange={(event) => setMunicipio(event.target.value)}
+            className="h-8 min-w-40 rounded-md border bg-background px-2 text-xs"
+          >
+            <option value="">Todos os municípios</option>
+            {municipioOptions.map((item) => <option key={item.codigo} value={item.nome}>{item.nome}</option>)}
+          </select>
+          {(yearStart || yearEnd || gve || municipio) && (
+            <button
+              type="button"
+              onClick={() => { setYearStart(""); setYearEnd(""); setGve(""); setMunicipio(""); }}
+              className="h-8 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              Limpar
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex-1">
-        {tab === "situacao"  && <TracomaAnaliseView />}
-        {tab === "qualidade" && <SinanQualidadeView />}
-        {tab === "consulta"  && <TracomaConsultaView />}
+        {tab === "situacao"  && <TracomaAnaliseView externalFilters={filters} hideFilters />}
+        {tab === "qualidade" && <SinanQualidadeView externalFilters={filters} />}
+        {tab === "consulta"  && <TracomaConsultaView externalFilters={filters} hideFilters />}
       </div>
     </div>
   );
