@@ -371,8 +371,6 @@ async function fetchSinanRows(params: {
       .select("source_bank, agravo, ano, dt_notificacao, municipio, gve, drs, unidade, classificacao, criterio, evolucao, tratamento, conclusao, raw");
     if (params.bank) q = q.eq("source_bank", params.bank);
     if (params.agravo) q = q.ilike("agravo", `%${params.agravo}%`);
-    if (params.yearStart) q = q.or(`ano.is.null,ano.gte.${params.yearStart}`);
-    if (params.yearEnd) q = q.or(`ano.is.null,ano.lte.${params.yearEnd}`);
     if (params.municipio) q = q.ilike("municipio", `%${params.municipio}%`);
     if (params.gve) q = q.ilike("gve", `%${params.gve}%`);
     const { data, error } = await q.range(from, from + pageSize - 1);
@@ -380,6 +378,16 @@ async function fetchSinanRows(params: {
     const page = (data ?? []) as Array<Record<string, unknown>>;
     rows.push(...page);
     if (page.length < pageSize) break;
+  }
+  // Filtro de ano em JS: inclui linhas sem ano (null) e rejeita apenas anos fora do intervalo
+  if (params.yearStart || params.yearEnd) {
+    return rows.filter((row) => {
+      const ano = Number(row.ano);
+      if (!Number.isFinite(ano) || ano === 0) return true; // sem ano → sempre inclui
+      if (params.yearStart && ano < params.yearStart) return false;
+      if (params.yearEnd && ano > params.yearEnd) return false;
+      return true;
+    });
   }
   return rows;
 }
