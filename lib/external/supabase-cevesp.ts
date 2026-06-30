@@ -674,6 +674,91 @@ function buildCacheUnderstanding(analysis: CevespAnalysisInput) {
   };
 }
 
+// ── Histórico agregado para dashboard de gráficos ────────────────────────────
+
+export type CevespHistorico = {
+  byYear: Array<{ ano: number; casos: number }>;
+  byGveYear: Array<{ gve: string; ano: number; casos: number }>;
+  byYearMonth: Array<{ ano: number; mes: number; casos: number }>;
+  totalCasos: number;
+  anosComDados: number[];
+};
+
+export async function getCevespHistorico(opts?: {
+  gve?: string;
+  municipio?: string;
+  yearStart?: number;
+  yearEnd?: number;
+}): Promise<CevespHistorico> {
+  const analysis: CevespAnalysisInput = {
+    metric: "total_casos",
+    dimensions: [],
+    time_grain: "year",
+    date_range: opts?.yearStart || opts?.yearEnd
+      ? { type: "between", start: `${opts!.yearStart ?? 2000}-01-01`, end: `${opts!.yearEnd ?? new Date().getFullYear()}-12-31` }
+      : { type: "all" },
+    filters: [
+      ...(opts?.gve ? [{ field: "gve", operator: "contains" as const, value: opts.gve }] : []),
+      ...(opts?.municipio ? [{ field: "municipio", operator: "contains" as const, value: opts.municipio }] : []),
+    ],
+    limit: 500,
+  };
+
+  const rows = await fetchCacheRows(analysis, '"ANO","Mes","GVE_NOME","TotalCaso"');
+
+  const yearMap = new Map<number, number>();
+  const gveYearMap = new Map<string, Map<number, number>>();
+  const yearMonthMap = new Map<string, number>();
+
+  for (const row of rows) {
+    const ano = Number(row.ANO);
+    const mes = Number(row.Mes ?? 0);
+    const casos = Number(row.TotalCaso ?? 0);
+    const gve = String(row.GVE_NOME ?? "Nao informado");
+    if (!Number.isFinite(ano) || ano < 2000) continue;
+
+    yearMap.set(ano, (yearMap.get(ano) ?? 0) + casos);
+
+    if (!gveYearMap.has(gve)) gveYearMap.set(gve, new Map());
+    gveYearMap.get(gve)!.set(ano, (gveYearMap.get(gve)!.get(ano) ?? 0) + casos);
+
+    if (mes > 0 && mes <= 12) {
+      const key = `${ano}-${mes}`;
+      yearMonthMap.set(key, (yearMonthMap.get(key) ?? 0) + casos);
+    }
+  }
+
+  const allYears = Array.from(yearMap.keys()).sort((a, b) => a - b);
+  const byYear = allYears.map((ano) => ({ ano, casos: yearMap.get(ano) ?? 0 }));
+
+  const gveTotals = Array.from(gveYearMap.entries())
+    .map(([gve, m]) => ({ gve, total: Array.from(m.values()).reduce((s, v) => s + v, 0) }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 10);
+  const topGves = new Set(gveTotals.map((g) => g.gve));
+
+  const byGveYear: Array<{ gve: string; ano: number; casos: number }> = [];
+  for (const [gve, m] of gveYearMap.entries()) {
+    if (!topGves.has(gve)) continue;
+    for (const [ano, casos] of m.entries()) byGveYear.push({ gve, ano, casos });
+  }
+
+  const byYearMonth: Array<{ ano: number; mes: number; casos: number }> = Array.from(yearMonthMap.entries())
+    .map(([key, casos]) => {
+      const [ano, mes] = key.split("-").map(Number);
+      return { ano, mes, casos };
+    })
+    .sort((a, b) => a.ano - b.ano || a.mes - b.mes);
+
+  return {
+    byYear,
+    byGveYear,
+    byYearMonth,
+    totalCasos: byYear.reduce((s, r) => s + r.casos, 0),
+    anosComDados: allYears,
+  };
+}
+
 /** Verifica se há dados no cache e quando foi a última sincronização */
 export async function getCacheSyncInfo(): Promise<{
   hasData: boolean;

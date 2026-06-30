@@ -15,11 +15,13 @@ import {
   Stethoscope
 } from "lucide-react";
 import Link from "next/link";
+import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis } from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertsPanel } from "@/components/dashboard/alerts-panel";
 import type { CevespKpis } from "@/services/cevesp-kpis";
+import type { CevespHistorico } from "@/lib/external/supabase-cevesp";
 
 interface SinanSnapshot {
   totalTraconet?: number;
@@ -149,6 +151,31 @@ function KpiCard({
         {delta !== undefined && <DeltaBadge delta={delta} />}
       </CardContent>
     </Card>
+  );
+}
+
+function MiniSparkline({ data, color = "#2563eb" }: { data: Array<{ ano: number; value: number }>; color?: string }) {
+  if (data.length < 2) return null;
+  return (
+    <div className="h-14 w-full">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} margin={{ top: 2, right: 0, left: 0, bottom: 0 }} barSize={data.length > 12 ? undefined : 10}>
+          <XAxis dataKey="ano" tick={{ fontSize: 9 }} tickLine={false} axisLine={false} />
+          <Tooltip
+            content={({ active, payload }) => {
+              if (!active || !payload?.length) return null;
+              const p = payload[0];
+              return (
+                <div className="rounded border bg-background px-2 py-1 text-xs shadow">
+                  <span className="font-medium">{p.payload.ano}</span>: {Number(p.value).toLocaleString("pt-BR")}
+                </div>
+              );
+            }}
+          />
+          <Bar dataKey="value" fill={color} radius={[2, 2, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
 
@@ -328,10 +355,25 @@ export function DashboardView() {
     staleTime: 2 * 60 * 1000
   });
 
+  const historico = useQuery<CevespHistorico>({
+    queryKey: ["cevesp-historico-dash"],
+    queryFn: async () => {
+      const response = await fetch("/api/cevesp/historico");
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Erro");
+      return data;
+    },
+    retry: false,
+    staleTime: 10 * 60 * 1000
+  });
+
   const cevespState = cevespRisk(kpis.data);
   const tracomaState = tracomaRisk(sinan.data);
   const consolidatedByYear = sinan.data?.consolidatedMetricsByYear ?? [];
   const latestConsolidated = consolidatedByYear[consolidatedByYear.length - 1];
+
+  const cevespSparkData = (historico.data?.byYear ?? []).map((r) => ({ ano: r.ano, value: r.casos }));
+  const tracomaSparkData = consolidatedByYear.map((r) => ({ ano: r.ano, value: r.positivos }));
   const localAuthMode = process.env.NEXT_PUBLIC_DISABLE_AUTH === "true" && process.env.NODE_ENV !== "production";
 
   return (
@@ -359,8 +401,9 @@ export function DashboardView() {
                 sinan.refetch();
                 diagnostic.refetch();
                 priorities.refetch();
+                historico.refetch();
               }}
-              disabled={kpis.isFetching || sinan.isFetching || diagnostic.isFetching || priorities.isFetching}
+              disabled={kpis.isFetching || sinan.isFetching || diagnostic.isFetching || priorities.isFetching || historico.isFetching}
             >
               <RefreshCw className={`h-4 w-4 ${kpis.isFetching || sinan.isFetching || diagnostic.isFetching || priorities.isFetching ? "animate-spin" : ""}`} />
               Atualizar
@@ -440,21 +483,37 @@ export function DashboardView() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle>Agravos monitorados</CardTitle>
-              <CardDescription>Resumo executivo; o detalhe fica em Análises</CardDescription>
+              <CardDescription>Tendência histórica · série completa em Análises</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-2">
-              {[
-                { name: "Conjuntivites", source: "CEVESP", state: cevespState, href: "/conjuntivite" },
-                { name: "Tracoma", source: "SINAN", state: tracomaState, href: "/tracoma" }
-              ].map((item) => (
-                <Link key={item.name} href={item.href} className="flex items-center justify-between rounded-md border p-3 transition-colors hover:bg-muted/40">
+            <CardContent className="space-y-3">
+              <Link href="/conjuntivite" className="block rounded-md border p-3 transition-colors hover:bg-muted/40">
+                <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium">{item.name}</p>
-                    <p className="text-xs text-muted-foreground">{item.source}</p>
+                    <p className="text-sm font-medium">Conjuntivites</p>
+                    <p className="text-xs text-muted-foreground">CEVESP · casos por ano</p>
                   </div>
-                  <Badge className={item.state.cls}>{item.state.label}</Badge>
-                </Link>
-              ))}
+                  <Badge className={cevespState.cls}>{cevespState.label}</Badge>
+                </div>
+                {cevespSparkData.length >= 2 && (
+                  <div className="mt-2">
+                    <MiniSparkline data={cevespSparkData} color="#2563eb" />
+                  </div>
+                )}
+              </Link>
+              <Link href="/tracoma" className="block rounded-md border p-3 transition-colors hover:bg-muted/40">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Tracoma</p>
+                    <p className="text-xs text-muted-foreground">SINAN · positivos NOTTRACONET por ano</p>
+                  </div>
+                  <Badge className={tracomaState.cls}>{tracomaState.label}</Badge>
+                </div>
+                {tracomaSparkData.length >= 2 && (
+                  <div className="mt-2">
+                    <MiniSparkline data={tracomaSparkData} color="#d97706" />
+                  </div>
+                )}
+              </Link>
             </CardContent>
           </Card>
 

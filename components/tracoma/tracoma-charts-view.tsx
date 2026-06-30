@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Bar,
@@ -16,9 +16,10 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { RefreshCw } from "lucide-react";
+import { Download, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { exportChartSvg } from "@/lib/chart-export";
 import type { TracomaOverview } from "@/services/sinan-tracoma";
 
 const PALETTE = [
@@ -98,6 +99,11 @@ export function TracomaChartsView({ filters }: Props) {
     },
     staleTime: 5 * 60 * 1000,
   });
+
+  const refTraconet = useRef<HTMLDivElement>(null);
+  const refNtc = useRef<HTMLDivElement>(null);
+  const refFormas = useRef<HTMLDivElement>(null);
+  const refGve = useRef<HTMLDivElement>(null);
 
   if (isLoading) {
     return (
@@ -207,11 +213,18 @@ export function TracomaChartsView({ filters }: Props) {
       {/* ── Chart 1: Série histórica TRACONET + NOTTRACONET ──────────────── */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Série histórica — Casos individuais (TRACONET)</CardTitle>
-          <CardDescription className="text-xs">Um registro por caso notificado. Todos os anos com dados.</CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-sm">Série histórica — Casos individuais (TRACONET)</CardTitle>
+              <CardDescription className="text-xs">Um registro por caso notificado. Todos os anos com dados.</CardDescription>
+            </div>
+            <button onClick={() => exportChartSvg(refTraconet.current, "tracoma-traconet")} className="flex items-center gap-1 rounded border px-2 py-1 text-xs hover:bg-muted">
+              <Download className="h-3 w-3" /> PNG
+            </button>
+          </div>
         </CardHeader>
         <CardContent>
-          <div className="h-64">
+          <div ref={refTraconet} className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={mainSeries} margin={{ top: 4, right: 16, left: 4, bottom: 4 }}>
                 <CartesianGrid strokeDasharray="3 3" />
@@ -229,14 +242,21 @@ export function TracomaChartsView({ filters }: Props) {
       {data.totalExaminados > 0 && (
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Examinados, positivos e positividade — NOTTRACONET</CardTitle>
-            <CardDescription className="text-xs">
-              Dados consolidados por localidade. Linha vermelha = positividade (%) no eixo direito.
-              {avgPos != null && ` Média do período: ${pct(avgPos)}.`}
-            </CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-sm">Examinados, positivos e positividade — NOTTRACONET</CardTitle>
+                <CardDescription className="text-xs">
+                  Dados consolidados por localidade. Linha vermelha = positividade (%) no eixo direito.
+                  {avgPos != null && ` Média do período: ${pct(avgPos)}.`}
+                </CardDescription>
+              </div>
+              <button onClick={() => exportChartSvg(refNtc.current, "tracoma-nottraconet")} className="flex items-center gap-1 rounded border px-2 py-1 text-xs hover:bg-muted">
+                <Download className="h-3 w-3" /> PNG
+              </button>
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="h-72">
+            <div ref={refNtc} className="h-72">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={mainSeries} margin={{ top: 4, right: 52, left: 4, bottom: 4 }}>
                   <CartesianGrid strokeDasharray="3 3" />
@@ -266,14 +286,21 @@ export function TracomaChartsView({ filters }: Props) {
       {formSeries.length > 0 && (
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Distribuição por forma clínica por ano</CardTitle>
-            <CardDescription className="text-xs">
-              TF = Folicular · TI = Inflamatório · TS = Cicatricial · TT = Triquíase · CO = Opacidade corneal.
-              Combinado TRACONET + NOTTRACONET.
-            </CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-sm">Distribuição por forma clínica por ano</CardTitle>
+                <CardDescription className="text-xs">
+                  TF = Folicular · TI = Inflamatório · TS = Cicatricial · TT = Triquíase · CO = Opacidade corneal.
+                  Combinado TRACONET + NOTTRACONET.
+                </CardDescription>
+              </div>
+              <button onClick={() => exportChartSvg(refFormas.current, "tracoma-formas-clinicas")} className="flex items-center gap-1 rounded border px-2 py-1 text-xs hover:bg-muted">
+                <Download className="h-3 w-3" /> PNG
+              </button>
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="h-64">
+            <div ref={refFormas} className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={formSeries} margin={{ top: 4, right: 16, left: 4, bottom: 4 }}>
                   <CartesianGrid strokeDasharray="3 3" />
@@ -297,11 +324,18 @@ export function TracomaChartsView({ filters }: Props) {
       {gveSeries.length > 1 && gveNames.length > 0 && (
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Série histórica por GVE — Top {gveNames.length} (casos TRACONET)</CardTitle>
-            <CardDescription className="text-xs">Cada linha = uma GVE. Ordenadas pelo maior total de casos individuais no período.</CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-sm">Série histórica por GVE — Top {gveNames.length} (casos TRACONET)</CardTitle>
+                <CardDescription className="text-xs">Cada linha = uma GVE. Ordenadas pelo maior total de casos individuais no período.</CardDescription>
+              </div>
+              <button onClick={() => exportChartSvg(refGve.current, "tracoma-gves")} className="flex items-center gap-1 rounded border px-2 py-1 text-xs hover:bg-muted">
+                <Download className="h-3 w-3" /> PNG
+              </button>
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="h-80">
+            <div ref={refGve} className="h-80">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={gveSeries} margin={{ top: 4, right: 16, left: 4, bottom: 4 }}>
                   <CartesianGrid strokeDasharray="3 3" />
