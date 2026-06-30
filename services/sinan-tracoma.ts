@@ -1642,3 +1642,168 @@ export async function runSinanTracomaContextQuery(message: string) {
     ].join("\n")
   };
 }
+
+// ── Overview aggregado para dashboard de gráficos ────────────────────────────
+
+export type TracomaOverviewYear = {
+  ano: number;
+  traconet: number;
+  positivos: number;
+  examinados: number;
+  tratados: number;
+  positividade: number | null;
+  tf: number;
+  ti: number;
+  ts: number;
+  tt: number;
+  co: number;
+};
+
+export type TracomaOverview = {
+  byYear: TracomaOverviewYear[];
+  byGveYear: Array<{ gve: string; ano: number; casos: number }>;
+  totalTraconet: number;
+  totalPositivos: number;
+  totalExaminados: number;
+  positividade: number | null;
+  anosComDados: number[];
+};
+
+export async function getTracomaOverview(opts?: {
+  gve?: string;
+  municipio?: string;
+  yearStart?: number;
+  yearEnd?: number;
+}): Promise<TracomaOverview> {
+  const supabase = createAdminClient();
+  const pageSize = 1000;
+
+  async function fetchBank(bank: string, cols: string): Promise<Array<Record<string, unknown>>> {
+    const rows: Array<Record<string, unknown>> = [];
+    for (let from = 0; ; from += pageSize) {
+      let q = supabase.from("sinan_tracoma_rows").select(cols).eq("source_bank", bank).range(from, from + pageSize - 1);
+      if (opts?.municipio) q = q.ilike("municipio", `%${opts.municipio}%`);
+      if (opts?.yearStart) q = q.gte("ano", opts.yearStart);
+      if (opts?.yearEnd) q = q.lte("ano", opts.yearEnd);
+      const { data, error } = await q;
+      if (error) throw new Error(`SINAN overview (${bank}): ${error.message}`);
+      const page = (data ?? []) as unknown as Array<Record<string, unknown>>;
+      rows.push(...page);
+      if (page.length < pageSize) break;
+    }
+    return rows;
+  }
+
+  const [tcRaw, ntcRaw] = await Promise.all([
+    fetchBank("traconet", "source_bank, ano, municipio, gve, classificacao, raw"),
+    fetchBank("nottraconet", "source_bank, ano, municipio, gve, raw"),
+  ]);
+
+  const currentYear = new Date().getFullYear();
+
+  // Filtro GVE client-side (campo derivado, não está no DB)
+  const inGve = (r: Record<string, unknown>) => {
+    if (!opts?.gve) return true;
+    return resolveGroupLabel(r, "gve").toUpperCase() === opts.gve.trim().toUpperCase();
+  };
+  const tcRows = tcRaw.filter(inGve);
+  const ntcRows = ntcRaw.filter(inGve);
+
+  // ── Agregação TRACONET por ano ──
+  type TcAgg = { casos: number; tf: number; ti: number; ts: number; tt: number; co: number };
+  const tcByYear = new Map<number, TcAgg>();
+  const tcByGveYear = new Map<string, Map<number, number>>();
+
+  for (const row of tcRows) {
+    if (!isValidAuditYear(row, currentYear)) continue;
+    const ano = resolveAuditYear(row)!;
+
+    const agg = tcByYear.get(ano) ?? { casos: 0, tf: 0, ti: 0, ts: 0, tt: 0, co: 0 };
+    agg.casos += 1;
+    for (const f of clinicalFormsFromAuditRow(row)) {
+      agg[f.toLowerCase() as "tf" | "ti" | "ts" | "tt" | "co"] += 1;
+    }
+    tcByYear.set(ano, agg);
+
+    const gve = resolveGroupLabel(row, "gve");
+    if (!tcByGveYear.has(gve)) tcByGveYear.set(gve, new Map());
+    const gveMap = tcByGveYear.get(gve)!;
+    gveMap.set(ano, (gveMap.get(ano) ?? 0) + 1);
+  }
+
+  // ── Agregação NOTTRACONET por ano ──
+  type NtcAgg = { positivos: number; examinados: number; tratados: number; tf: number; ti: number; ts: number; tt: number; co: number };
+  const ntcByYear = new Map<number, NtcAgg>();
+
+  for (const row of ntcRows) {
+    if (!isValidAuditYear(row, currentYear)) continue;
+    const ano = resolveAuditYear(row)!;
+
+    const agg = ntcByYear.get(ano) ?? { positivos: 0, examinados: 0, tratados: 0, tf: 0, ti: 0, ts: 0, tt: 0, co: 0 };
+
+    const posFound = getRawValue(row, consolidatedPositiveFieldCandidates);
+    agg.positivos += posFound ? toNonNegativeNumber(posFound.value) ?? 0 : 0;
+
+    const examFound = getPossibleExaminedValue(row);
+    agg.examinados += examFound?.value ?? 0;
+
+    const tratFound = getRawValue(row, consolidatedMetricCandidates.tratados);
+    agg.tratados += tratFound ? toNonNegativeNumber(tratFound.value) ?? 0 : 0;
+
+    for (const f of ["tf", "ti", "ts", "tt", "co"] as const) {
+      const fFound = getRawValue(row, consolidatedMetricCandidates[f]);
+      agg[f] += fFound ? toNonNegativeNumber(fFound.value) ?? 0 : 0;
+    }
+
+    ntcByYear.set(ano, agg);
+  }
+
+  // ── Merge por ano ──
+  const allYears = Array.from(new Set([...tcByYear.keys(), ...ntcByYear.keys()])).sort((a, b) => a - b);
+  const byYear: TracomaOverviewYear[] = allYears.map((ano) => {
+    const tc = tcByYear.get(ano);
+    const ntc = ntcByYear.get(ano);
+    const examinados = ntc?.examinados ?? 0;
+    const positivos = ntc?.positivos ?? 0;
+    return {
+      ano,
+      traconet: tc?.casos ?? 0,
+      positivos,
+      examinados,
+      tratados: ntc?.tratados ?? 0,
+      positividade: examinados > 0 ? (positivos / examinados) * 100 : null,
+      tf: (tc?.tf ?? 0) + (ntc?.tf ?? 0),
+      ti: (tc?.ti ?? 0) + (ntc?.ti ?? 0),
+      ts: (tc?.ts ?? 0) + (ntc?.ts ?? 0),
+      tt: (tc?.tt ?? 0) + (ntc?.tt ?? 0),
+      co: (tc?.co ?? 0) + (ntc?.co ?? 0),
+    };
+  });
+
+  // Top 10 GVEs por total de casos TRACONET
+  const gveTotals = Array.from(tcByGveYear.entries())
+    .map(([gve, m]) => ({ gve, total: Array.from(m.values()).reduce((s, v) => s + v, 0) }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 10);
+  const topGveSet = new Set(gveTotals.map((g) => g.gve));
+
+  const byGveYear: Array<{ gve: string; ano: number; casos: number }> = [];
+  for (const [gve, yearMap] of tcByGveYear.entries()) {
+    if (!topGveSet.has(gve)) continue;
+    for (const [ano, casos] of yearMap.entries()) byGveYear.push({ gve, ano, casos });
+  }
+
+  const totalTraconet = tcRows.filter((r) => isValidAuditYear(r, currentYear)).length;
+  const totalPositivos = byYear.reduce((s, r) => s + r.positivos, 0);
+  const totalExaminados = byYear.reduce((s, r) => s + r.examinados, 0);
+
+  return {
+    byYear,
+    byGveYear,
+    totalTraconet,
+    totalPositivos,
+    totalExaminados,
+    positividade: totalExaminados > 0 ? (totalPositivos / totalExaminados) * 100 : null,
+    anosComDados: allYears,
+  };
+}
