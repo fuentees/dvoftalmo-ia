@@ -18,6 +18,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Textarea } from "@/components/ui/textarea";
 import { RateMap, type RateMapRow } from "@/components/epidemiology/rate-map";
 import { EndemicChannelChart, EpidemicCharts } from "@/components/notifications/epidemic-charts";
+import { AnalysisChart } from "@/components/analysis-chart";
 import { listarMunicipiosPorGve } from "@/lib/municipios-sp";
 
 type HubTab = "situacao" | "consulta" | "canal" | "saidas";
@@ -1049,6 +1050,7 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
                         <MetricCard label="GVEs analisados" value={ask.data.monthlyReport.gveSections.length} />
                         <MetricCard label="Top GVE" value={ask.data.monthlyReport.topGves[0]?.gve ?? "-"} detail={ask.data.monthlyReport.topGves[0] ? `${num(ask.data.monthlyReport.topGves[0].total)} casos` : undefined} />
                       </div>
+                      <AnalysisChart columns={ask.data.columns ?? []} rows={ask.data.monthlyReport.statewideRows} title="Série mensal" />
                       <ResultTable title="Consolidado estadual" columns={ask.data.columns ?? []} rows={ask.data.monthlyReport.statewideRows} />
                       <details className="rounded-md border p-3">
                         <summary className="cursor-pointer text-sm font-medium">Abrir tabelas por GVE</summary>
@@ -1064,12 +1066,16 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
                   {ask.data.weeklyReport && (
                     <div className="space-y-4">
                       <MetricCard label="Total geral" value={ask.data.weeklyReport.totalCases} />
+                      <AnalysisChart columns={ask.data.weeklyReport.columns} rows={ask.data.weeklyReport.pivotRows} title="Série semanal por ano" />
                       <ResultTable title="Relatório semanal" columns={ask.data.weeklyReport.columns} rows={ask.data.weeklyReport.pivotRows} />
                     </div>
                   )}
 
                   {!ask.data.monthlyReport && !ask.data.weeklyReport && (
-                    <ResultTable columns={ask.data.columns ?? Object.keys(ask.data.rows?.[0] ?? {})} rows={ask.data.rows ?? []} />
+                    <div className="space-y-6">
+                      <AnalysisChart columns={ask.data.columns ?? Object.keys(ask.data.rows?.[0] ?? {})} rows={ask.data.rows ?? []} title="Série histórica / distribuição" />
+                      <ResultTable columns={ask.data.columns ?? Object.keys(ask.data.rows?.[0] ?? {})} rows={ask.data.rows ?? []} />
+                    </div>
                   )}
                 </div>
               )}

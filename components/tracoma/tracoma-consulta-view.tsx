@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { listarGvesSp, listarMunicipiosPorGve } from "@/lib/municipios-sp";
+import { AnalysisChart } from "@/components/analysis-chart";
 
 type AskData = {
   question?: string;
@@ -329,7 +330,10 @@ export function TracomaConsultaView({ externalFilters, hideFilters = false }: Tr
             </Card>
           )}
           {rows.length > 0 ? (
-            <ResultTable columns={columns} rows={rows} />
+            <div className="space-y-6">
+              <AnalysisChart columns={columns} rows={rows} title="Série histórica / distribuição" />
+              <ResultTable columns={columns} rows={rows} />
+            </div>
           ) : (
             <Card>
               <CardContent className="py-8 text-center text-sm text-muted-foreground">
