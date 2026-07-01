@@ -136,12 +136,30 @@ async function findInvalidRecordsFromCache(limit?: number, ano?: number, anoFim?
   const supabase = createAdminClient();
   const pageSize = 1000;
   const invalid: InvalidRecord[] = [];
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentSe = currentEpiWeek();
+  const today = now.toISOString().slice(0, 10);
 
   for (let from = 0; ; from += pageSize) {
     let q = supabase
       .from("cevesp_notificacoes")
       .select('id,row_key,"ID","ControlaSubmit","DtNotificacao","SemEpidemio","MunicipioNotificacao","GVE_NOME","ANO","TotalCaso","FxMenorUmAno","FxUmQuatro","FxCincoNove","FxDezQuatorze","FxQuizeOuMais","SexMasc","SexFem"')
       .range(from, from + pageSize - 1);
+
+    // Pre-filter: only fetch rows that are likely to have quality issues.
+    // Without this, scanning 300k rows causes Vercel timeout (300+ pagination requests).
+    q = q.or([
+      "SemEpidemio.gt.53",
+      "SemEpidemio.lt.1",
+      `and(ANO.eq.${currentYear},SemEpidemio.gt.${currentSe})`,
+      "TotalCaso.is.null",
+      "TotalCaso.lt.0",
+      "MunicipioNotificacao.is.null",
+      "GVE_NOME.is.null",
+      `DtNotificacao.gt.${today}`,
+    ].join(",")) as typeof q;
+
     if (ano && anoFim && anoFim > ano) {
       q = q.gte('"ANO"', ano).lte('"ANO"', anoFim) as typeof q;
     } else if (ano) {
