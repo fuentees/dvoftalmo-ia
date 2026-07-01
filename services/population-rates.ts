@@ -343,6 +343,9 @@ export async function buildSinanTracomaRates(options?: {
     byMunicipalityYear.set(key, current);
   }
 
+  const isPeriod = minYear !== maxYear && minYear > 0;
+  const nYearsTracoma = isPeriod ? (maxYear - minYear + 1) : 1;
+
   const byMunicipality = new Map<string, {
     codigoIbge: string;
     municipio: string;
@@ -350,7 +353,8 @@ export async function buildSinanTracomaRates(options?: {
     anos: number[];
     examinados: number;
     positivos: number;
-    populacao: number;
+    populacaoSum: number;
+    populacaoCount: number;
     populationFallback: boolean;
   }>();
 
@@ -363,21 +367,29 @@ export async function buildSinanTracomaRates(options?: {
       anos: [],
       examinados: 0,
       positivos: 0,
-      populacao: 0,
+      populacaoSum: 0,
+      populacaoCount: 0,
       populationFallback: false
     };
     current.anos.push(row.ano);
     current.examinados += row.examinados;
     current.positivos += row.positivos;
-    current.populacao += pop.value;
+    if (pop.value > 0) { current.populacaoSum += pop.value; current.populacaoCount += 1; }
     current.populationFallback = current.populationFallback || !pop.exact;
     byMunicipality.set(row.codigoIbge, current);
   }
 
   const municipalityRows = Array.from(byMunicipality.values()).map((row) => {
+    const uniqueAnosMuni = new Set(row.anos).size;
+    const nAnosMuni = Math.max(uniqueAnosMuni, 1);
+    // Average annual population
+    const populacao = row.populacaoCount > 0 ? Math.round(row.populacaoSum / row.populacaoCount) : 0;
+    // Average annual positivos/examinados as numerators for rates
+    const positivosAnuais = row.positivos / nAnosMuni;
+    const examinadosAnuais = row.examinados / nAnosMuni;
     const prevalencia = prevalencePercent(row.positivos, row.examinados);
-    const taxaDeteccao100k = incidencePer100k(row.positivos, row.populacao);
-    const coberturaExame = examCoveragePercent(row.examinados, row.populacao);
+    const taxaDeteccao100k = incidencePer100k(positivosAnuais, populacao);
+    const coberturaExame = examCoveragePercent(examinadosAnuais, populacao);
     return {
       codigoIbge: row.codigoIbge,
       municipio: row.municipio,
@@ -386,7 +398,7 @@ export async function buildSinanTracomaRates(options?: {
       anos: Array.from(new Set(row.anos)).sort((a, b) => a - b),
       examinados: row.examinados,
       positivos: row.positivos,
-      populacao: row.populacao,
+      populacao,
       populationFallback: row.populationFallback,
       prevalencia,
       taxaDeteccao100k,
@@ -395,33 +407,48 @@ export async function buildSinanTracomaRates(options?: {
     };
   }).sort((a, b) => Number(b.prevalencia ?? -1) - Number(a.prevalencia ?? -1));
 
-  const gveMap = new Map<string, { gve: string; examinados: number; positivos: number; populacao: number }>();
+  // GVE aggregation: average annual numerators over average population
+  const gveMap = new Map<string, { gve: string; examinados: number; positivos: number; populacao: number; count: number }>();
   for (const row of municipalityRows) {
-    const current = gveMap.get(row.gve) ?? { gve: row.gve, examinados: 0, positivos: 0, populacao: 0 };
+    const current = gveMap.get(row.gve) ?? { gve: row.gve, examinados: 0, positivos: 0, populacao: 0, count: 0 };
     current.examinados += row.examinados;
     current.positivos += row.positivos;
     current.populacao += row.populacao;
+    current.count += 1;
     gveMap.set(row.gve, current);
   }
 
-  const gveRows = Array.from(gveMap.values()).map((row) => ({
-    ...row,
-    ano: analysisYear,
-    prevalencia: prevalencePercent(row.positivos, row.examinados),
-    taxaDeteccao100k: incidencePer100k(row.positivos, row.populacao),
-    coberturaExame: examCoveragePercent(row.examinados, row.populacao),
-    riskColor: riskColor(prevalencePercent(row.positivos, row.examinados), [1, 5, 10])
-  })).sort((a, b) => Number(b.prevalencia ?? -1) - Number(a.prevalencia ?? -1));
+  const gveRows = Array.from(gveMap.values()).map((row) => {
+    const posAnuaisGve = isPeriod ? row.positivos / nYearsTracoma : row.positivos;
+    const examAnuaisGve = isPeriod ? row.examinados / nYearsTracoma : row.examinados;
+    return {
+      gve: row.gve,
+      examinados: row.examinados,
+      positivos: row.positivos,
+      populacao: row.populacao,
+      ano: analysisYear,
+      prevalencia: prevalencePercent(row.positivos, row.examinados),
+      taxaDeteccao100k: incidencePer100k(posAnuaisGve, row.populacao),
+      coberturaExame: examCoveragePercent(examAnuaisGve, row.populacao),
+      riskColor: riskColor(prevalencePercent(row.positivos, row.examinados), [1, 5, 10])
+    };
+  }).sort((a, b) => Number(b.prevalencia ?? -1) - Number(a.prevalencia ?? -1));
 
   return {
     missingPopulation: false,
     analysisYear: maxYear,
+    isPeriod,
     periodStart: minYear || null,
     periodEnd: maxYear || null,
-    populationYear: population.latestYear,
+    nYears: nYearsTracoma,
+    populationYear: isPeriod ? null : population.latestYear,
     populationYears: population.years,
-    metric: "Prevalencia entre examinados, taxa de deteccao e cobertura de exame",
-    methodology: "prevalencia = positivos / examinados x 100; taxa de deteccao = positivos / populacao x 100.000; cobertura = examinados / populacao x 100",
+    metric: isPeriod
+      ? `Prevalencia, taxa de deteccao media anual e cobertura (${minYear}–${maxYear})`
+      : "Prevalencia entre examinados, taxa de deteccao e cobertura de exame",
+    methodology: isPeriod
+      ? `prevalencia = positivos / examinados x 100; taxa = positivos anuais medios / pop. media IBGE x 100.000; cobertura = examinados anuais medios / pop. media IBGE x 100`
+      : "prevalencia = positivos / examinados x 100; taxa de deteccao = positivos / populacao x 100.000; cobertura = examinados / populacao x 100",
     byMunicipality: municipalityRows,
     byGve: gveRows,
     mapRows: municipalityRows

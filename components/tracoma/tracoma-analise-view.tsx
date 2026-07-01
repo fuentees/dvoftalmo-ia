@@ -37,6 +37,7 @@ type TracomaRates = {
   missingPopulation?: boolean;
   message?: string;
   analysisYear?: number;
+  isPeriod?: boolean;
   periodStart?: number | null;
   periodEnd?: number | null;
   populationYear?: number | null;
@@ -749,7 +750,11 @@ export function TracomaAnaliseView({ externalFilters, hideFilters = false }: { e
                   ? ` - ${rates.data!.periodStart === rates.data!.periodEnd ? rates.data!.periodStart : `${rates.data!.periodStart} a ${rates.data!.periodEnd}`}`
                   : ""
               }`}
-              description={`Prevalência entre examinados, taxa de detecção e cobertura. Pop. IBGE: ${rates.data!.populationYear ?? "-"}.`}
+              description={
+                rates.data!.isPeriod
+                  ? `Taxas médias anuais do período ${rates.data!.periodStart}–${rates.data!.periodEnd}. Pop. IBGE média do período.`
+                  : `Prevalência entre examinados, taxa de detecção e cobertura. Pop. IBGE: ${rates.data!.populationYear ?? "-"}.`
+              }
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               rows={(taxaMapView === "municipio" ? rates.data!.byMunicipality ?? [] : rates.data!.byGve ?? []) as any}
               valueKey={taxaMetric}
@@ -766,7 +771,7 @@ export function TracomaAnaliseView({ externalFilters, hideFilters = false }: { e
                       { key: "prevalencia", label: "Prevalência", decimals: 2, suffix: "%" },
                       { key: "taxaDeteccao100k", label: "Detecção/100 mil", decimals: 2 },
                       { key: "coberturaExame", label: "Cobertura", decimals: 2, suffix: "%" },
-                      { key: "populacao", label: "População" }
+                      { key: "populacao", label: rates.data!.isPeriod ? `Pop. IBGE (média ${rates.data!.periodStart}–${rates.data!.periodEnd})` : `Pop. IBGE${rates.data!.populationYear ? ` ${rates.data!.populationYear}` : ""}` }
                     ]
                   : [
                       { key: "gve", label: "GVE" },
@@ -775,7 +780,7 @@ export function TracomaAnaliseView({ externalFilters, hideFilters = false }: { e
                       { key: "prevalencia", label: "Prevalência", decimals: 2, suffix: "%" },
                       { key: "taxaDeteccao100k", label: "Detecção/100 mil", decimals: 2 },
                       { key: "coberturaExame", label: "Cobertura", decimals: 2, suffix: "%" },
-                      { key: "populacao", label: "População" }
+                      { key: "populacao", label: rates.data!.isPeriod ? `Pop. IBGE (média ${rates.data!.periodStart}–${rates.data!.periodEnd})` : `Pop. IBGE${rates.data!.populationYear ? ` ${rates.data!.populationYear}` : ""}` }
                     ]
               }
             />
