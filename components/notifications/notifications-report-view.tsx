@@ -322,6 +322,15 @@ function ResultTable({ title, columns, rows, limit = 80 }: {
   );
 }
 
+function SectionIntro({ title, description }: { title: string; description: string }) {
+  return (
+    <div>
+      <h2 className="text-base font-semibold">{title}</h2>
+      <p className="text-sm text-muted-foreground">{description}</p>
+    </div>
+  );
+}
+
 function CevespRatesPanel({ data }: { data: CevespRatesData }) {
   const hasGve = (data.byGve?.length ?? 0) > 0;
   const [view, setView] = useState<"municipio" | "gve">("municipio");
@@ -876,15 +885,29 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
               topGves={report.data.indicators.topGves ?? []}
             />
 
-            {rates.data && <CevespRatesPanel data={rates.data} />}
-
-            <RankingList title="Unidades notificadoras" items={report.data.indicators.topUnits ?? []} />
+            {rates.data && (
+              <div className="space-y-4">
+                <SectionIntro
+                  title="Território e incidência"
+                  description="Mapa e tabela para priorizar município ou GVE pelo volume e pela taxa populacional."
+                />
+                <CevespRatesPanel data={rates.data} />
+              </div>
+            )}
 
             <div className="space-y-4">
-              <div>
-                <h2 className="text-base font-semibold">Canal endêmico</h2>
-                <p className="text-sm text-muted-foreground">Série histórica para detectar semanas acima do esperado e apoiar decisão de investigação.</p>
-              </div>
+              <SectionIntro
+                title="Origem das notificações"
+                description="Unidades com maior volume no recorte, úteis para retorno técnico e checagem de oportunidade."
+              />
+              <RankingList title="Unidades notificadoras" items={report.data.indicators.topUnits ?? []} />
+            </div>
+
+            <div className="space-y-4">
+              <SectionIntro
+                title="Canal endêmico"
+                description="Série histórica para detectar semanas acima do esperado e apoiar decisão de investigação."
+              />
               {endemic.isFetching && (
                 <Card><CardContent className="py-6 text-center text-sm text-muted-foreground">Calculando canal endêmico...</CardContent></Card>
               )}
@@ -900,53 +923,6 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
                 </Card>
               )}
               {endemic.data && endemic.data.length > 0 && <EndemicChannelChart data={endemic.data} />}
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <h2 className="text-base font-semibold">Saídas técnicas</h2>
-                <p className="text-sm text-muted-foreground">Exportações, boletim e encaminhamentos do recorte selecionado.</p>
-              </div>
-              <div className="grid gap-4 md:grid-cols-3">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Boletim técnico</CardTitle>
-                    <CardDescription>Documento Word com situação epidemiológica e recomendações.</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <Button onClick={downloadBoletim}>
-                      <Download className="h-4 w-4" />
-                      Baixar boletim
-                    </Button>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Chat epidemiológico</CardTitle>
-                    <CardDescription>Para perguntas livres, interpretação e redação de relatório.</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <Button asChild variant="outline"><Link href="/chat">Abrir chat</Link></Button>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Sincronização</CardTitle>
-                    <CardDescription>Exportar/importar banco quando estiver fora da rede interna.</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <Button asChild variant="outline"><Link href="/sincronizacao">Abrir sincronização</Link></Button>
-                  </CardContent>
-                </Card>
-              </div>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base">Recomendações para boletim</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2 text-sm text-muted-foreground">
-                  {report.data.bulletinSections.recomendacoes.map((item, index) => <p key={index}>{item}</p>)}
-                </CardContent>
-              </Card>
             </div>
           </div>
         )}

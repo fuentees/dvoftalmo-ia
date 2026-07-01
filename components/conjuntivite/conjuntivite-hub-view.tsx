@@ -5,7 +5,6 @@ import { useMemo, useState } from "react";
 import { Activity, Database, ShieldAlert } from "lucide-react";
 import { NotificationsReportView } from "@/components/notifications/notifications-report-view";
 import { CevespQualidadeView } from "@/components/cevesp/cevesp-qualidade-view";
-import { ConjuntiviteChartsView } from "@/components/conjuntivite/conjuntivite-charts-view";
 import { listarGvesSp, listarMunicipiosPorGve } from "@/lib/municipios-sp";
 
 type OuterTab = "situacao" | "qualidade" | "consulta";
@@ -34,14 +33,6 @@ export function ConjuntiviteHubView() {
     gve,
     municipio
   }), [yearStart, yearEnd, gve, municipio]);
-
-  // Filtros para ConjuntiviteChartsView e outras views que aceitam range
-  const chartFilters = useMemo(() => ({
-    gve,
-    municipio,
-    yearStart: yearStart || undefined,
-    yearEnd: yearEnd || undefined,
-  }), [gve, municipio, yearStart, yearEnd]);
 
   const hasFilters = yearStart || yearEnd || gve || municipio;
 
@@ -115,12 +106,7 @@ export function ConjuntiviteHubView() {
       </div>
 
       <div className="flex-1">
-        {tab === "situacao" && (
-          <div>
-            <ConjuntiviteChartsView filters={chartFilters} />
-            <NotificationsReportView section="situacao" externalFilters={reportFilters} hideFilters />
-          </div>
-        )}
+        {tab === "situacao"  && <NotificationsReportView section="situacao" externalFilters={reportFilters} hideFilters />}
         {tab === "qualidade" && <CevespQualidadeView externalFilters={reportFilters} />}
         {tab === "consulta"  && <NotificationsReportView section="consulta" externalFilters={reportFilters} hideFilters />}
       </div>
