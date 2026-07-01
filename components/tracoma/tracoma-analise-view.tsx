@@ -211,11 +211,27 @@ function DistributionList({ title, rows }: { title: string; rows: DemographicBuc
   );
 }
 
+function cellPercent(value: number, total: number) {
+  if (!total) return "0%";
+  return `${((value / total) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
+}
+
+function CrossCell({ value, total }: { value: number; total: number }) {
+  return (
+    <td className="px-3 py-2 text-right tabular-nums">
+      <div className="font-medium">{num(value)}</div>
+      <div className="text-[11px] text-muted-foreground">{cellPercent(value, total)}</div>
+    </td>
+  );
+}
+
 function CrossTable({ title, rows }: { title: string; rows: DemographicCross[] }) {
+  const grandTotal = rows.reduce((sum, row) => sum + row.total, 0);
   return (
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm">{title}</CardTitle>
+        <CardDescription>Contagem e percentual dentro de cada grupo.</CardDescription>
       </CardHeader>
       <CardContent>
         {rows.length === 0 ? (
@@ -239,13 +255,16 @@ function CrossTable({ title, rows }: { title: string; rows: DemographicCross[] }
                 {rows.map((row) => (
                   <tr key={row.label} className="border-t">
                     <td className="px-3 py-2 font-medium">{row.label}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{num(row.TF)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{num(row.TI)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{num(row.TS)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{num(row.TT)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{num(row.CO)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{num(row.semForma)}</td>
-                    <td className="px-3 py-2 text-right font-semibold tabular-nums">{num(row.total)}</td>
+                    <CrossCell value={row.TF} total={row.total} />
+                    <CrossCell value={row.TI} total={row.total} />
+                    <CrossCell value={row.TS} total={row.total} />
+                    <CrossCell value={row.TT} total={row.total} />
+                    <CrossCell value={row.CO} total={row.total} />
+                    <CrossCell value={row.semForma} total={row.total} />
+                    <td className="px-3 py-2 text-right font-semibold tabular-nums">
+                      <div>{num(row.total)}</div>
+                      <div className="text-[11px] font-normal text-muted-foreground">{cellPercent(row.total, grandTotal)}</div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -300,7 +319,7 @@ function DemographicsPanel({ data, loading }: { data?: TracomaDemographics; load
         <MetricCard label="Com sexo mapeado" value={data.withSex} detail={`${data.totalRows ? ((data.withSex / data.totalRows) * 100).toFixed(1) : "0"}% dos casos`} tone={data.withSex < data.totalRows ? "amber" : "green"} />
         <MetricCard label="Com idade mapeada" value={data.withAge} detail={`${data.totalRows ? ((data.withAge / data.totalRows) * 100).toFixed(1) : "0"}% dos casos`} tone={data.withAge < data.totalRows ? "amber" : "green"} />
         <MetricCard label="1 a 9 anos" value={childrenOneToNine} detail={`${childrenOneToNinePct}% dos casos individuais`} tone={childrenOneToNine > 0 ? "amber" : "default"} />
-        <MetricCard label="Com forma clínica" value={data.withClinicalForm} detail="TF/TI/TS/TT/CO detectados" tone={data.withClinicalForm < data.totalRows ? "amber" : "green"} />
+        <MetricCard label="Com forma clínica" value={data.withClinicalForm} detail={`${data.totalRows ? ((data.withClinicalForm / data.totalRows) * 100).toFixed(1) : "0"}% com TF/TI/TS/TT/CO`} tone={data.withClinicalForm < data.totalRows ? "amber" : "green"} />
       </div>
       <div className="grid gap-4 lg:grid-cols-3">
         <DistributionList title="Distribuição por sexo" rows={data.sexDistribution} />
