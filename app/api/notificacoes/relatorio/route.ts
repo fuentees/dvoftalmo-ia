@@ -19,7 +19,19 @@ export async function GET(request: Request) {
 
   try {
     const data = await readNotificationRows({ ano, anoFim, gve, municipio, seInicio, seFim });
-    const summary = summarizeNotificationRows(data.rows, data.total);
+
+    // When a specific year is selected, also fetch all-years data for the historical average
+    let allYearsRows: Array<Record<string, unknown>> | undefined;
+    if (ano) {
+      try {
+        const allData = await readNotificationRows({ gve, municipio, seInicio, seFim });
+        allYearsRows = allData.rows;
+      } catch {
+        // non-critical — weeklyAverage falls back to selected-year data
+      }
+    }
+
+    const summary = summarizeNotificationRows(data.rows, data.total, allYearsRows);
 
     // Fetch previous year for comparison (only when a specific year is selected)
     let previousYear: { ano: number; totalCases: number; notifications: number; reportingMunicipalities: number } | null = null;

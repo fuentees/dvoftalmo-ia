@@ -36,8 +36,15 @@ interface RankItem {
   total: number;
 }
 
+interface WeekAvgPoint {
+  se: string;
+  average: number;
+}
+
 interface EpidemicChartsProps {
   weeklySeries: WeekPoint[];
+  weeklyAverage: WeekAvgPoint[];
+  selectedYear?: number | null;
   ageDistribution: DistItem[];
   sexDistribution: DistItem[];
   topMunicipalities: RankItem[];
@@ -48,40 +55,88 @@ const SEX_COLORS = ["#2563eb", "#dc2626"];
 
 export function EpidemicCharts({
   weeklySeries,
+  weeklyAverage,
+  selectedYear,
   ageDistribution,
   sexDistribution,
   topMunicipalities,
   topGves
 }: EpidemicChartsProps) {
-  const weekData = weeklySeries.map((item) => ({
-    ...item,
-    se: item.week.replace(/^\d{4}-/, "")
-  }));
+  // Build chart data: always keyed by SE (SE01–SE53) from weeklyAverage.
+  // Falls back to weeklySeries when weeklyAverage is not available.
+  const chartData =
+    weeklyAverage.length > 0
+      ? weeklyAverage.map((avg) => {
+          const yearWeek = selectedYear ? `${selectedYear}-${avg.se}` : null;
+          const yearPoint = yearWeek ? weeklySeries.find((w) => w.week === yearWeek) : null;
+          return { se: avg.se, average: avg.average, yearTotal: yearPoint?.total ?? null };
+        })
+      : weeklySeries.map((item) => ({
+          se: item.week.replace(/^\d{4}-/, ""),
+          average: item.total,
+          yearTotal: null as number | null
+        }));
+
+  const showYearBars =
+    selectedYear != null && chartData.some((d) => d.yearTotal != null && d.yearTotal > 0);
+
+  const chartDesc = showYearBars
+    ? `Barras: total ${selectedYear} · Linha: média histórica`
+    : "Média de casos por semana epidemiológica (todos os anos)";
 
   return (
     <div className="space-y-4">
-      {weekData.length > 0 && (
+      {chartData.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>Curva epidêmica semanal</CardTitle>
-            <CardDescription>Total de casos por semana epidemiológica</CardDescription>
+            <CardDescription>{chartDesc}</CardDescription>
           </CardHeader>
           <CardContent className="h-[280px]">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={weekData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="se" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
-                <YAxis />
-                <Tooltip formatter={(value: number) => [value, "Casos"]} />
-                <Area
-                  type="monotone"
-                  dataKey="total"
-                  stroke="#0f766e"
-                  fill="#99f6e4"
-                  name="Casos"
-                  strokeWidth={2}
-                />
-              </AreaChart>
+              {showYearBars ? (
+                <ComposedChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="se" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+                  <YAxis />
+                  <Tooltip
+                    formatter={(value: number, name: string) => [
+                      value,
+                      name === "yearTotal" ? String(selectedYear) : "Média histórica"
+                    ]}
+                  />
+                  <Legend
+                    formatter={(value: string) =>
+                      value === "yearTotal" ? String(selectedYear) : "Média histórica"
+                    }
+                  />
+                  <Bar dataKey="yearTotal" fill="#0f766e" name="yearTotal" opacity={0.85} radius={[3, 3, 0, 0]} />
+                  <Line
+                    type="monotone"
+                    dataKey="average"
+                    stroke="#dc2626"
+                    strokeWidth={2}
+                    dot={false}
+                    name="average"
+                    strokeDasharray="6 3"
+                  />
+                </ComposedChart>
+              ) : (
+                <AreaChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="se" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+                  <YAxis />
+                  <Tooltip formatter={(value: number) => [value, "Média"]} />
+                  <Area
+                    type="monotone"
+                    dataKey="average"
+                    stroke="#0f766e"
+                    fill="#99f6e4"
+                    name="Média histórica"
+                    strokeWidth={2}
+                  />
+                </AreaChart>
+              )}
             </ResponsiveContainer>
           </CardContent>
         </Card>

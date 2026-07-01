@@ -10,6 +10,7 @@ type Row = Record<string, unknown>;
 type RankItem = { name: string; total: number };
 type DistributionItem = { label: string; total: number };
 type WeeklyPoint = { week: string; total: number };
+type WeeklyAvgPoint = { se: string; average: number };
 type ReportAlert = { severity: "alta" | "media" | "baixa"; title: string; description: string };
 type NotificationIndicators = {
   notifications: number;
@@ -31,6 +32,7 @@ type NotificationIndicators = {
   symptomaticStaffRemoval: number;
   specializedReferrals: number;
   weeklySeries: WeeklyPoint[];
+  weeklyAverage: WeeklyAvgPoint[];
   weeklyStats: { average: number; median: number; standardDeviation: number };
   trend: {
     firstWeek: WeeklyPoint;
@@ -130,6 +132,35 @@ function weeklySeries(rows: Row[]) {
   return Array.from(totals.entries())
     .map(([week, total]) => ({ week, total }))
     .sort((a, b) => a.week.localeCompare(b.week));
+}
+
+function weeklyAverageSeries(rows: Row[]): WeeklyAvgPoint[] {
+  // Step 1: aggregate total per (ANO, SE)
+  const byAnoSe = new Map<string, number>();
+  for (const row of rows) {
+    const key = weekKeyFromRow(row);
+    if (!key) continue;
+    byAnoSe.set(key, (byAnoSe.get(key) ?? 0) + toNumber(row.TotalCaso));
+  }
+
+  // Step 2: for each SE, sum across years and count distinct years
+  const seTotal = new Map<string, number>();
+  const seYears = new Map<string, Set<string>>();
+  for (const [key, total] of byAnoSe) {
+    const m = key.match(/^(\d{4})-(SE\d{2})$/);
+    if (!m) continue;
+    const [, ano, se] = m;
+    seTotal.set(se, (seTotal.get(se) ?? 0) + total);
+    if (!seYears.has(se)) seYears.set(se, new Set());
+    seYears.get(se)!.add(ano);
+  }
+
+  return Array.from(seTotal.entries())
+    .map(([se, total]) => ({
+      se,
+      average: Math.round(total / (seYears.get(se)?.size ?? 1))
+    }))
+    .sort((a, b) => a.se.localeCompare(b.se));
 }
 
 function stats(values: number[]) {
@@ -245,7 +276,7 @@ function buildInterpretation(indicators: NotificationIndicators, alerts: ReportA
   ];
 }
 
-export function summarizeNotificationRows(rows: Row[], total: number) {
+export function summarizeNotificationRows(rows: Row[], total: number, allYearsRows?: Row[]) {
   const totalCases = sumBy(rows, "TotalCaso");
   const sexDistribution = [
     { label: "Masculino", total: sumBy(rows, "SexMasc") },
@@ -255,6 +286,7 @@ export function summarizeNotificationRows(rows: Row[], total: number) {
     .map((field) => ({ label: field.label, total: sumBy(rows, field.key) }))
     .sort((a, b) => b.total - a.total);
   const weekly = weeklySeries(rows);
+  const weeklyAvg = weeklyAverageSeries(allYearsRows ?? rows);
   const weeklyStats = stats(weekly.map((item) => item.total));
 
   const indicators = {
@@ -279,6 +311,7 @@ export function summarizeNotificationRows(rows: Row[], total: number) {
     symptomaticStaffRemoval: rows.filter((row) => isYes(row.AfastamentoProfSintomatico)).length,
     specializedReferrals: sumBy(rows, "NuEncamimento"),
     weeklySeries: weekly,
+    weeklyAverage: weeklyAvg,
     weeklyStats,
     trend:
       weekly.length >= 2

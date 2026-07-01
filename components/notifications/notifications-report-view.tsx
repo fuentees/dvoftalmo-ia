@@ -55,6 +55,7 @@ type ReportData = {
     symptomaticStaffRemoval: number;
     specializedReferrals: number;
     weeklySeries: Array<{ week: string; total: number }>;
+    weeklyAverage: Array<{ se: string; average: number }>;
   };
   previousYear?: {
     ano: number;
@@ -863,6 +864,12 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
 
             <EpidemicCharts
               weeklySeries={report.data.indicators.weeklySeries ?? []}
+              weeklyAverage={report.data.indicators.weeklyAverage ?? []}
+              selectedYear={
+                selectedYear && (!selectedYearEnd || selectedYearEnd === selectedYear)
+                  ? selectedYear
+                  : undefined
+              }
               ageDistribution={report.data.indicators.ageDistribution ?? []}
               sexDistribution={report.data.indicators.sexDistribution ?? []}
               topMunicipalities={report.data.indicators.topMunicipalities ?? []}
