@@ -194,7 +194,7 @@ function DistributionList({ title, rows }: { title: string; rows: DemographicBuc
               <div className="flex justify-between gap-3 text-sm">
                 <span className="truncate">{row.label}</span>
                 <strong className="shrink-0 tabular-nums">
-                  {num(row.total)} · {share.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%
+                  {num(row.total)} ({share.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%)
                 </strong>
               </div>
               <div className="h-2 overflow-hidden rounded-full bg-muted">
@@ -219,8 +219,8 @@ function cellPercent(value: number, total: number) {
 function CrossCell({ value, total }: { value: number; total: number }) {
   return (
     <td className="px-3 py-2 text-right tabular-nums">
-      <div className="font-medium">{num(value)}</div>
-      <div className="text-[11px] text-muted-foreground">{cellPercent(value, total)}</div>
+      <span className="font-medium">{num(value)}</span>
+      <span className="ml-1 text-[11px] text-muted-foreground">({cellPercent(value, total)})</span>
     </td>
   );
 }
@@ -262,8 +262,8 @@ function CrossTable({ title, rows }: { title: string; rows: DemographicCross[] }
                     <CrossCell value={row.CO} total={row.total} />
                     <CrossCell value={row.semForma} total={row.total} />
                     <td className="px-3 py-2 text-right font-semibold tabular-nums">
-                      <div>{num(row.total)}</div>
-                      <div className="text-[11px] font-normal text-muted-foreground">{cellPercent(row.total, grandTotal)}</div>
+                      <span>{num(row.total)}</span>
+                      <span className="ml-1 text-[11px] font-normal text-muted-foreground">({cellPercent(row.total, grandTotal)})</span>
                     </td>
                   </tr>
                 ))}
@@ -316,10 +316,10 @@ function DemographicsPanel({ data, loading }: { data?: TracomaDemographics; load
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <MetricCard label="Casos individuais" value={data.totalRows} detail="TRACONET no recorte" />
-        <MetricCard label="Com sexo mapeado" value={data.withSex} detail={`${data.totalRows ? ((data.withSex / data.totalRows) * 100).toFixed(1) : "0"}% dos casos`} tone={data.withSex < data.totalRows ? "amber" : "green"} />
-        <MetricCard label="Com idade mapeada" value={data.withAge} detail={`${data.totalRows ? ((data.withAge / data.totalRows) * 100).toFixed(1) : "0"}% dos casos`} tone={data.withAge < data.totalRows ? "amber" : "green"} />
-        <MetricCard label="1 a 9 anos" value={childrenOneToNine} detail={`${childrenOneToNinePct}% dos casos individuais`} tone={childrenOneToNine > 0 ? "amber" : "default"} />
-        <MetricCard label="Com forma clínica" value={data.withClinicalForm} detail={`${data.totalRows ? ((data.withClinicalForm / data.totalRows) * 100).toFixed(1) : "0"}% com TF/TI/TS/TT/CO`} tone={data.withClinicalForm < data.totalRows ? "amber" : "green"} />
+        <MetricCard label="Com sexo mapeado" value={data.withSex} detail={`(${data.totalRows ? ((data.withSex / data.totalRows) * 100).toFixed(1) : "0"}%) dos casos`} tone={data.withSex < data.totalRows ? "amber" : "green"} />
+        <MetricCard label="Com idade mapeada" value={data.withAge} detail={`(${data.totalRows ? ((data.withAge / data.totalRows) * 100).toFixed(1) : "0"}%) dos casos`} tone={data.withAge < data.totalRows ? "amber" : "green"} />
+        <MetricCard label="1 a 9 anos" value={childrenOneToNine} detail={`(${childrenOneToNinePct}%) dos casos individuais`} tone={childrenOneToNine > 0 ? "amber" : "default"} />
+        <MetricCard label="Com forma clínica" value={data.withClinicalForm} detail={`(${data.totalRows ? ((data.withClinicalForm / data.totalRows) * 100).toFixed(1) : "0"}%) com TF/TI/TS/TT/CO`} tone={data.withClinicalForm < data.totalRows ? "amber" : "green"} />
       </div>
       <div className="grid gap-4 lg:grid-cols-3">
         <DistributionList title="Distribuição por sexo" rows={data.sexDistribution} />
