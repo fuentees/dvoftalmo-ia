@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { readNotificationRows } from "@/lib/external/notification-db";
-import { summarizeNotificationRows } from "@/services/notification-report";
+import { summarizeNotificationRows, summarizeFromRpc, type RpcRelatorioData } from "@/services/notification-report";
 
 export async function GET(request: Request) {
   const supabase = await createClient();
@@ -17,23 +18,71 @@ export async function GET(request: Request) {
   const seInicio = searchParams.get("seInicio") ? Number(searchParams.get("seInicio")) : undefined;
   const seFim = searchParams.get("seFim") ? Number(searchParams.get("seFim")) : undefined;
 
+  // ── RPC path: aggregation happens in the database ─────────────────────────
+  // Replaces three separate raw-row fetches (current year + all years + prev year)
+  // with three parallel RPC calls that return only the pre-computed result.
+  try {
+    const admin = createAdminClient();
+    const rpcArgs = {
+      p_ano: ano ?? null,
+      p_ano_fim: anoFim ?? null,
+      p_gve: gve ?? null,
+      p_municipio: municipio ?? null,
+      p_se_inicio: seInicio ?? null,
+      p_se_fim: seFim ?? null
+    };
+    const mediaArgs = {
+      p_gve: gve ?? null,
+      p_municipio: municipio ?? null,
+      p_se_inicio: seInicio ?? null,
+      p_se_fim: seFim ?? null
+    };
+    const prevArgs = {
+      p_ano: ano != null ? ano - 1 : null,
+      p_ano_fim: null as null,
+      p_gve: gve ?? null,
+      p_municipio: municipio ?? null,
+      p_se_inicio: seInicio ?? null,
+      p_se_fim: seFim ?? null
+    };
+
+    const [relRes, mediaRes, prevRes] = await Promise.all([
+      admin.rpc("cevesp_relatorio", rpcArgs),
+      admin.rpc("cevesp_media_semanal", mediaArgs),
+      ano != null
+        ? admin.rpc("cevesp_relatorio", prevArgs)
+        : Promise.resolve({ data: null, error: null })
+    ]);
+
+    if (!relRes.error && relRes.data) {
+      const rpc = relRes.data as RpcRelatorioData;
+      const weeklyAvg = !mediaRes.error && Array.isArray(mediaRes.data) ? mediaRes.data as Array<{ se: number; media: number }> : [];
+
+      let previousYear: { ano: number; totalCases: number; notifications: number; reportingMunicipalities: number } | null = null;
+      if (ano != null && !prevRes.error && prevRes.data) {
+        const prev = prevRes.data as RpcRelatorioData;
+        previousYear = {
+          ano: ano - 1,
+          totalCases: Number(prev.total_cases),
+          notifications: Number(prev.total_notifications),
+          reportingMunicipalities: Number(prev.reporting_municipalities)
+        };
+      }
+
+      return NextResponse.json(summarizeFromRpc(rpc, weeklyAvg, previousYear));
+    }
+    // If RPC returned an error (e.g. functions not yet deployed), fall through to raw rows.
+  } catch {
+    // Unexpected error in RPC path — fall through to raw rows fallback.
+  }
+
+  // ── Fallback: raw rows (used before RPCs are deployed or on MySQL source) ──
+  // NOTE: allYearsRows (historical average) is intentionally skipped here to avoid
+  // fetching 300k+ rows via pagination. weeklyAverage will be empty in fallback mode.
   try {
     const data = await readNotificationRows({ ano, anoFim, gve, municipio, seInicio, seFim });
+    const summary = summarizeNotificationRows(data.rows, data.total);
 
-    // When a specific year is selected, also fetch all-years data for the historical average
-    let allYearsRows: Array<Record<string, unknown>> | undefined;
-    if (ano) {
-      try {
-        const allData = await readNotificationRows({ gve, municipio, seInicio, seFim });
-        allYearsRows = allData.rows;
-      } catch {
-        // non-critical — weeklyAverage falls back to selected-year data
-      }
-    }
-
-    const summary = summarizeNotificationRows(data.rows, data.total, allYearsRows);
-
-    // Fetch previous year for comparison (only when a specific year is selected)
     let previousYear: { ano: number; totalCases: number; notifications: number; reportingMunicipalities: number } | null = null;
     if (ano) {
       try {
@@ -49,7 +98,7 @@ export async function GET(request: Request) {
           reportingMunicipalities: prevMunicipios
         };
       } catch {
-        // non-critical — main report succeeds even if prev-year fetch fails
+        // non-critical
       }
     }
 

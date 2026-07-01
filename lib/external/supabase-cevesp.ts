@@ -394,16 +394,20 @@ function buildCachedGenericResult(rows: Array<Record<string, unknown>>, analysis
 
   if (analysis.time_grain === "month") {
     const years = Array.from(new Set(rows.map((row) => Number(row.ANO)).filter((year) => Number.isInteger(year) && year > 1900).map(String))).sort();
+    // "mes" and "ano" are already the row/column axes of the month pivot — exclude them from
+    // extra dimensions to prevent a duplicate "Mes" column and avoid overwriting monthName()
+    // with a numeric string in the total row (which would bypass the isTotal chart filter).
+    const extraDimensions = dimensions.filter((d) => d !== "mes" && d !== "ano");
     const groups = new Map<string, Record<string, unknown>>();
     for (const row of rows) {
       const month = Number(row.Mes);
       const year = Number(row.ANO);
       if (!Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(year) || year <= 1900) continue;
-      const keyValues = dimensions.map((dimension) => dimensionValue(row, dimension));
+      const keyValues = extraDimensions.map((dimension) => dimensionValue(row, dimension));
       const key = [month, ...keyValues].join("||");
       if (!groups.has(key)) {
         const base: Record<string, unknown> = { Mes: monthName(month) };
-        dimensions.forEach((dimension, index) => { base[dimensionLabel(dimension)] = keyValues[index]; });
+        extraDimensions.forEach((dimension, index) => { base[dimensionLabel(dimension)] = keyValues[index]; });
         for (const year of years) base[year] = 0;
         base.Total = 0;
         groups.set(key, base);
@@ -417,10 +421,10 @@ function buildCachedGenericResult(rows: Array<Record<string, unknown>>, analysis
       .map(([, value]) => value)
       .slice(0, limit);
     const totalRow: Record<string, unknown> = { Mes: "Total" };
-    for (const dimension of dimensions) totalRow[dimensionLabel(dimension)] = "Todos";
+    for (const dimension of extraDimensions) totalRow[dimensionLabel(dimension)] = "Todos";
     for (const year of years) totalRow[year] = dataRows.reduce((sum, row) => sum + Number(row[year] ?? 0), 0);
     totalRow.Total = dataRows.reduce((sum, row) => sum + Number(row.Total ?? 0), 0);
-    return { columns: ["Mes", ...dimensions.map(dimensionLabel), ...years, "Total"], rows: [...dataRows, totalRow] };
+    return { columns: ["Mes", ...extraDimensions.map(dimensionLabel), ...years, "Total"], rows: [...dataRows, totalRow] };
   }
 
   const primaryDimension = dimensions[0] ?? (

@@ -276,6 +276,122 @@ function buildInterpretation(indicators: NotificationIndicators, alerts: ReportA
   ];
 }
 
+// ── Types for RPC path ────────────────────────────────────────────────────────
+
+export type RpcRelatorioData = {
+  total_notifications: number;
+  total_cases: number;
+  reporting_municipalities: number;
+  outbreak_notifications: number;
+  outbreak_total: number;
+  bio_collection_notifications: number;
+  bio_collection_total: number;
+  educational_actions: number;
+  trainings: number;
+  symptomatic_removal: number;
+  specialized_referrals: number;
+  sex_masc: number;
+  sex_fem: number;
+  fx_menor_um: number;
+  fx_1_4: number;
+  fx_5_9: number;
+  fx_10_14: number;
+  fx_15_mais: number;
+  weekly_avg?: number;
+  weekly_median?: number;
+  weekly_stddev?: number;
+  weekly_series: Array<{ ano: number; se: number; total: number }>;
+  top_municipios: Array<{ name: string; total: number }>;
+  top_gves: Array<{ name: string; total: number }>;
+  top_units: Array<{ name: string; total: number }>;
+};
+
+const bulletinSections = {
+  situacaoEpidemiologica:
+    "A analise considera registros do sistema CEVESP de Oftalmologia, com foco na distribuicao temporal, geografica e populacional dos casos de conjuntivite notificados.",
+  investigacaoSurtos:
+    "A investigacao de surtos deve priorizar unidades com recorrencia, municipios com maior concentracao de casos e notificacoes sem coleta biologica quando houver indicacao epidemiologica.",
+  recomendacoes: [
+    "Reforcar educacao em saude sobre higiene das maos, etiqueta respiratoria e nao compartilhamento de objetos pessoais.",
+    "Orientar afastamento de sintomaticos em instituicoes coletivas conforme avaliacao local.",
+    "Qualificar o preenchimento dos campos de surto, coleta biologica, medidas adotadas e encaminhamentos.",
+    "Monitorar semanalmente municipios e unidades com crescimento incomum de casos.",
+    "Estimular coleta laboratorial em surtos selecionados para caracterizacao etiologica."
+  ]
+};
+
+export function summarizeFromRpc(
+  rpc: RpcRelatorioData,
+  weeklyAvgRpc: Array<{ se: number; media: number }>,
+  previousYear: { ano: number; totalCases: number; notifications: number; reportingMunicipalities: number } | null
+) {
+  const fxValues = [rpc.fx_menor_um, rpc.fx_1_4, rpc.fx_5_9, rpc.fx_10_14, rpc.fx_15_mais];
+  const ageDistribution = ageFields
+    .map((f, i) => ({ label: f.label, total: Number(fxValues[i] ?? 0) }))
+    .sort((a, b) => b.total - a.total);
+
+  const weeklySeries: WeeklyPoint[] = (rpc.weekly_series ?? []).map((w) => ({
+    week: `${w.ano}-SE${String(w.se).padStart(2, "0")}`,
+    total: Number(w.total)
+  }));
+
+  const weeklyAverage: WeeklyAvgPoint[] = weeklyAvgRpc.map((m) => ({
+    se: `SE${String(m.se).padStart(2, "0")}`,
+    average: Number(m.media)
+  }));
+
+  const indicators: NotificationIndicators = {
+    notifications: Number(rpc.total_notifications),
+    sampledRows: Number(rpc.total_notifications),
+    totalRowsInDatabase: Number(rpc.total_notifications),
+    totalCases: Number(rpc.total_cases),
+    reportingMunicipalities: Number(rpc.reporting_municipalities),
+    topMunicipalities: (rpc.top_municipios ?? []).map((m) => ({ name: m.name, total: Number(m.total) })),
+    topGves: (rpc.top_gves ?? []).map((g) => ({ name: g.name, total: Number(g.total) })),
+    topUnits: (rpc.top_units ?? []).map((u) => ({ name: u.name, total: Number(u.total) })),
+    sexDistribution: [
+      { label: "Masculino", total: Number(rpc.sex_masc) },
+      { label: "Feminino", total: Number(rpc.sex_fem) }
+    ],
+    ageDistribution,
+    outbreakNotifications: Number(rpc.outbreak_notifications),
+    outbreakTotal: Number(rpc.outbreak_total),
+    biologicalCollectionNotifications: Number(rpc.bio_collection_notifications),
+    biologicalCollectionTotal: Number(rpc.bio_collection_total),
+    educationalActions: Number(rpc.educational_actions),
+    trainings: Number(rpc.trainings),
+    symptomaticStaffRemoval: Number(rpc.symptomatic_removal),
+    specializedReferrals: Number(rpc.specialized_referrals),
+    weeklySeries,
+    weeklyAverage,
+    weeklyStats: stats(weeklySeries.map((w) => w.total)),
+    trend:
+      weeklySeries.length >= 2
+        ? {
+            firstWeek: weeklySeries[0],
+            lastWeek: weeklySeries[weeklySeries.length - 1],
+            percentageGrowth:
+              weeklySeries[0].total > 0
+                ? Number((((weeklySeries[weeklySeries.length - 1].total - weeklySeries[0].total) / weeklySeries[0].total) * 100).toFixed(1))
+                : null
+          }
+        : null
+  };
+
+  return {
+    generatedAt: new Date().toISOString(),
+    specialty: "Vigilancia Epidemiologica das Conjuntivites - CEVESP",
+    totalRowsInDatabase: Number(rpc.total_notifications),
+    sampledRows: Number(rpc.total_notifications),
+    indicators,
+    alerts: [] as ReportAlert[],
+    interpretation: buildInterpretation(indicators, []),
+    bulletinSections,
+    columns: [] as ColumnSummary[],
+    previousYear
+  };
+}
+
 export function summarizeNotificationRows(rows: Row[], total: number, allYearsRows?: Row[]) {
   const totalCases = sumBy(rows, "TotalCaso");
   const sexDistribution = [
@@ -334,19 +450,7 @@ export function summarizeNotificationRows(rows: Row[], total: number, allYearsRo
     indicators,
     alerts,
     interpretation: buildInterpretation(indicators, alerts),
-    bulletinSections: {
-      situacaoEpidemiologica:
-        "A analise considera registros do sistema CEVESP de Oftalmologia, com foco na distribuicao temporal, geografica e populacional dos casos de conjuntivite notificados.",
-      investigacaoSurtos:
-        "A investigacao de surtos deve priorizar unidades com recorrencia, municipios com maior concentracao de casos e notificacoes sem coleta biologica quando houver indicacao epidemiologica.",
-      recomendacoes: [
-        "Reforcar educacao em saude sobre higiene das maos, etiqueta respiratoria e nao compartilhamento de objetos pessoais.",
-        "Orientar afastamento de sintomaticos em instituicoes coletivas conforme avaliacao local.",
-        "Qualificar o preenchimento dos campos de surto, coleta biologica, medidas adotadas e encaminhamentos.",
-        "Monitorar semanalmente municipios e unidades com crescimento incomum de casos.",
-        "Estimular coleta laboratorial em surtos selecionados para caracterizacao etiologica."
-      ]
-    },
+    bulletinSections,
     columns: buildColumnSummaries(rows)
   };
 }
