@@ -32,52 +32,58 @@ export async function GET(request: NextRequest) {
   const yearParam = request.nextUrl.searchParams.get("year");
   const currentYear = new Date().getFullYear();
 
-  let conn: Awaited<ReturnType<typeof createNotificationConnection>> | null = null;
+  const year     = yearParam ? parseInt(yearParam, 10) : (full ? null : currentYear);
+  const sql      = year != null ? `SELECT * FROM \`${table}\` WHERE ANO = ?` : `SELECT * FROM \`${table}\``;
+  const params   = year != null ? [year] : [];
+  const fileName = full ? "cevesp-export-completo.json" : `cevesp-export-${year ?? currentYear}.json`;
+
+  let promiseConn: Awaited<ReturnType<typeof createNotificationConnection>> | null = null;
   try {
-    conn = await createNotificationConnection();
-
-    let years: number[];
-    if (full) {
-      const [[r]] = await conn.query(
-        `SELECT MIN(ANO) AS mn, MAX(ANO) AS mx FROM \`${table}\``
-      ) as [Array<{ mn: number; mx: number }>, unknown];
-      const min = r?.mn ?? currentYear;
-      const max = r?.mx ?? currentYear;
-      years = Array.from({ length: max - min + 1 }, (_, i) => min + i);
-    } else if (yearParam) {
-      years = [parseInt(yearParam, 10)];
-    } else {
-      years = [currentYear];
-    }
-
-    const allRows: Record<string, unknown>[] = [];
-    for (const ano of years) {
-      const [rows] = await conn.query(
-        `SELECT * FROM \`${table}\` WHERE ANO = ?`,
-        [ano]
-      ) as [Array<Record<string, unknown>>, unknown];
-      allRows.push(...rows.map(cleanRow));
-    }
-
-    const json = JSON.stringify(allRows);
-    return new NextResponse(json, {
-      headers: {
-        "Content-Type": "application/octet-stream",
-        "Content-Disposition": `attachment; filename="cevesp-export.json"`,
-        "X-Row-Count": String(allRows.length),
-      },
-    });
+    promiseConn = await createNotificationConnection();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    const isNetwork = msg.includes("ECONNREFUSED") || msg.includes("ETIMEDOUT") || msg.includes("ENOTFOUND");
-    if (isNetwork) {
-      return NextResponse.json(
-        { error: "Não foi possível conectar ao MySQL. Verifique que está na rede do escritório." },
-        { status: 503 }
-      );
-    }
-    return NextResponse.json({ error: msg }, { status: 500 });
-  } finally {
-    await conn?.end();
+    const isNetwork = /ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EHOSTUNREACH/.test(msg);
+    return NextResponse.json(
+      { error: isNetwork ? "Não foi possível conectar ao MySQL. Verifique que está na rede do escritório." : msg },
+      { status: isNetwork ? 503 : 500 }
+    );
   }
+
+  // Access the underlying callback-based connection for row-by-row streaming.
+  // This avoids buffering all rows in memory and avoids multiple round-trip queries.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const conn = (promiseConn as any).connection;
+  const encoder = new TextEncoder();
+  let first = true;
+
+  const readable = new ReadableStream({
+    start(controller) {
+      conn.query(sql, params)
+        .on("result", (row: Record<string, unknown>) => {
+          const prefix = first ? "[" : ",";
+          first = false;
+          controller.enqueue(encoder.encode(prefix + JSON.stringify(cleanRow(row))));
+        })
+        .on("error", (err: Error) => {
+          try { promiseConn?.end(); } catch { /* ignore */ }
+          controller.error(err);
+        })
+        .on("end", () => {
+          if (first) controller.enqueue(encoder.encode("["));
+          controller.enqueue(encoder.encode("]"));
+          controller.close();
+          try { promiseConn?.end(); } catch { /* ignore */ }
+        });
+    },
+    cancel() {
+      try { promiseConn?.end(); } catch { /* ignore */ }
+    }
+  });
+
+  return new NextResponse(readable, {
+    headers: {
+      "Content-Type": "application/octet-stream",
+      "Content-Disposition": `attachment; filename="${fileName}"`,
+    },
+  });
 }
