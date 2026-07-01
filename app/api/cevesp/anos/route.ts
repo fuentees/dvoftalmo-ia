@@ -9,17 +9,23 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("cevesp_notificacoes")
-    .select('"ANO"')
-    .not('"ANO"', "is", null)
-    .order('"ANO"', { ascending: false });
+  const anosSet = new Set<number>();
+  const pageSize = 1000;
 
-  if (error) return NextResponse.json({ anos: [] });
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await admin
+      .from("cevesp_notificacoes")
+      .select('"ANO"')
+      .not('"ANO"', "is", null)
+      .range(from, from + pageSize - 1);
+    if (error || !data?.length) break;
+    for (const r of data as Record<string, unknown>[]) {
+      const n = Number(r["ANO"]);
+      if (n > 1900) anosSet.add(n);
+    }
+    if (data.length < pageSize) break;
+  }
 
-  const anos = Array.from(
-    new Set((data ?? []).map((r: Record<string, unknown>) => Number(r["ANO"])).filter((a) => a > 1900))
-  ).sort((a, b) => b - a);
-
+  const anos = Array.from(anosSet).sort((a, b) => b - a);
   return NextResponse.json({ anos });
 }
