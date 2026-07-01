@@ -135,6 +135,48 @@ export async function runCevespAnalysisCached(
     return runCachedMonthlyCasesByGve(question, analysis);
   }
 
+  // Fast path: cevesp_agrupado RPC returns pre-aggregated rows (~240 rows for full history)
+  // instead of the 300+ paginated requests that fetchCacheRows needs for 300k raw rows.
+  if (["month", "year", "week"].includes(analysis.time_grain)) {
+    const aggregated = await tryFetchAggregated(analysis);
+    if (aggregated !== null && aggregated.length > 0) {
+      const generic = buildPivotFromAggregated(aggregated, analysis);
+      if (generic.rows.length > 0) {
+        const metricLabels2: Record<string, string> = {
+          total_casos: "Total de casos", notificacoes: "Notificacoes", surtos: "Surtos",
+          numero_surtos: "Numero de surtos", coletas: "Coletas biologicas",
+          acoes_educativas: "Acoes educativas", treinamentos: "Treinamentos",
+          afastamentos: "Afastamentos", encaminhamentos: "Encaminhamentos",
+          municipios_notificadores: "Municipios notificadores",
+          unidades_notificadoras: "Unidades notificadoras"
+        };
+        const dataRows2 = generic.rows.filter((row) => !Object.values(row).some((v) => String(v).toLowerCase() === "total"));
+        const totalRow2 = generic.rows.find((row) => Object.values(row).some((v) => String(v).toLowerCase() === "total"));
+        const total2 = Number(totalRow2?.Total ?? dataRows2.reduce((sum, row) => sum + Number(row.Total ?? row.Valor ?? 0), 0));
+        const labelCols2 = generic.columns.filter((c) => !["Valor", "Total"].includes(c) && !/^\d{4}$/.test(c));
+        const top3b = dataRows2.slice(0, 3)
+          .map((row) => `${labelCols2.map((c) => row[c]).filter(Boolean).join(" / ") || "Total"}: ${row.Total ?? row.Valor ?? 0}`)
+          .join(", ");
+        return {
+          question,
+          analysis,
+          metricLabel: metricLabels2[analysis.metric] ?? analysis.metric,
+          timeLabel: buildCacheUnderstanding(analysis).period,
+          columns: generic.columns,
+          rows: generic.rows,
+          fromCache: true as const,
+          understanding: buildCacheUnderstanding(analysis),
+          interpretation: [
+            "Dados do cache Supabase importado do CEVESP.",
+            `Total de ${metricLabels2[analysis.metric] ?? "registros"}: ${total2.toLocaleString("pt-BR")}.`,
+            top3b ? `Destaques: ${top3b}.` : "Nao houve destaque numerico para os criterios informados.",
+            "A tabela foi estruturada conforme a pergunta: dimensoes nas linhas, periodo nas colunas quando aplicavel, e total consolidado ao final."
+          ]
+        };
+      }
+    }
+  }
+
   {
     const cacheRows = await fetchCacheRows(
       analysis,
@@ -278,6 +320,140 @@ export async function runCevespAnalysisCached(
       `Destaque: ${top3}.`
     ]
   };
+}
+
+// ── Aggregation RPC fast path ────────────────────────────────────────────────
+// cevesp_agrupado returns pre-grouped (ano, mes, se, dim_value, total) rows.
+// Replaces the 300-request pagination loop for month/year/week pivots.
+
+type AggRow = { ano: number; mes: number | null; se: number | null; dim_value: string | null; total: number };
+
+async function tryFetchAggregated(analysis: CevespAnalysisInput): Promise<AggRow[] | null> {
+  const grain = analysis.time_grain;
+  if (!["month", "year", "week"].includes(grain)) return null;
+
+  const dr = resolveDateRange(analysis.date_range);
+  const dims = (analysis.dimensions.length > 0 ? analysis.dimensions.map(mapDimension) : [])
+    .filter((v, i, a) => a.indexOf(v) === i);
+  const extraDims = dims.filter((d) => !["mes", "ano", "se"].includes(d));
+  const rpcMappable = ["gve", "drs", "municipio", "uvis"];
+  if (extraDims.some((d) => !rpcMappable.includes(d))) return null;
+
+  const p_dim = extraDims.length > 0 ? extraDims[0] : null;
+  const gveFilter = analysis.filters?.find((f) => f.field === "gve")?.value ?? null;
+  const munFilter = analysis.filters?.find((f) => f.field === "municipio")?.value ?? null;
+
+  try {
+    const supabase = createAdminClient();
+    const { data, error } = await supabase.rpc("cevesp_agrupado", {
+      p_grain: grain,
+      p_metric: analysis.metric,
+      p_dim,
+      p_ano_start: dr.anoStart ?? null,
+      p_ano_end: dr.anoEnd ?? null,
+      p_gve: gveFilter ?? null,
+      p_municipio: munFilter ?? null,
+      p_se_start: dr.seStart ?? null,
+      p_se_end: dr.seEnd ?? null
+    });
+    if (error || !data) return null;
+    return data as AggRow[];
+  } catch {
+    return null;
+  }
+}
+
+function buildPivotFromAggregated(agg: AggRow[], analysis: CevespAnalysisInput): { columns: string[]; rows: Array<Record<string, unknown>> } {
+  const limit = Math.min(analysis.limit ?? 100, 500);
+  const grain = analysis.time_grain;
+  const hasDim = agg.some((r) => r.dim_value !== null);
+  const dimLabel0 = analysis.dimensions[0] ? dimensionLabel(mapDimension(analysis.dimensions[0])) : "Dimensao";
+
+  if (grain === "month") {
+    const years = Array.from(new Set(agg.map((r) => String(r.ano)))).sort();
+    const groups = new Map<string, Record<string, unknown>>();
+
+    for (const row of agg) {
+      const m = row.mes;
+      if (!m || m < 1 || m > 12) continue;
+      const key = [m, row.dim_value ?? ""].join("||");
+      if (!groups.has(key)) {
+        const base: Record<string, unknown> = { Mes: monthName(m) };
+        if (hasDim) base[dimLabel0] = row.dim_value ?? "";
+        for (const y of years) base[y] = 0;
+        base.Total = 0;
+        groups.set(key, base);
+      }
+      const cur = groups.get(key)!;
+      cur[String(row.ano)] = Number(cur[String(row.ano)] ?? 0) + Number(row.total);
+      cur.Total = Number(cur.Total ?? 0) + Number(row.total);
+    }
+
+    const dataRows = Array.from(groups.entries())
+      .sort(([a], [b]) => Number(a.split("||")[0]) - Number(b.split("||")[0]))
+      .map(([, v]) => v)
+      .slice(0, limit);
+
+    const totalRow: Record<string, unknown> = { Mes: "Total" };
+    if (hasDim) totalRow[dimLabel0] = "Todos";
+    for (const y of years) totalRow[y] = dataRows.reduce((s, r) => s + Number(r[y] ?? 0), 0);
+    totalRow.Total = dataRows.reduce((s, r) => s + Number(r.Total ?? 0), 0);
+
+    const cols = ["Mes", ...(hasDim ? [dimLabel0] : []), ...years, "Total"];
+    return { columns: cols, rows: [...dataRows, totalRow] };
+  }
+
+  if (grain === "year") {
+    const years = Array.from(new Set(agg.map((r) => String(r.ano)))).sort();
+    if (hasDim) {
+      const groups = new Map<string, Record<string, unknown>>();
+      for (const row of agg) {
+        const key = row.dim_value ?? "Nao informado";
+        if (!groups.has(key)) {
+          const base: Record<string, unknown> = { [dimLabel0]: key };
+          for (const y of years) base[y] = 0;
+          base.Total = 0;
+          groups.set(key, base);
+        }
+        const cur = groups.get(key)!;
+        cur[String(row.ano)] = Number(cur[String(row.ano)] ?? 0) + Number(row.total);
+        cur.Total = Number(cur.Total ?? 0) + Number(row.total);
+      }
+      const dataRows = Array.from(groups.values()).sort((a, b) => Number(b.Total) - Number(a.Total)).slice(0, limit);
+      const totalRow: Record<string, unknown> = { [dimLabel0]: "Total" };
+      for (const y of years) totalRow[y] = dataRows.reduce((s, r) => s + Number(r[y] ?? 0), 0);
+      totalRow.Total = dataRows.reduce((s, r) => s + Number(r.Total ?? 0), 0);
+      return { columns: [dimLabel0, ...years, "Total"], rows: [...dataRows, totalRow] };
+    }
+    const mappedRows = agg.map((r) => ({ Ano: String(r.ano), Valor: r.total }));
+    const total = agg.reduce((s, r) => s + Number(r.total), 0);
+    return { columns: ["Ano", "Valor"], rows: [...mappedRows, { Ano: "Total", Valor: total }] };
+  }
+
+  if (grain === "week") {
+    const years = Array.from(new Set(agg.map((r) => String(r.ano)))).sort();
+    const groups = new Map<number, Record<string, unknown>>();
+    for (const row of agg) {
+      const se = row.se;
+      if (!se || se < 1 || se > 53) continue;
+      if (!groups.has(se)) {
+        const base: Record<string, unknown> = { "Semana Epidemiologica": se };
+        for (const y of years) base[y] = 0;
+        base.Total = 0;
+        groups.set(se, base);
+      }
+      const cur = groups.get(se)!;
+      cur[String(row.ano)] = Number(cur[String(row.ano)] ?? 0) + Number(row.total);
+      cur.Total = Number(cur.Total ?? 0) + Number(row.total);
+    }
+    const dataRows = Array.from(groups.entries()).sort(([a], [b]) => a - b).map(([, v]) => v).slice(0, limit);
+    const totalRow: Record<string, unknown> = { "Semana Epidemiologica": "Total" };
+    for (const y of years) totalRow[y] = dataRows.reduce((s, r) => s + Number(r[y] ?? 0), 0);
+    totalRow.Total = dataRows.reduce((s, r) => s + Number(r.Total ?? 0), 0);
+    return { columns: ["Semana Epidemiologica", ...years, "Total"], rows: [...dataRows, totalRow] };
+  }
+
+  return { columns: [], rows: [] };
 }
 
 function normalizeText(value: string) {
