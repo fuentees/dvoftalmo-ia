@@ -756,10 +756,14 @@ export async function getCevespHistorico(opts?: {
     return best;
   }
 
+  // Incidência só é válida sem filtro geográfico — com filtro, o denominador
+  // seria toda a população de SP mas o numerador seria apenas o território filtrado.
+  const hasGeoFilter = !!(opts?.gve || opts?.municipio);
+
   const allYears = Array.from(yearMap.keys()).sort((a, b) => a - b);
   const byYear = allYears.map((ano) => {
     const casos = yearMap.get(ano) ?? 0;
-    const pop = closestSpPop(ano);
+    const pop = hasGeoFilter ? null : closestSpPop(ano);
     const incidencia100k = pop && pop > 0 ? Number(((casos / pop) * 100_000).toFixed(2)) : null;
     return { ano, casos, incidencia100k };
   });
