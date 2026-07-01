@@ -66,16 +66,31 @@ export function TerritoriesView() {
     staleTime: 2 * 60 * 1000
   });
 
-  const rows = useMemo(() => {
+  const searchedRows = useMemo(() => {
     const q = normalizeText(query);
     return [...(priorities.data?.priorities ?? [])]
-      .filter((item) => agravo === "todos" || item.agravo === agravo)
       .filter((item) => {
         if (!q) return true;
         return normalizeText(`${item.territorio} ${item.motivo} ${item.acao} ${item.agravo}`).includes(q);
       })
       .sort((a, b) => levelRank(a.level) - levelRank(b.level) || b.score - a.score);
-  }, [agravo, priorities.data?.priorities, query]);
+  }, [priorities.data?.priorities, query]);
+  const rows = useMemo(
+    () => searchedRows.filter((item) => agravo === "todos" || item.agravo === agravo),
+    [agravo, searchedRows]
+  );
+  const nextAction = rows[0];
+  const byAgravo = useMemo(() => {
+    return (["Conjuntivite", "Tracoma", "Dados"] as const).map((item) => {
+      const items = searchedRows.filter((row) => row.agravo === item);
+      return {
+        agravo: item,
+        total: items.length,
+        critica: items.filter((row) => row.level === "critica").length,
+        alta: items.filter((row) => row.level === "alta").length
+      };
+    });
+  }, [searchedRows]);
 
   return (
     <div className="flex flex-col">
@@ -91,10 +106,18 @@ export function TerritoriesView() {
               Ranking operacional por município/GVE, agravo, evidência e ação recomendada.
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => priorities.refetch()} disabled={priorities.isFetching}>
-            <RefreshCw className={`h-4 w-4 ${priorities.isFetching ? "animate-spin" : ""}`} />
-            Atualizar
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={() => priorities.refetch()} disabled={priorities.isFetching}>
+              <RefreshCw className={`h-4 w-4 ${priorities.isFetching ? "animate-spin" : ""}`} />
+              Atualizar
+            </Button>
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/qualidade-dados">Qualidade</Link>
+            </Button>
+            <Button size="sm" asChild>
+              <Link href={nextAction?.evidenciaHref ?? "/dashboard"}>Abrir evidência</Link>
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -144,6 +167,46 @@ export function TerritoriesView() {
             </CardContent>
           </Card>
         </div>
+
+        {!priorities.isLoading && !priorities.isError && nextAction && (
+          <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr]">
+            <Link
+              href={nextAction.evidenciaHref}
+              className="group rounded-md border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-primary/5"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge className={priorityStyle(nextAction.level)}>{nextAction.level}</Badge>
+                <Badge className="bg-muted text-foreground">{nextAction.agravo}</Badge>
+                <span className="text-xs text-muted-foreground">{nextAction.prazo}</span>
+              </div>
+              <p className="mt-3 flex items-center gap-2 text-base font-semibold">
+                <Map className="h-4 w-4 text-primary" />
+                {nextAction.territorio}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">{nextAction.motivo}</p>
+              <div className="mt-3 flex items-center justify-between gap-3 text-sm">
+                <span>{nextAction.acao}</span>
+                <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary" />
+              </div>
+            </Link>
+            <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+              {byAgravo.map((item) => (
+                <button
+                  key={item.agravo}
+                  type="button"
+                  onClick={() => setAgravo(item.agravo)}
+                  className="rounded-md border bg-card p-3 text-left transition-colors hover:border-primary/40 hover:bg-muted/40"
+                >
+                  <p className="text-xs font-medium text-muted-foreground">{item.agravo}</p>
+                  <p className="mt-1 text-2xl font-semibold tabular-nums">{item.total.toLocaleString("pt-BR")}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {item.critica.toLocaleString("pt-BR")} crítica(s), {item.alta.toLocaleString("pt-BR")} alta(s)
+                  </p>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {priorities.isLoading && (
           <div className="flex h-44 items-center justify-center rounded-md border bg-card text-sm text-muted-foreground">
