@@ -216,22 +216,32 @@ function cellPercent(value: number, total: number) {
   return `${((value / total) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
 }
 
-function CrossCell({ value, total }: { value: number; total: number }) {
+function CrossCell({ value, rowTotal, columnTotal }: { value: number; rowTotal: number; columnTotal: number }) {
   return (
     <td className="px-3 py-2 text-right tabular-nums">
-      <span className="font-medium">{num(value)}</span>
-      <span className="ml-1 text-[11px] text-muted-foreground">({cellPercent(value, total)})</span>
+      <div className="font-medium">{num(value)}</div>
+      <div className="text-[11px] text-muted-foreground">
+        (L {cellPercent(value, rowTotal)} / C {cellPercent(value, columnTotal)})
+      </div>
     </td>
   );
 }
 
 function CrossTable({ title, rows }: { title: string; rows: DemographicCross[] }) {
   const grandTotal = rows.reduce((sum, row) => sum + row.total, 0);
+  const columnTotals = {
+    TF: rows.reduce((sum, row) => sum + row.TF, 0),
+    TI: rows.reduce((sum, row) => sum + row.TI, 0),
+    TS: rows.reduce((sum, row) => sum + row.TS, 0),
+    TT: rows.reduce((sum, row) => sum + row.TT, 0),
+    CO: rows.reduce((sum, row) => sum + row.CO, 0),
+    semForma: rows.reduce((sum, row) => sum + row.semForma, 0)
+  };
   return (
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm">{title}</CardTitle>
-        <CardDescription>Contagem e percentual dentro de cada grupo.</CardDescription>
+        <CardDescription>Contagem com percentual da linha (L) e da coluna (C).</CardDescription>
       </CardHeader>
       <CardContent>
         {rows.length === 0 ? (
@@ -255,12 +265,12 @@ function CrossTable({ title, rows }: { title: string; rows: DemographicCross[] }
                 {rows.map((row) => (
                   <tr key={row.label} className="border-t">
                     <td className="px-3 py-2 font-medium">{row.label}</td>
-                    <CrossCell value={row.TF} total={row.total} />
-                    <CrossCell value={row.TI} total={row.total} />
-                    <CrossCell value={row.TS} total={row.total} />
-                    <CrossCell value={row.TT} total={row.total} />
-                    <CrossCell value={row.CO} total={row.total} />
-                    <CrossCell value={row.semForma} total={row.total} />
+                    <CrossCell value={row.TF} rowTotal={row.total} columnTotal={columnTotals.TF} />
+                    <CrossCell value={row.TI} rowTotal={row.total} columnTotal={columnTotals.TI} />
+                    <CrossCell value={row.TS} rowTotal={row.total} columnTotal={columnTotals.TS} />
+                    <CrossCell value={row.TT} rowTotal={row.total} columnTotal={columnTotals.TT} />
+                    <CrossCell value={row.CO} rowTotal={row.total} columnTotal={columnTotals.CO} />
+                    <CrossCell value={row.semForma} rowTotal={row.total} columnTotal={columnTotals.semForma} />
                     <td className="px-3 py-2 text-right font-semibold tabular-nums">
                       <span>{num(row.total)}</span>
                       <span className="ml-1 text-[11px] font-normal text-muted-foreground">({cellPercent(row.total, grandTotal)})</span>
@@ -268,6 +278,18 @@ function CrossTable({ title, rows }: { title: string; rows: DemographicCross[] }
                   </tr>
                 ))}
               </tbody>
+              <tfoot className="border-t bg-muted/30 font-semibold">
+                <tr>
+                  <td className="px-3 py-2">Total</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{num(columnTotals.TF)} ({cellPercent(columnTotals.TF, grandTotal)})</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{num(columnTotals.TI)} ({cellPercent(columnTotals.TI, grandTotal)})</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{num(columnTotals.TS)} ({cellPercent(columnTotals.TS, grandTotal)})</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{num(columnTotals.TT)} ({cellPercent(columnTotals.TT, grandTotal)})</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{num(columnTotals.CO)} ({cellPercent(columnTotals.CO, grandTotal)})</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{num(columnTotals.semForma)} ({cellPercent(columnTotals.semForma, grandTotal)})</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{num(grandTotal)} (100%)</td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}
