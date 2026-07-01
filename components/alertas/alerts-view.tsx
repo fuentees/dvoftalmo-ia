@@ -27,6 +27,11 @@ interface EpiAlert {
   created_at: string;
 }
 
+type AlertsResponse = {
+  alerts: EpiAlert[];
+  warning?: string | null;
+};
+
 const severityConfig = {
   critical: { label: "Crítica", icon: AlertCircle, cls: "border-red-200 bg-red-50 text-red-700" },
   warning:  { label: "Atenção", icon: AlertTriangle, cls: "border-amber-200 bg-amber-50 text-amber-700" },
@@ -53,18 +58,32 @@ export function AlertsView() {
   const qc = useQueryClient();
   const [filter, setFilter] = useState<AlertFilter>("active");
 
-  const { data: alerts = [], isLoading } = useQuery<EpiAlert[]>({
+  const { data, error, isLoading } = useQuery<AlertsResponse>({
     queryKey: ["alerts"],
-    queryFn: () => fetch("/api/alertas").then((r) => r.json())
+    queryFn: async () => {
+      const response = await fetch("/api/alertas");
+      const warning = response.headers.get("X-DvOftalmo-Warning");
+      const body = await response.json().catch(() => []);
+      if (!response.ok) throw new Error(body?.error ?? "Erro ao carregar alertas.");
+      return {
+        alerts: Array.isArray(body) ? body as EpiAlert[] : [],
+        warning
+      };
+    }
   });
+  const alerts = useMemo(() => data?.alerts ?? [], [data?.alerts]);
 
   const updateStatus = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: AlertStatus }) =>
-      fetch("/api/alertas", {
+    mutationFn: async ({ id, status }: { id: string; status: AlertStatus }) => {
+      const response = await fetch("/api/alertas", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, status })
-      }).then((r) => r.json()),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error ?? "Erro ao atualizar alerta.");
+      return body;
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["alerts"] })
   });
 
@@ -133,6 +152,20 @@ export function AlertsView() {
         </div>
 
         {isLoading && <div className="rounded-md border bg-card p-8 text-center text-sm text-muted-foreground">Carregando alertas...</div>}
+
+        {(data?.warning || error || updateStatus.error) && (
+          <Card className="border-amber-200 bg-amber-50">
+            <CardContent className="flex gap-3 py-4 text-sm text-amber-900">
+              <AlertTriangle className="mt-0.5 h-4 w-4" />
+              <div>
+                <p className="font-medium">Verifique a fonte dos alertas</p>
+                <p className="text-amber-800">
+                  {data?.warning ?? error?.message ?? updateStatus.error?.message}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {!isLoading && visible.length === 0 && (
           <Card>
