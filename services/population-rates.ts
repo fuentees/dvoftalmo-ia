@@ -183,9 +183,29 @@ export async function buildCevespRates(filterOrAno?: CevespRatesFilter | number,
       return next;
     }
   );
-  const years = rows.map((row) => Number(row.ANO)).filter((year) => Number.isInteger(year) && year > 1900);
-  const analysisYear = ano ?? (years.length ? Math.max(...years) : 0);
-  const currentRows = rows.filter((row) => Number(row.ANO) === analysisYear && Number(row.Excluido ?? 0) === 0);
+  const allYears = Array.from(
+    new Set(rows.map((row) => Number(row.ANO)).filter((year) => Number.isInteger(year) && year > 1900))
+  ).sort((a, b) => a - b);
+
+  // Period mode: no year filter selected and data spans multiple years
+  const isPeriod = !ano && allYears.length > 1;
+  const analysisYear = ano ?? (allYears.length ? allYears[allYears.length - 1] : 0);
+  const nYears = isPeriod ? allYears.length : 1;
+
+  const currentRows = isPeriod
+    ? rows.filter((row) => Number(row.Excluido ?? 0) === 0)
+    : rows.filter((row) => Number(row.ANO) === analysisYear && Number(row.Excluido ?? 0) === 0);
+
+  // Average population across period years for a given municipality
+  function avgPopForPeriod(codigoIbge: string | null, municipioName: string) {
+    const pops = allYears.map((yr) =>
+      getPopulationForYear(population, { codigoIbge, municipio: municipioName, year: yr })
+    );
+    const valid = pops.filter((p) => p.value > 0);
+    if (!valid.length) return { value: 0, fallback: false };
+    const avg = Math.round(valid.reduce((s, p) => s + p.value, 0) / valid.length);
+    return { value: avg, fallback: valid.some((p) => !p.exact) };
+  }
 
   const byMunicipality = new Map<string, { municipio: string; codigoIbge: string | null; gve: string; casos: number }>();
   for (const row of currentRows) {
@@ -203,13 +223,20 @@ export async function buildCevespRates(filterOrAno?: CevespRatesFilter | number,
   }
 
   const municipalityRows = Array.from(byMunicipality.values()).map((row) => {
-    const pop = getPopulationForYear(population, {
-      codigoIbge: row.codigoIbge,
-      municipio: row.municipio,
-      year: analysisYear
-    });
-    const populacao = pop.value;
-    const incidencia100k = incidencePer100k(row.casos, populacao);
+    let populacao: number;
+    let populationFallback: boolean;
+    if (isPeriod) {
+      const avg = avgPopForPeriod(row.codigoIbge, row.municipio);
+      populacao = avg.value;
+      populationFallback = avg.fallback;
+    } else {
+      const pop = getPopulationForYear(population, { codigoIbge: row.codigoIbge, municipio: row.municipio, year: analysisYear });
+      populacao = pop.value;
+      populationFallback = !pop.exact;
+    }
+    // For period: use average annual cases as numerator (cases / nYears)
+    const casosAnuais = isPeriod ? row.casos / nYears : row.casos;
+    const incidencia100k = incidencePer100k(casosAnuais, populacao);
     return {
       municipio: row.municipio,
       codigoIbge: row.codigoIbge,
@@ -217,8 +244,7 @@ export async function buildCevespRates(filterOrAno?: CevespRatesFilter | number,
       ano: analysisYear,
       casos: row.casos,
       populacao,
-      populationYear: pop.sourceYear,
-      populationFallback: !pop.exact,
+      populationFallback,
       incidencia100k,
       riskColor: riskColor(incidencia100k, [10, 50, 100])
     };
@@ -233,20 +259,31 @@ export async function buildCevespRates(filterOrAno?: CevespRatesFilter | number,
     gveMap.set(gve, current);
   }
 
-  const gveRows = Array.from(gveMap.values()).map((row) => ({
-    ...row,
-    ano: analysisYear,
-    incidencia100k: incidencePer100k(row.casos, row.populacao),
-    riskColor: riskColor(incidencePer100k(row.casos, row.populacao), [10, 50, 100])
-  })).sort((a, b) => Number(b.incidencia100k ?? -1) - Number(a.incidencia100k ?? -1));
+  const gveRows = Array.from(gveMap.values()).map((row) => {
+    const casosAnuais = isPeriod ? row.casos / nYears : row.casos;
+    return {
+      ...row,
+      ano: analysisYear,
+      incidencia100k: incidencePer100k(casosAnuais, row.populacao),
+      riskColor: riskColor(incidencePer100k(casosAnuais, row.populacao), [10, 50, 100])
+    };
+  }).sort((a, b) => Number(b.incidencia100k ?? -1) - Number(a.incidencia100k ?? -1));
 
   return {
     missingPopulation: false,
     analysisYear,
-    populationYear: population.latestYear,
+    isPeriod,
+    periodStart: isPeriod ? allYears[0] : null,
+    periodEnd: isPeriod ? allYears[allYears.length - 1] : null,
+    nYears,
+    populationYear: isPeriod ? null : population.latestYear,
     populationYears: population.years,
-    metric: "Incidencia de conjuntivite por 100 mil habitantes",
-    methodology: "casos CEVESP (TotalCaso) / populacao municipal IBGE x 100.000",
+    metric: isPeriod
+      ? `Incidencia media anual de conjuntivite por 100 mil habitantes (${allYears[0]}–${allYears[allYears.length - 1]})`
+      : "Incidencia de conjuntivite por 100 mil habitantes",
+    methodology: isPeriod
+      ? `casos anuais medios CEVESP / populacao media municipal IBGE (${allYears[0]}–${allYears[allYears.length - 1]}) x 100.000`
+      : "casos CEVESP (TotalCaso) / populacao municipal IBGE x 100.000",
     byMunicipality: municipalityRows,
     byGve: gveRows,
     mapRows: municipalityRows

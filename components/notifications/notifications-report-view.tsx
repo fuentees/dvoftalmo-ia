@@ -97,6 +97,10 @@ type CevespRatesData = {
   missingPopulation?: boolean;
   message?: string;
   analysisYear?: number;
+  isPeriod?: boolean;
+  periodStart?: number | null;
+  periodEnd?: number | null;
+  nYears?: number;
   populationYear?: number | null;
   byMunicipality?: RateMapRow[];
   byGve?: RateMapRow[];
@@ -355,8 +359,16 @@ function CevespRatesPanel({ data }: { data: CevespRatesData }) {
       )}
       {view === "municipio" && (
         <RateMap
-          title={`Mapa operacional de incidência municipal${data.analysisYear ? ` - ${data.analysisYear}` : ""}`}
-          description={`Casos de conjuntivite por 100 mil habitantes. População IBGE ${data.populationYear ?? "-"}.`}
+          title={
+            data.isPeriod
+              ? `Mapa operacional de incidência municipal — média anual ${data.periodStart}–${data.periodEnd}`
+              : `Mapa operacional de incidência municipal${data.analysisYear ? ` - ${data.analysisYear}` : ""}`
+          }
+          description={
+            data.isPeriod
+              ? `Incidência média anual por 100 mil hab. (${data.periodStart}–${data.periodEnd}). Pop. IBGE média do período.`
+              : `Casos de conjuntivite por 100 mil habitantes. População IBGE ${data.populationYear ?? "-"}.`
+          }
           rows={data.mapRows ?? data.byMunicipality ?? []}
           valueKey="incidencia100k"
           valueLabel="por 100 mil"
@@ -365,16 +377,24 @@ function CevespRatesPanel({ data }: { data: CevespRatesData }) {
           tableColumns={[
             { key: "municipio", label: "Município" },
             { key: "gve", label: "GVE" },
-            { key: "casos", label: "Casos" },
-            { key: "populacao", label: `Pop. IBGE${data.populationYear ? ` ${data.populationYear}` : ""}` },
-            { key: "incidencia100k", label: "Incidência/100 mil", decimals: 2 }
+            { key: "casos", label: "Total de casos" },
+            { key: "populacao", label: data.isPeriod ? `Pop. IBGE (média ${data.periodStart}–${data.periodEnd})` : `Pop. IBGE${data.populationYear ? ` ${data.populationYear}` : ""}` },
+            { key: "incidencia100k", label: data.isPeriod ? "Inc. média anual/100 mil" : "Incidência/100 mil", decimals: 2 }
           ]}
         />
       )}
       {hasGve && view === "gve" && (
         <RateMap
-          title={`Mapa operacional de incidência por GVE${data.analysisYear ? ` - ${data.analysisYear}` : ""}`}
-          description={`Casos de conjuntivite por 100 mil habitantes, consolidados por GVE. População IBGE ${data.populationYear ?? "-"}.`}
+          title={
+            data.isPeriod
+              ? `Mapa operacional de incidência por GVE — média anual ${data.periodStart}–${data.periodEnd}`
+              : `Mapa operacional de incidência por GVE${data.analysisYear ? ` - ${data.analysisYear}` : ""}`
+          }
+          description={
+            data.isPeriod
+              ? `Incidência média anual por 100 mil hab. (${data.periodStart}–${data.periodEnd}), por GVE. Pop. IBGE média do período.`
+              : `Casos de conjuntivite por 100 mil habitantes, consolidados por GVE. População IBGE ${data.populationYear ?? "-"}.`
+          }
           rows={data.byGve ?? []}
           valueKey="incidencia100k"
           valueLabel="por 100 mil"
@@ -382,9 +402,9 @@ function CevespRatesPanel({ data }: { data: CevespRatesData }) {
           message={data.message}
           tableColumns={[
             { key: "gve", label: "GVE" },
-            { key: "casos", label: "Casos" },
-            { key: "populacao", label: `Pop. IBGE${data.populationYear ? ` ${data.populationYear}` : ""}` },
-            { key: "incidencia100k", label: "Incidência/100 mil", decimals: 2 }
+            { key: "casos", label: "Total de casos" },
+            { key: "populacao", label: data.isPeriod ? `Pop. IBGE (média ${data.periodStart}–${data.periodEnd})` : `Pop. IBGE${data.populationYear ? ` ${data.populationYear}` : ""}` },
+            { key: "incidencia100k", label: data.isPeriod ? "Inc. média anual/100 mil" : "Incidência/100 mil", decimals: 2 }
           ]}
         />
       )}
