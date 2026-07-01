@@ -690,6 +690,7 @@ export function TracomaAnaliseView({ externalFilters, hideFilters = false }: { e
               rows={(taxaMapView === "municipio" ? rates.data!.byMunicipality ?? [] : rates.data!.byGve ?? []) as any}
               valueKey={taxaMetric}
               valueLabel={taxaMetric === "taxaDeteccao100k" ? "por 100 mil hab." : "%"}
+              direction={taxaMetric === "coberturaExame" ? "higher-better" : "higher-risk"}
               missingPopulation={false}
               tableColumns={
                 taxaMapView === "municipio"

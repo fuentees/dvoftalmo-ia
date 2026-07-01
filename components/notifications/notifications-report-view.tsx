@@ -355,33 +355,37 @@ function CevespRatesPanel({ data }: { data: CevespRatesData }) {
       )}
       {view === "municipio" && (
         <RateMap
-          title={`Mapa operacional de incidencia municipal${data.analysisYear ? ` - ${data.analysisYear}` : ""}`}
-          description={`Casos de conjuntivite por 100 mil habitantes. Populacao IBGE ${data.populationYear ?? "-"}.`}
+          title={`Mapa operacional de incidência municipal${data.analysisYear ? ` - ${data.analysisYear}` : ""}`}
+          description={`Casos de conjuntivite por 100 mil habitantes. População IBGE ${data.populationYear ?? "-"}.`}
           rows={data.mapRows ?? data.byMunicipality ?? []}
           valueKey="incidencia100k"
           valueLabel="por 100 mil"
           missingPopulation={data.missingPopulation}
           message={data.message}
           tableColumns={[
-            { key: "municipio", label: "Municipio" },
+            { key: "municipio", label: "Município" },
             { key: "gve", label: "GVE" },
             { key: "casos", label: "Casos" },
-            { key: "populacao", label: "Populacao" },
-            { key: "incidencia100k", label: "Incidencia/100 mil", decimals: 2 }
+            { key: "populacao", label: "População" },
+            { key: "incidencia100k", label: "Incidência/100 mil", decimals: 2 }
           ]}
         />
       )}
       {hasGve && view === "gve" && (
-        <ResultTable
-          title="Incidencia por GVE"
-          columns={["gve", "casos", "populacao", "incidencia100k"]}
-          rows={(data.byGve ?? []).map((row) => ({
-            gve: row.gve,
-            casos: row.casos,
-            populacao: row.populacao,
-            incidencia100k: Number(row.incidencia100k ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 })
-          }))}
-          limit={40}
+        <RateMap
+          title={`Mapa operacional de incidência por GVE${data.analysisYear ? ` - ${data.analysisYear}` : ""}`}
+          description={`Casos de conjuntivite por 100 mil habitantes, consolidados por GVE. População IBGE ${data.populationYear ?? "-"}.`}
+          rows={data.byGve ?? []}
+          valueKey="incidencia100k"
+          valueLabel="por 100 mil"
+          missingPopulation={data.missingPopulation}
+          message={data.message}
+          tableColumns={[
+            { key: "gve", label: "GVE" },
+            { key: "casos", label: "Casos" },
+            { key: "populacao", label: "População" },
+            { key: "incidencia100k", label: "Incidência/100 mil", decimals: 2 }
+          ]}
         />
       )}
     </div>
