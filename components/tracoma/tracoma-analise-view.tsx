@@ -216,18 +216,20 @@ function cellPercent(value: number, total: number) {
   return `${((value / total) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
 }
 
-function CrossCell({ value, rowTotal, columnTotal }: { value: number; rowTotal: number; columnTotal: number }) {
+type PctMode = "linha" | "coluna";
+
+function CrossCell({ value, rowTotal, columnTotal, mode }: { value: number; rowTotal: number; columnTotal: number; mode: PctMode }) {
+  const pct = mode === "linha" ? cellPercent(value, rowTotal) : cellPercent(value, columnTotal);
   return (
     <td className="px-3 py-2 text-right tabular-nums">
       <div className="font-medium">{num(value)}</div>
-      <div className="text-[11px] text-muted-foreground">
-        (L {cellPercent(value, rowTotal)} / C {cellPercent(value, columnTotal)})
-      </div>
+      <div className="text-[11px] text-muted-foreground">{pct}</div>
     </td>
   );
 }
 
 function CrossTable({ title, rows }: { title: string; rows: DemographicCross[] }) {
+  const [mode, setMode] = useState<PctMode>("coluna");
   const grandTotal = rows.reduce((sum, row) => sum + row.total, 0);
   const columnTotals = {
     TF: rows.reduce((sum, row) => sum + row.TF, 0),
@@ -240,8 +242,23 @@ function CrossTable({ title, rows }: { title: string; rows: DemographicCross[] }
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm">{title}</CardTitle>
-        <CardDescription>Contagem com percentual da linha (L) e da coluna (C).</CardDescription>
+        <div className="flex items-start justify-between gap-2">
+          <CardTitle className="text-sm">{title}</CardTitle>
+          <div className="flex shrink-0 overflow-hidden rounded-md border text-xs">
+            <button
+              onClick={() => setMode("coluna")}
+              className={`px-2 py-1 transition-colors ${mode === "coluna" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
+            >
+              % coluna
+            </button>
+            <button
+              onClick={() => setMode("linha")}
+              className={`border-l px-2 py-1 transition-colors ${mode === "linha" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
+            >
+              % linha
+            </button>
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
         {rows.length === 0 ? (
@@ -265,12 +282,12 @@ function CrossTable({ title, rows }: { title: string; rows: DemographicCross[] }
                 {rows.map((row) => (
                   <tr key={row.label} className="border-t">
                     <td className="px-3 py-2 font-medium">{row.label}</td>
-                    <CrossCell value={row.TF} rowTotal={row.total} columnTotal={columnTotals.TF} />
-                    <CrossCell value={row.TI} rowTotal={row.total} columnTotal={columnTotals.TI} />
-                    <CrossCell value={row.TS} rowTotal={row.total} columnTotal={columnTotals.TS} />
-                    <CrossCell value={row.TT} rowTotal={row.total} columnTotal={columnTotals.TT} />
-                    <CrossCell value={row.CO} rowTotal={row.total} columnTotal={columnTotals.CO} />
-                    <CrossCell value={row.semForma} rowTotal={row.total} columnTotal={columnTotals.semForma} />
+                    <CrossCell value={row.TF} rowTotal={row.total} columnTotal={columnTotals.TF} mode={mode} />
+                    <CrossCell value={row.TI} rowTotal={row.total} columnTotal={columnTotals.TI} mode={mode} />
+                    <CrossCell value={row.TS} rowTotal={row.total} columnTotal={columnTotals.TS} mode={mode} />
+                    <CrossCell value={row.TT} rowTotal={row.total} columnTotal={columnTotals.TT} mode={mode} />
+                    <CrossCell value={row.CO} rowTotal={row.total} columnTotal={columnTotals.CO} mode={mode} />
+                    <CrossCell value={row.semForma} rowTotal={row.total} columnTotal={columnTotals.semForma} mode={mode} />
                     <td className="px-3 py-2 text-right font-semibold tabular-nums">
                       <span>{num(row.total)}</span>
                       <span className="ml-1 text-[11px] font-normal text-muted-foreground">({cellPercent(row.total, grandTotal)})</span>
