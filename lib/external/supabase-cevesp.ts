@@ -496,6 +496,7 @@ async function fetchCacheRows(analysis: CevespAnalysisInput, select: string) {
 
   for (let from = 0; ; from += pageSize) {
     let query = supabase.from("cevesp_notificacoes").select(select);
+    query = query.or('Excluido.is.null,Excluido.eq.0');
     if (dr.anoStart != null) query = query.gte("ANO", dr.anoStart);
     if (dr.anoEnd != null) query = query.lte("ANO", dr.anoEnd);
     if (dr.startDate) query = query.gte("DtNotificacao", dr.startDate);
