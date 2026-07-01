@@ -732,7 +732,7 @@ export async function getCevespHistorico(opts?: {
   // Fetch population for the relevant territory.
   // ibge_municipio_populacao armazena código de 7 dígitos (SIDRA = 6 dígitos + dígito verificador),
   // enquanto MUNICIPIOS_SP usa 6 dígitos — por isso filtramos client-side normalizando para 6 dígitos.
-  let popByYear = new Map<number, number>();
+  const popByYear = new Map<number, number>();
   try {
     const supabase = createAdminClient();
     const { data: popRows } = await supabase
