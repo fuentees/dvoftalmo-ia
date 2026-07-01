@@ -282,6 +282,11 @@ function DemographicsPanel({ data, loading }: { data?: TracomaDemographics; load
     );
   }
 
+  const childrenOneToNine = data.ageDistribution
+    .filter((row) => row.label === "1 a 4 anos" || row.label === "5 a 9 anos")
+    .reduce((sum, row) => sum + row.total, 0);
+  const childrenOneToNinePct = data.totalRows ? ((childrenOneToNine / data.totalRows) * 100).toFixed(1) : "0";
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-1">
@@ -290,10 +295,11 @@ function DemographicsPanel({ data, loading }: { data?: TracomaDemographics; load
           Sexo, faixa etária e forma clínica dos casos individuais. Use para orientar busca ativa, educação em saúde e revisão clínica.
         </p>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <MetricCard label="Casos individuais" value={data.totalRows} detail="TRACONET no recorte" />
         <MetricCard label="Com sexo mapeado" value={data.withSex} detail={`${data.totalRows ? ((data.withSex / data.totalRows) * 100).toFixed(1) : "0"}% dos casos`} tone={data.withSex < data.totalRows ? "amber" : "green"} />
         <MetricCard label="Com idade mapeada" value={data.withAge} detail={`${data.totalRows ? ((data.withAge / data.totalRows) * 100).toFixed(1) : "0"}% dos casos`} tone={data.withAge < data.totalRows ? "amber" : "green"} />
+        <MetricCard label="1 a 9 anos" value={childrenOneToNine} detail={`${childrenOneToNinePct}% dos casos individuais`} tone={childrenOneToNine > 0 ? "amber" : "default"} />
         <MetricCard label="Com forma clínica" value={data.withClinicalForm} detail="TF/TI/TS/TT/CO detectados" tone={data.withClinicalForm < data.totalRows ? "amber" : "green"} />
       </div>
       <div className="grid gap-4 lg:grid-cols-3">

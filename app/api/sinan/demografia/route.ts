@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { gvePorCodigo, listarMunicipiosSp } from "@/lib/municipios-sp";
+import { decodeSinanAgeYears, tracomaAgeGroup, TRACOMA_AGE_ORDER } from "@/lib/sinan-age";
 
 const CLINICAL_FORMS = ["TF", "TI", "TS", "TT", "CO"] as const;
 const GVE_BY_MUNICIPIO = new Map(listarMunicipiosSp().map((municipio) => [normalizeKey(municipio.nome), municipio.gve]));
@@ -45,12 +46,6 @@ function rawValue(row: RawRow, candidates: string[]) {
   return null;
 }
 
-function toNumber(value: unknown): number | null {
-  if (value == null || value === "") return null;
-  const parsed = Number(String(value).replace(",", "."));
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
 function yes(value: unknown) {
   return ["1", "s", "sim", "true", "x", "yes"].includes(String(value ?? "").trim().toLowerCase());
 }
@@ -73,25 +68,15 @@ function dateYear(value: unknown) {
 }
 
 function resolveAge(row: RawRow) {
-  const direct = toNumber(rawValue(row, ["NU_IDADE_N", "NU_IDADE", "IDADE", "IDADE_ANOS", "IDADEANO"]));
-  if (direct != null && direct >= 0 && direct <= 130) return Math.trunc(direct);
+  for (const field of ["NU_IDADE_N", "NU_IDADE", "IDADE", "IDADE_ANOS", "IDADEANO"]) {
+    const age = decodeSinanAgeYears(rawValue(row, [field]));
+    if (age != null) return age;
+  }
 
   const birthYear = dateYear(rawValue(row, ["DT_NASC", "DT_NASCIMENTO", "DATA_NASC", "NASCIMENTO", "DT_NASCI"]));
   const caseYear = Number(row.ano);
   if (birthYear && Number.isFinite(caseYear) && caseYear >= birthYear) return caseYear - birthYear;
   return null;
-}
-
-function ageGroup(age: number | null) {
-  if (age == null) return "Não informado";
-  if (age < 1) return "Menor de 1 ano";
-  if (age <= 4) return "1 a 4 anos";
-  if (age <= 9) return "5 a 9 anos";
-  if (age <= 14) return "10 a 14 anos";
-  if (age <= 19) return "15 a 19 anos";
-  if (age <= 39) return "20 a 39 anos";
-  if (age <= 59) return "40 a 59 anos";
-  return "60 anos ou mais";
 }
 
 function clinicalForms(row: RawRow): ClinicalForm[] {
@@ -175,7 +160,7 @@ export async function GET(request: Request) {
     for (const row of filtered) {
       const sex = resolveSex(row);
       const age = resolveAge(row);
-      const ageLabel = ageGroup(age);
+      const ageLabel = tracomaAgeGroup(age);
       const forms = clinicalForms(row);
       if (sex !== "Não informado") withSex += 1;
       if (age != null) withAge += 1;
@@ -203,17 +188,16 @@ export async function GET(request: Request) {
       ageByForm.set(ageLabel, ageCross);
     }
 
-    const ageOrder = ["Menor de 1 ano", "1 a 4 anos", "5 a 9 anos", "10 a 14 anos", "15 a 19 anos", "20 a 39 anos", "40 a 59 anos", "60 anos ou mais", "Não informado"];
     return NextResponse.json({
       totalRows: filtered.length,
       withSex,
       withAge,
       withClinicalForm,
       sexDistribution: toBuckets(sexMap),
-      ageDistribution: toBuckets(ageMap, ageOrder),
+      ageDistribution: toBuckets(ageMap, TRACOMA_AGE_ORDER),
       clinicalForms: toBuckets(formMap, ["TF", "TI", "TS", "TT", "CO", "Sem forma"]),
       sexByForm: Array.from(sexByForm.values()).sort((a, b) => b.total - a.total),
-      ageByForm: Array.from(ageByForm.values()).sort((a, b) => (ageOrder.indexOf(a.label) === -1 ? 999 : ageOrder.indexOf(a.label)) - (ageOrder.indexOf(b.label) === -1 ? 999 : ageOrder.indexOf(b.label))),
+      ageByForm: Array.from(ageByForm.values()).sort((a, b) => (TRACOMA_AGE_ORDER.indexOf(a.label) === -1 ? 999 : TRACOMA_AGE_ORDER.indexOf(a.label)) - (TRACOMA_AGE_ORDER.indexOf(b.label) === -1 ? 999 : TRACOMA_AGE_ORDER.indexOf(b.label))),
       filters: { gve: gve || null, municipio: municipio || null, yearStart: yearStart ?? null, yearEnd: yearEnd ?? null }
     });
   } catch (error) {
