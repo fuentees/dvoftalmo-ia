@@ -99,7 +99,7 @@ export function TracomaHubView() {
       </div>
 
       <div className="flex-1">
-        {tab === "situacao"  && <TracomaAnaliseView externalFilters={filters} hideFilters />}
+        {tab === "situacao"  && <TracomaAnaliseView externalFilters={filters} />}
         {tab === "qualidade" && <SinanQualidadeView externalFilters={filters} />}
         {tab === "consulta"  && <TracomaConsultaView externalFilters={filters} hideFilters />}
       </div>

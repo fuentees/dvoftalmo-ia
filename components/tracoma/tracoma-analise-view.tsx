@@ -1,11 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { listarGvesSp, listarMunicipiosPorGve } from "@/lib/municipios-sp";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Download, FileText, RefreshCw, Search } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { AlertTriangle, Download, FileText, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { RateMap } from "@/components/epidemiology/rate-map";
@@ -374,55 +372,22 @@ function DemographicsPanel({ data, loading }: { data?: TracomaDemographics; load
   );
 }
 
-export function TracomaAnaliseView({ externalFilters, hideFilters = false }: { externalFilters?: TracomaFilters; hideFilters?: boolean } = {}) {
-  // Pending inputs (user edits before clicking Filtrar)
-  const [pendingGve, setPendingGve] = useState("");
-  const [pendingMunicipio, setPendingMunicipio] = useState("");
-  const [pendingYearStart, setPendingYearStart] = useState<number | undefined>(undefined);
-  const [pendingYearEnd, setPendingYearEnd] = useState<number | undefined>(undefined);
-
-  // Applied filters (drive queries)
+export function TracomaAnaliseView({ externalFilters }: { externalFilters?: TracomaFilters } = {}) {
   const [gve, setGve] = useState("");
   const [municipio, setMunicipio] = useState("");
   const [yearStart, setYearStart] = useState<number | undefined>(undefined);
   const [yearEnd, setYearEnd] = useState<number | undefined>(undefined);
 
-  const gveOptions = useMemo(() => listarGvesSp(), []);
-  const municipioOptions = useMemo(() => listarMunicipiosPorGve(pendingGve), [pendingGve]);
-
   useEffect(() => {
     if (!externalFilters) return;
-    const nextGve = externalFilters.gve ?? "";
-    const nextMunicipio = externalFilters.municipio ?? "";
-    const nextStart = externalFilters.yearStart ? Number(externalFilters.yearStart) : undefined;
-    const nextEnd = externalFilters.yearEnd ? Number(externalFilters.yearEnd) : undefined;
-    setPendingGve(nextGve);
-    setPendingMunicipio(nextMunicipio);
-    setPendingYearStart(nextStart);
-    setPendingYearEnd(nextEnd);
-    setGve(nextGve);
-    setMunicipio(nextMunicipio);
-    setYearStart(nextStart);
-    setYearEnd(nextEnd);
+    setGve(externalFilters.gve ?? "");
+    setMunicipio(externalFilters.municipio ?? "");
+    setYearStart(externalFilters.yearStart ? Number(externalFilters.yearStart) : undefined);
+    setYearEnd(externalFilters.yearEnd ? Number(externalFilters.yearEnd) : undefined);
   }, [externalFilters]);
-
 
   const [taxaMapView, setTaxaMapView] = useState<"municipio" | "gve">("municipio");
   const [taxaMetric, setTaxaMetric] = useState<"prevalencia" | "taxaDeteccao100k" | "coberturaExame">("prevalencia");
-
-  function applyFilters() {
-    setGve(pendingGve);
-    setMunicipio(pendingMunicipio);
-    setYearStart(pendingYearStart);
-    setYearEnd(pendingYearEnd);
-  }
-
-  function resetFilters() {
-    setPendingGve(""); setGve("");
-    setPendingMunicipio(""); setMunicipio("");
-    setPendingYearStart(undefined); setYearStart(undefined);
-    setPendingYearEnd(undefined); setYearEnd(undefined);
-  }
 
   const rates = useQuery<TracomaRates>({
     queryKey: ["sinan-taxas", gve, municipio, yearStart, yearEnd],
@@ -472,7 +437,6 @@ export function TracomaAnaliseView({ externalFilters, hideFilters = false }: { e
       const prevDiff = Number(b.prevalencia ?? -1) - Number(a.prevalencia ?? -1);
       return prevDiff !== 0 ? prevDiff : Number(b.positivos ?? 0) - Number(a.positivos ?? 0);
     })[0];
-  const hasFilter = !!(gve || municipio || yearStart || yearEnd);
   const hasData = !rates.isLoading && !rates.isError && !rates.data?.missingPopulation;
 
   function downloadTracamaCsv() {
@@ -519,81 +483,6 @@ export function TracomaAnaliseView({ externalFilters, hideFilters = false }: { e
 
   return (
     <div className="space-y-6 p-6">
-      {/* ── Filtros ── */}
-      {!hideFilters && <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm">Filtros de análise</CardTitle>
-          <CardDescription className="text-xs">
-            Clique em &quot;Filtrar&quot; para aplicar. Sem filtros: exibe todos os dados NOTTRACONET disponíveis.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-muted-foreground">GVE</label>
-              <select
-                value={pendingGve}
-                onChange={(e) => { setPendingGve(e.target.value); setPendingMunicipio(""); }}
-                className="h-9 min-w-[180px] rounded-md border bg-background px-2 text-sm"
-              >
-                <option value="">Todos os GVEs</option>
-                {gveOptions.map((g) => <option key={g} value={g}>{g}</option>)}
-              </select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-muted-foreground">Município</label>
-              <select
-                value={pendingMunicipio}
-                onChange={(e) => setPendingMunicipio(e.target.value)}
-                className="h-9 min-w-[180px] rounded-md border bg-background px-2 text-sm"
-              >
-                <option value="">Todos os municípios</option>
-                {municipioOptions.map((m) => <option key={m.codigo} value={m.nome}>{m.nome}</option>)}
-              </select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-muted-foreground">Ano início</label>
-              <input
-                type="number"
-                placeholder="Ex: 2020"
-                value={pendingYearStart ?? ""}
-                onChange={(e) => setPendingYearStart(e.target.value ? Number(e.target.value) : undefined)}
-                className="h-9 w-24 rounded-md border bg-background px-2 text-sm"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-muted-foreground">Ano fim</label>
-              <input
-                type="number"
-                placeholder="Ex: 2025"
-                value={pendingYearEnd ?? ""}
-                onChange={(e) => setPendingYearEnd(e.target.value ? Number(e.target.value) : undefined)}
-                className="h-9 w-24 rounded-md border bg-background px-2 text-sm"
-              />
-            </div>
-            <Button onClick={applyFilters} disabled={rates.isFetching}>
-              {rates.isFetching
-                ? <RefreshCw className="h-4 w-4 animate-spin" />
-                : <Search className="h-4 w-4" />}
-              Filtrar
-            </Button>
-            {hasFilter && (
-              <Button variant="ghost" onClick={resetFilters} className="text-muted-foreground">
-                Limpar
-              </Button>
-            )}
-          </div>
-          {hasFilter && (
-            <div className="mt-2 flex flex-wrap gap-2">
-              {gve && <Badge className="bg-muted text-foreground">GVE: {gve}</Badge>}
-              {municipio && <Badge className="bg-muted text-foreground">Município: {municipio}</Badge>}
-              {yearStart && <Badge className="bg-muted text-foreground">De: {yearStart}</Badge>}
-              {yearEnd && <Badge className="bg-muted text-foreground">Até: {yearEnd}</Badge>}
-            </div>
-          )}
-        </CardContent>
-      </Card>}
-
       {/* ── Loading / Error ── */}
       {rates.isLoading && (
         <div className="flex h-32 items-center justify-center gap-2 text-sm text-muted-foreground">
