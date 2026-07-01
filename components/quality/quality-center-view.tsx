@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useSearchParams } from "next/navigation";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -18,6 +19,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { listarGvesSp, listarMunicipiosPorGve } from "@/lib/municipios-sp";
 import type { InvalidRecord } from "@/services/cevesp-corrections";
 import type { SinanAuditResult } from "@/services/sinan-tracoma";
 
@@ -52,6 +54,14 @@ type TerritoryRow = {
   problems: string[];
   priority: Priority;
   href: string;
+};
+
+type QualityFilters = {
+  yearStart: string;
+  yearEnd: string;
+  gve: string;
+  municipio: string;
+  agravo: "todos" | "conjuntivite" | "tracoma";
 };
 
 function priorityClass(priority: Priority) {
@@ -148,7 +158,7 @@ function groupedCevespTypes(byType?: Record<string, number>) {
   return Array.from(grouped.entries()).sort((a, b) => b[1] - a[1]);
 }
 
-function buildActions(cevesp?: CevespQuality, sinan?: SinanAuditResult): QualityAction[] {
+function buildActions(filters: QualityFilters, cevesp?: CevespQuality, sinan?: SinanAuditResult): QualityAction[] {
   const actions: QualityAction[] = [];
 
   if (cevesp?.total) {
@@ -164,7 +174,7 @@ function buildActions(cevesp?: CevespQuality, sinan?: SinanAuditResult): Quality
       problem: "Inconsistências em notificações CEVESP",
       where: cevesp.byGve[0]?.gve ?? cevesp.byMunicipio[0]?.municipio ?? "base completa",
       count: cevesp.total,
-      href: "/conjuntivite"
+      href: appendFilters("/conjuntivite", filters)
     });
   }
 
@@ -177,7 +187,7 @@ function buildActions(cevesp?: CevespQuality, sinan?: SinanAuditResult): Quality
         problem: "Inconsistências clínicas do tracoma",
         where: "TRACONET",
         count: critical,
-        href: "/tracoma"
+        href: appendFilters("/tracoma", filters)
       });
     }
 
@@ -189,7 +199,7 @@ function buildActions(cevesp?: CevespQuality, sinan?: SinanAuditResult): Quality
         problem: "Divergências TRACONET x NOTTRACONET",
         where: sinan.crossBankDivergences?.[0]?.gve ?? "municípios/anos",
         count: divergences,
-        href: "/tracoma"
+        href: appendFilters("/tracoma", filters)
       });
     }
 
@@ -201,7 +211,7 @@ function buildActions(cevesp?: CevespQuality, sinan?: SinanAuditResult): Quality
         problem: "Completude pendente no SINAN Tracoma",
         where: "campos de encerramento, forma clínica ou identificador",
         count: missing,
-        href: "/tracoma"
+        href: appendFilters("/tracoma", filters)
       });
     }
   }
@@ -209,7 +219,7 @@ function buildActions(cevesp?: CevespQuality, sinan?: SinanAuditResult): Quality
   return actions.sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority) || b.count - a.count);
 }
 
-function buildTerritoryRows(cevesp?: CevespQuality, sinan?: SinanAuditResult): TerritoryRow[] {
+function buildTerritoryRows(filters: QualityFilters, cevesp?: CevespQuality, sinan?: SinanAuditResult): TerritoryRow[] {
   const map = new Map<string, TerritoryRow>();
 
   function ensure(municipio: string | null | undefined, gve: string | null | undefined, href: string) {
@@ -238,20 +248,20 @@ function buildTerritoryRows(cevesp?: CevespQuality, sinan?: SinanAuditResult): T
   }
 
   for (const item of cevesp?.byMunicipio ?? []) {
-    const row = ensure(item.municipio, item.gve, "/conjuntivite?tab=qualidade");
+    const row = ensure(item.municipio, item.gve, appendFilters("/conjuntivite", { ...filters, municipio: item.municipio, gve: item.gve ?? filters.gve }));
     row.cevesp += item.count;
     addProblem(row, "qualidade CEVESP", item.count >= 20 ? "Alta" : "Media");
   }
 
   for (const item of sinan?.correctionRecords ?? []) {
-    const row = ensure(item.municipioNome || item.municipio, item.gve, "/tracoma?tab=qualidade");
+    const row = ensure(item.municipioNome || item.municipio, item.gve, appendFilters("/tracoma", { ...filters, municipio: item.municipioNome || item.municipio, gve: item.gve ?? filters.gve }));
     row.sinan += 1;
     addProblem(row, item.problem, normalizePriority(item.priority));
   }
 
   for (const item of sinan?.crossBankDivergences ?? []) {
     if (item.risco !== "alto") continue;
-    const row = ensure(item.municipioNome || item.municipio, item.gve, "/tracoma?tab=qualidade");
+    const row = ensure(item.municipioNome || item.municipio, item.gve, appendFilters("/tracoma", { ...filters, municipio: item.municipioNome || item.municipio, gve: item.gve ?? filters.gve }));
     row.divergencias += Math.abs(item.diff);
     addProblem(row, "divergência entre bancos", "Alta");
   }
@@ -312,6 +322,31 @@ function TerritoryPreview({ rows }: { rows: TerritoryRow[] }) {
   );
 }
 
+function appendFilters(path: string, filters: QualityFilters, tab = "qualidade") {
+  const params = new URLSearchParams();
+  params.set("tab", tab);
+  if (filters.yearStart) params.set("yearStart", filters.yearStart);
+  if (filters.yearEnd) params.set("yearEnd", filters.yearEnd);
+  if (filters.gve) params.set("gve", filters.gve);
+  if (filters.municipio) params.set("municipio", filters.municipio);
+  return `${path}?${params.toString()}`;
+}
+
+function qualityParams(filters: QualityFilters, source: "cevesp" | "sinan") {
+  const params = new URLSearchParams();
+  if (source === "cevesp") {
+    params.set("source", "cache");
+    if (filters.yearStart) params.set("ano", filters.yearStart);
+    if (filters.yearEnd) params.set("anoFim", filters.yearEnd);
+  } else {
+    if (filters.yearStart) params.set("yearStart", filters.yearStart);
+    if (filters.yearEnd) params.set("yearEnd", filters.yearEnd);
+  }
+  if (filters.gve) params.set("gve", filters.gve);
+  if (filters.municipio) params.set("municipio", filters.municipio);
+  return params;
+}
+
 function StatCard({
   title,
   value,
@@ -340,31 +375,48 @@ function StatCard({
 }
 
 export function QualityCenterView() {
+  const searchParams = useSearchParams();
+  const [filters, setFilters] = useState<QualityFilters>({
+    yearStart: searchParams.get("yearStart") ?? searchParams.get("ano") ?? "",
+    yearEnd: searchParams.get("yearEnd") ?? searchParams.get("anoFim") ?? "",
+    gve: searchParams.get("gve") ?? "",
+    municipio: searchParams.get("municipio") ?? "",
+    agravo: (searchParams.get("agravo") as QualityFilters["agravo"] | null) ?? "todos"
+  });
+  const gveOptions = useMemo(() => listarGvesSp(), []);
+  const municipioOptions = useMemo(() => listarMunicipiosPorGve(filters.gve), [filters.gve]);
+  const showCevesp = filters.agravo === "todos" || filters.agravo === "conjuntivite";
+  const showSinan = filters.agravo === "todos" || filters.agravo === "tracoma";
+
   const cevesp = useQuery<CevespQuality>({
-    queryKey: ["quality-center-cevesp"],
-    queryFn: () => fetchJsonWithTimeout<CevespQuality>("/api/cevesp/qualidade?source=cache", 25000),
+    queryKey: ["quality-center-cevesp", filters],
+    queryFn: () => fetchJsonWithTimeout<CevespQuality>(`/api/cevesp/qualidade?${qualityParams(filters, "cevesp")}`, 25000),
+    enabled: showCevesp,
     retry: false,
     staleTime: 2 * 60 * 1000
   });
 
   const sinan = useQuery<SinanAuditResult>({
-    queryKey: ["quality-center-sinan"],
-    queryFn: () => fetchJsonWithTimeout<SinanAuditResult>("/api/sinan/auditoria"),
+    queryKey: ["quality-center-sinan", filters],
+    queryFn: () => fetchJsonWithTimeout<SinanAuditResult>(`/api/sinan/auditoria?${qualityParams(filters, "sinan")}`),
+    enabled: showSinan,
     retry: false,
     staleTime: 2 * 60 * 1000
   });
 
-  const actions = useMemo(() => buildActions(cevesp.data, sinan.data), [cevesp.data, sinan.data]);
-  const territoryRows = useMemo(() => buildTerritoryRows(cevesp.data, sinan.data), [cevesp.data, sinan.data]);
+  const actions = useMemo(() => buildActions(filters, showCevesp ? cevesp.data : undefined, showSinan ? sinan.data : undefined), [cevesp.data, filters, showCevesp, showSinan, sinan.data]);
+  const territoryRows = useMemo(() => buildTerritoryRows(filters, showCevesp ? cevesp.data : undefined, showSinan ? sinan.data : undefined), [cevesp.data, filters, showCevesp, showSinan, sinan.data]);
   const cevespTypeRows = useMemo(() => groupedCevespTypes(cevesp.data?.byType), [cevesp.data?.byType]);
-  const sinanCorrections = sinan.data?.correctionRecords ?? [];
-  const loading = cevesp.isLoading || sinan.isLoading;
-  const cevespTotal = cevesp.data?.total ?? 0;
+  const sinanCorrections = showSinan ? sinan.data?.correctionRecords ?? [] : [];
+  const loading = (showCevesp && cevesp.isLoading) || (showSinan && sinan.isLoading);
+  const cevespTotal = showCevesp ? cevesp.data?.total ?? 0 : 0;
   const sinanCritical =
-    (sinan.data?.ttSemTs ?? 0) +
-    (sinan.data?.tfSemTratamento ?? 0) +
-    (sinan.data?.ttSemCircurgia ?? 0);
-  const sinanDivergences = sinan.data?.crossBankDivergences?.filter((item) => item.risco === "alto").length ?? 0;
+    showSinan
+      ? (sinan.data?.ttSemTs ?? 0) +
+        (sinan.data?.tfSemTratamento ?? 0) +
+        (sinan.data?.ttSemCircurgia ?? 0)
+      : 0;
+  const sinanDivergences = showSinan ? sinan.data?.crossBankDivergences?.filter((item) => item.risco === "alto").length ?? 0 : 0;
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-6">
@@ -399,6 +451,80 @@ export function QualityCenterView() {
           </Button>
         </div>
       </div>
+
+      <Card>
+        <CardContent className="flex flex-wrap items-end gap-3 pt-5">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground">Agravo</label>
+            <select
+              value={filters.agravo}
+              onChange={(event) => setFilters((current) => ({ ...current, agravo: event.target.value as QualityFilters["agravo"] }))}
+              className="h-9 rounded-md border bg-background px-2 text-sm"
+            >
+              <option value="todos">Todos</option>
+              <option value="conjuntivite">Conjuntivites</option>
+              <option value="tracoma">Tracoma</option>
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground">Ano início</label>
+            <input
+              type="number"
+              value={filters.yearStart}
+              onChange={(event) => setFilters((current) => ({ ...current, yearStart: event.target.value }))}
+              className="h-9 w-28 rounded-md border bg-background px-2 text-sm"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground">Ano fim</label>
+            <input
+              type="number"
+              value={filters.yearEnd}
+              onChange={(event) => setFilters((current) => ({ ...current, yearEnd: event.target.value }))}
+              className="h-9 w-28 rounded-md border bg-background px-2 text-sm"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground">GVE</label>
+            <select
+              value={filters.gve}
+              onChange={(event) => setFilters((current) => ({ ...current, gve: event.target.value, municipio: "" }))}
+              className="h-9 min-w-44 rounded-md border bg-background px-2 text-sm"
+            >
+              <option value="">Todos os GVEs</option>
+              {gveOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground">Município</label>
+            <select
+              value={filters.municipio}
+              onChange={(event) => setFilters((current) => ({ ...current, municipio: event.target.value }))}
+              className="h-9 min-w-52 rounded-md border bg-background px-2 text-sm"
+            >
+              <option value="">Todos os municípios</option>
+              {municipioOptions.map((item) => <option key={item.codigo} value={item.nome}>{item.nome}</option>)}
+            </select>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setFilters({ yearStart: "", yearEnd: "", gve: "", municipio: "", agravo: "todos" })}
+            disabled={!filters.yearStart && !filters.yearEnd && !filters.gve && !filters.municipio && filters.agravo === "todos"}
+          >
+            Limpar
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => downloadCsv(`qualidade-plano-acao-${new Date().toISOString().slice(0, 10)}.csv`, actions.map((item) => ({ ...item })))}
+            disabled={!actions.length}
+          >
+            <Download className="h-4 w-4" />
+            Exportar plano
+          </Button>
+        </CardContent>
+      </Card>
 
       {(cevesp.isError || sinan.isError) && (
         <div className="grid gap-3 lg:grid-cols-2">

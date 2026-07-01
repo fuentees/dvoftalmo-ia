@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -40,9 +40,29 @@ function priorityRank(level: PriorityLevel) {
   return level === "critica" ? 0 : level === "alta" ? 1 : 2;
 }
 
+function normalizeText(value: string | null | undefined) {
+  return String(value ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 function addPriority(items: PriorityItem[], item: PriorityItem) {
   const duplicate = items.find((current) => current.id === item.id);
   if (!duplicate) items.push(item);
+}
+
+function evidenceHref(path: string, filters: { gve?: string; municipio?: string; yearStart?: number; yearEnd?: number }, tab?: "situacao" | "qualidade") {
+  const params = new URLSearchParams();
+  if (tab) params.set("tab", tab);
+  if (filters.yearStart) params.set("yearStart", String(filters.yearStart));
+  if (filters.yearEnd) params.set("yearEnd", String(filters.yearEnd));
+  if (filters.gve) params.set("gve", filters.gve);
+  if (filters.municipio) params.set("municipio", filters.municipio);
+  const qs = params.toString();
+  return qs ? `${path}?${qs}` : path;
 }
 
 async function loadAlerts(): Promise<AlertRow[]> {
@@ -57,19 +77,19 @@ async function loadAlerts(): Promise<AlertRow[]> {
   return (data ?? []) as AlertRow[];
 }
 
-async function buildPriorities() {
+async function buildPriorities(filters: { gve?: string; municipio?: string; yearStart?: number; yearEnd?: number }) {
   const items: PriorityItem[] = [];
 
   const [alerts, kpisResult, qualityResult, sinanResult, ratesResult] = await Promise.allSettled([
     loadAlerts(),
     fetchCevespKpis(),
-    findInvalidRecords(300),
-    auditarSinanTracoma(),
-    buildSinanTracomaRates()
+    findInvalidRecords(300, filters.yearStart, filters.gve, filters.yearEnd),
+    auditarSinanTracoma(filters),
+    buildSinanTracomaRates(filters)
   ]);
 
   if (alerts.status === "fulfilled") {
-    for (const alert of alerts.value) {
+    for (const alert of alerts.value.filter((item) => !filters.gve || item.gve === filters.gve)) {
       const level: PriorityLevel = alert.severity === "critical" ? "critica" : "alta";
       addPriority(items, {
         id: `alerta-${alert.id ?? `${alert.gve}-${alert.ano}-${alert.se_epidemiologica}`}`,
@@ -80,7 +100,7 @@ async function buildPriorities() {
         motivo: `Alerta epidemiologico SE ${alert.se_epidemiologica ?? "-"} / ${alert.ano ?? "-"}`,
         acao: "Validar aumento com a GVE, investigar surto e registrar retorno.",
         prazo: level === "critica" ? "Hoje" : "24-48h",
-        evidenciaHref: "/alertas",
+        evidenciaHref: evidenceHref("/alertas", filters),
         score: (alert.severity === "critical" ? 90 : 70) + Math.min(Number(alert.increase_pct ?? 0), 80),
         detalhe: `${Number(alert.cases_current ?? 0).toLocaleString("pt-BR")} casos; aumento ${Number(alert.increase_pct ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 0 })}%`
       });
@@ -103,7 +123,7 @@ async function buildPriorities() {
           : `Aumento semanal de ${kpis.weekDelta?.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`,
         acao: "Abrir analise CEVESP, confirmar territorios de maior carga e preparar devolutiva.",
         prazo: "24-48h",
-        evidenciaHref: "/conjuntivite",
+        evidenciaHref: evidenceHref("/conjuntivite", filters, "situacao"),
         score: 60 + Math.max(kpis.outbreaksCurrentYear * 8, kpis.weekDelta ?? 0),
         detalhe: top ? `${top.cases.toLocaleString("pt-BR")} casos em ${top.name} na semana atual` : undefined
       });
@@ -135,7 +155,7 @@ async function buildPriorities() {
         motivo: `${invalid.length.toLocaleString("pt-BR")} inconsistencias CEVESP na amostra`,
         acao: "Priorizar saneamento antes de usar ranking territorial como evidência final.",
         prazo: critical.length > 0 ? "24-48h" : "Nesta semana",
-        evidenciaHref: "/qualidade-dados",
+        evidenciaHref: evidenceHref("/qualidade-dados", filters),
         score: 50 + critical.length * 3 + invalid.length / 10,
         detalhe: critical.length > 0 ? `${critical.length.toLocaleString("pt-BR")} critica(s) por data, SE ou territorio` : undefined
       });
@@ -160,7 +180,7 @@ async function buildPriorities() {
         motivo: `${clinical.toLocaleString("pt-BR")} pendencia(s) clinicas de tracoma`,
         acao: "Revisar tratamento, cirurgia/TS e encerramento dos casos prioritarios.",
         prazo: "Hoje",
-        evidenciaHref: "/tracoma?tab=qualidade",
+        evidenciaHref: evidenceHref("/tracoma", filters, "qualidade"),
         score: 95 + clinical,
         detalhe: "Impacta acompanhamento de casos e metas de eliminacao."
       });
@@ -176,7 +196,7 @@ async function buildPriorities() {
         motivo: `${divergences.length.toLocaleString("pt-BR")} divergencia(s) alto risco entre bancos`,
         acao: "Comparar TRACONET e NOTTRACONET por municipio/ano antes do boletim.",
         prazo: "24-48h",
-        evidenciaHref: "/tracoma?tab=qualidade",
+        evidenciaHref: evidenceHref("/tracoma", filters, "qualidade"),
         score: 75 + divergences.length * 4,
         detalhe: first ? `${first.municipioNome || first.municipio}: diferenca ${first.diff}` : undefined
       });
@@ -198,24 +218,38 @@ async function buildPriorities() {
         motivo: `Prevalencia ${Number(row.prevalencia ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`,
         acao: "Avaliar cobertura de exame, positivos e necessidade de acao territorial.",
         prazo: Number(row.prevalencia ?? 0) >= 10 ? "Hoje" : "24-48h",
-        evidenciaHref: "/tracoma",
+        evidenciaHref: evidenceHref("/tracoma", filters, "situacao"),
         score: 70 + Number(row.prevalencia ?? 0) * 5,
         detalhe: `${Number(row.positivos ?? 0).toLocaleString("pt-BR")} positivos em ${Number(row.examinados ?? 0).toLocaleString("pt-BR")} examinados`
       });
     }
   }
 
+  const wantedGve = normalizeText(filters.gve);
+  const wantedMunicipio = normalizeText(filters.municipio);
+
   return items
+    .filter((item) => {
+      const haystack = normalizeText(`${item.territorio} ${item.motivo} ${item.detalhe ?? ""}`);
+      return (!wantedGve || haystack.includes(wantedGve)) && (!wantedMunicipio || haystack.includes(wantedMunicipio));
+    })
     .sort((a, b) => priorityRank(a.level) - priorityRank(b.level) || b.score - a.score)
     .slice(0, 12);
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const supabase = await createClient();
   const user = await getCurrentUser(supabase);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const priorities = await buildPriorities();
+  const searchParams = req.nextUrl.searchParams;
+  const filters = {
+    gve: searchParams.get("gve") || undefined,
+    municipio: searchParams.get("municipio") || undefined,
+    yearStart: searchParams.get("yearStart") ? Number(searchParams.get("yearStart")) : undefined,
+    yearEnd: searchParams.get("yearEnd") ? Number(searchParams.get("yearEnd")) : undefined
+  };
+  const priorities = await buildPriorities(filters);
   return NextResponse.json({
     generatedAt: new Date().toISOString(),
     priorities,

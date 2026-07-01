@@ -4,10 +4,12 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, ArrowRight, CheckCircle2, Map, RefreshCw, Search } from "lucide-react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { listarGvesSp, listarMunicipiosPorGve } from "@/lib/municipios-sp";
 
 type PriorityLevel = "critica" | "alta" | "media";
 
@@ -50,14 +52,57 @@ function levelRank(level: PriorityLevel) {
   return level === "critica" ? 0 : level === "alta" ? 1 : 2;
 }
 
+function downloadCsv(filename: string, rows: SituationPriority[]) {
+  if (!rows.length) return;
+  const headers = ["prioridade", "agravo", "territorio", "motivo", "acao", "prazo", "detalhe", "evidencia"];
+  const csvRows = rows.map((row) => [
+    row.level,
+    row.agravo,
+    row.territorio,
+    row.motivo,
+    row.acao,
+    row.prazo,
+    row.detalhe ?? "",
+    row.evidenciaHref
+  ]);
+  const csv = [
+    headers.join(";"),
+    ...csvRows.map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(";"))
+  ].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 export function TerritoriesView() {
+  const searchParams = useSearchParams();
   const [query, setQuery] = useState("");
-  const [agravo, setAgravo] = useState<"todos" | "Conjuntivite" | "Tracoma" | "Dados">("todos");
+  const [agravo, setAgravo] = useState<"todos" | "Conjuntivite" | "Tracoma" | "Dados">(
+    searchParams.get("agravo") === "Conjuntivite" || searchParams.get("agravo") === "Tracoma" || searchParams.get("agravo") === "Dados"
+      ? searchParams.get("agravo") as "Conjuntivite" | "Tracoma" | "Dados"
+      : "todos"
+  );
+  const [yearStart, setYearStart] = useState(searchParams.get("yearStart") ?? searchParams.get("ano") ?? "");
+  const [yearEnd, setYearEnd] = useState(searchParams.get("yearEnd") ?? searchParams.get("anoFim") ?? "");
+  const [gve, setGve] = useState(searchParams.get("gve") ?? "");
+  const [municipio, setMunicipio] = useState(searchParams.get("municipio") ?? "");
+  const gveOptions = useMemo(() => listarGvesSp(), []);
+  const municipioOptions = useMemo(() => listarMunicipiosPorGve(gve), [gve]);
 
   const priorities = useQuery<SituationPriorities>({
-    queryKey: ["situacao-prioridades-territorios"],
+    queryKey: ["situacao-prioridades-territorios", yearStart, yearEnd, gve, municipio],
     queryFn: async () => {
-      const response = await fetch("/api/situacao/prioridades");
+      const params = new URLSearchParams();
+      if (yearStart) params.set("yearStart", yearStart);
+      if (yearEnd) params.set("yearEnd", yearEnd);
+      if (gve) params.set("gve", gve);
+      if (municipio) params.set("municipio", municipio);
+      const qs = params.toString();
+      const response = await fetch(`/api/situacao/prioridades${qs ? `?${qs}` : ""}`);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Erro ao buscar territórios");
       return data;
@@ -117,6 +162,14 @@ export function TerritoriesView() {
             <Button size="sm" asChild>
               <Link href={nextAction?.evidenciaHref ?? "/dashboard"}>Abrir evidência</Link>
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => downloadCsv(`territorios-priorizados-${new Date().toISOString().slice(0, 10)}.csv`, rows)}
+              disabled={!rows.length}
+            >
+              Exportar CSV
+            </Button>
           </div>
         </div>
       </div>
@@ -146,6 +199,59 @@ export function TerritoriesView() {
             ))}
           </div>
         </div>
+
+        <Card>
+          <CardContent className="flex flex-wrap items-end gap-3 pt-5">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-muted-foreground">Ano início</label>
+              <input
+                type="number"
+                value={yearStart}
+                onChange={(event) => setYearStart(event.target.value)}
+                className="h-9 w-28 rounded-md border bg-background px-2 text-sm"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-muted-foreground">Ano fim</label>
+              <input
+                type="number"
+                value={yearEnd}
+                onChange={(event) => setYearEnd(event.target.value)}
+                className="h-9 w-28 rounded-md border bg-background px-2 text-sm"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-muted-foreground">GVE</label>
+              <select
+                value={gve}
+                onChange={(event) => { setGve(event.target.value); setMunicipio(""); }}
+                className="h-9 min-w-44 rounded-md border bg-background px-2 text-sm"
+              >
+                <option value="">Todos os GVEs</option>
+                {gveOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-muted-foreground">Município</label>
+              <select
+                value={municipio}
+                onChange={(event) => setMunicipio(event.target.value)}
+                className="h-9 min-w-52 rounded-md border bg-background px-2 text-sm"
+              >
+                <option value="">Todos os municípios</option>
+                {municipioOptions.map((item) => <option key={item.codigo} value={item.nome}>{item.nome}</option>)}
+              </select>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { setYearStart(""); setYearEnd(""); setGve(""); setMunicipio(""); }}
+              disabled={!yearStart && !yearEnd && !gve && !municipio}
+            >
+              Limpar
+            </Button>
+          </CardContent>
+        </Card>
 
         <div className="grid gap-3 sm:grid-cols-3">
           <Card>

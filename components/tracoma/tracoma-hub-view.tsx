@@ -21,10 +21,10 @@ export function TracomaHubView() {
   const requestedTab = searchParams.get("tab");
   const initial: OuterTab = requestedTab === "qualidade" || requestedTab === "consulta" ? requestedTab : "situacao";
   const [tab, setTab] = useState<OuterTab>(initial);
-  const [yearStart, setYearStart] = useState("");
-  const [yearEnd, setYearEnd] = useState("");
-  const [gve, setGve] = useState("");
-  const [municipio, setMunicipio] = useState("");
+  const [yearStart, setYearStart] = useState(searchParams.get("yearStart") ?? searchParams.get("ano") ?? "");
+  const [yearEnd, setYearEnd] = useState(searchParams.get("yearEnd") ?? searchParams.get("anoFim") ?? "");
+  const [gve, setGve] = useState(searchParams.get("gve") ?? "");
+  const [municipio, setMunicipio] = useState(searchParams.get("municipio") ?? "");
   const gveOptions = useMemo(() => listarGvesSp(), []);
   const municipioOptions = useMemo(() => listarMunicipiosPorGve(gve), [gve]);
   const filters = useMemo(() => ({ yearStart, yearEnd, gve, municipio }), [yearStart, yearEnd, gve, municipio]);
