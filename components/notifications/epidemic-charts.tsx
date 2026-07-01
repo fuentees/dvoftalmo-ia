@@ -6,12 +6,10 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   ComposedChart,
+  LabelList,
   Legend,
   Line,
-  Pie,
-  PieChart,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -51,8 +49,6 @@ interface EpidemicChartsProps {
   topGves: RankItem[];
 }
 
-const SEX_COLORS = ["#2563eb", "#dc2626"];
-
 export function EpidemicCharts({
   weeklySeries,
   weeklyAverage,
@@ -83,6 +79,17 @@ export function EpidemicCharts({
   const chartDesc = showYearBars
     ? `Barras: total ${selectedYear} · Linha: média histórica`
     : "Média de casos por semana epidemiológica (todos os anos)";
+  const ageTotal = ageDistribution.reduce((sum, item) => sum + Number(item.total ?? 0), 0);
+  const sexTotal = sexDistribution.reduce((sum, item) => sum + Number(item.total ?? 0), 0);
+  const ageChartData = ageDistribution.map((item) => ({
+    ...item,
+    percent: ageTotal ? (item.total / ageTotal) * 100 : 0
+  }));
+  const sexChartData = sexDistribution.map((item) => ({
+    ...item,
+    percent: sexTotal ? (item.total / sexTotal) * 100 : 0,
+    percentLabel: sexTotal ? `${((item.total / sexTotal) * 100).toFixed(1)}%` : "0%"
+  }));
 
   return (
     <div className="space-y-4">
@@ -189,14 +196,22 @@ export function EpidemicCharts({
           <Card>
             <CardHeader>
               <CardTitle>Distribuição por faixa etária</CardTitle>
+              <CardDescription>Casos e participação percentual no recorte</CardDescription>
             </CardHeader>
             <CardContent className="h-[240px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={ageDistribution}>
+                <BarChart data={ageChartData}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                   <YAxis />
-                  <Tooltip formatter={(value: number) => [value, "Casos"]} />
+                  <Tooltip
+                    formatter={(value: number, name: string, item) => [
+                      name === "total"
+                        ? `${value.toLocaleString("pt-BR")} (${Number(item.payload.percent ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%)`
+                        : value,
+                      "Casos"
+                    ]}
+                  />
                   <Bar dataKey="total" fill="#0f766e" name="Casos" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -208,26 +223,24 @@ export function EpidemicCharts({
           <Card>
             <CardHeader>
               <CardTitle>Distribuição por sexo</CardTitle>
+              <CardDescription>Comparação em barras para evitar leitura ambígua</CardDescription>
             </CardHeader>
             <CardContent className="h-[240px]">
               <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={sexDistribution}
-                    dataKey="total"
-                    nameKey="label"
-                    outerRadius={85}
-                    label={({ label, percent }: { label: string; percent: number }) =>
-                      `${label} ${(percent * 100).toFixed(0)}%`
-                    }
-                  >
-                    {sexDistribution.map((_, i) => (
-                      <Cell key={i} fill={SEX_COLORS[i % SEX_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value: number, name: string) => [value, name]} />
-                  <Legend />
-                </PieChart>
+                <BarChart data={sexChartData} layout="vertical" margin={{ left: 12, right: 48 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 11 }} />
+                  <YAxis dataKey="label" type="category" width={110} tick={{ fontSize: 11 }} />
+                  <Tooltip
+                    formatter={(value: number, name: string, item) => [
+                      `${value.toLocaleString("pt-BR")} (${Number(item.payload.percent ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%)`,
+                      "Casos"
+                    ]}
+                  />
+                  <Bar dataKey="total" fill="#2563eb" name="Casos" radius={[0, 4, 4, 0]}>
+                    <LabelList dataKey="percentLabel" position="right" className="fill-muted-foreground text-[11px]" />
+                  </Bar>
+                </BarChart>
               </ResponsiveContainer>
             </CardContent>
           </Card>

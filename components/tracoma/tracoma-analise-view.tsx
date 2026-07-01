@@ -121,11 +121,13 @@ function ExecutiveSummary({
   totalPositivos,
   prevMedia,
   muniAcimaMeta,
+  topPriorityMuni,
   demographics
 }: {
   totalPositivos: number;
   prevMedia: number | null;
   muniAcimaMeta: number;
+  topPriorityMuni?: MuniRow;
   demographics?: TracomaDemographics;
 }) {
   const missingClinical = demographics ? demographics.totalRows - demographics.withClinicalForm : 0;
@@ -152,8 +154,14 @@ function ExecutiveSummary({
         </div>
         <div className={itemClass}>
           <div className={labelClass}>Onde agir</div>
-          <div className={valueClass}>{muniAcimaMeta.toLocaleString("pt-BR")}</div>
-          <div className="mt-1 text-xs text-muted-foreground">municípios acima da meta OMS</div>
+          <div className={valueClass}>
+            {topPriorityMuni
+              ? `${topPriorityMuni.municipio} (${pct(topPriorityMuni.prevalencia)})`
+              : `${muniAcimaMeta.toLocaleString("pt-BR")} município(s)`}
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {muniAcimaMeta.toLocaleString("pt-BR")} acima da meta OMS
+          </div>
         </div>
         <div className={itemClass}>
           <div className={labelClass}>Sinal principal</div>
@@ -170,7 +178,7 @@ function ExecutiveSummary({
 }
 
 function DistributionList({ title, rows }: { title: string; rows: DemographicBucket[] }) {
-  const max = Math.max(...rows.map((row) => row.total), 1);
+  const total = rows.reduce((sum, row) => sum + row.total, 0);
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -179,17 +187,25 @@ function DistributionList({ title, rows }: { title: string; rows: DemographicBuc
       <CardContent className="space-y-3">
         {rows.length === 0 ? (
           <p className="text-sm text-muted-foreground">Sem dados mapeados.</p>
-        ) : rows.map((row) => (
-          <div key={row.label} className="space-y-1">
-            <div className="flex justify-between gap-3 text-sm">
-              <span className="truncate">{row.label}</span>
-              <strong className="tabular-nums">{num(row.total)}</strong>
+        ) : rows.map((row) => {
+          const share = total ? (row.total / total) * 100 : 0;
+          return (
+            <div key={row.label} className="space-y-1">
+              <div className="flex justify-between gap-3 text-sm">
+                <span className="truncate">{row.label}</span>
+                <strong className="shrink-0 tabular-nums">
+                  {num(row.total)} · {share.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%
+                </strong>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-primary"
+                  style={{ width: `${row.total > 0 ? Math.max(4, Math.round(share)) : 0}%` }}
+                />
+              </div>
             </div>
-            <div className="h-2 overflow-hidden rounded-full bg-muted">
-              <div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(4, Math.round((row.total / max) * 100))}%` }} />
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </CardContent>
     </Card>
   );
@@ -385,6 +401,12 @@ export function TracomaAnaliseView({ externalFilters, hideFilters = false }: { e
   const totalPositivos = byMuni.reduce((s, r) => s + r.positivos, 0);
   const prevMedia = totalExaminados > 0 ? (totalPositivos / totalExaminados) * 100 : null;
   const muniAcimaMeta = byMuni.filter((r) => (r.prevalencia ?? 0) > 5).length;
+  const topPriorityMuni = [...byMuni]
+    .filter((row) => (row.positivos ?? 0) > 0)
+    .sort((a, b) => {
+      const prevDiff = Number(b.prevalencia ?? -1) - Number(a.prevalencia ?? -1);
+      return prevDiff !== 0 ? prevDiff : Number(b.positivos ?? 0) - Number(a.positivos ?? 0);
+    })[0];
   const hasFilter = !!(gve || municipio || yearStart || yearEnd);
   const hasData = !rates.isLoading && !rates.isError && !rates.data?.missingPopulation;
 
@@ -567,6 +589,7 @@ export function TracomaAnaliseView({ externalFilters, hideFilters = false }: { e
             totalPositivos={totalPositivos}
             prevMedia={prevMedia}
             muniAcimaMeta={muniAcimaMeta}
+            topPriorityMuni={topPriorityMuni}
             demographics={demographics.data}
           />
 
