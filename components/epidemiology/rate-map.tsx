@@ -159,31 +159,12 @@ export function RateMap({
 
   if (!rows.length) return null;
 
-  // Unstable rate: population < 30k or fewer than 30 events
-  function isUnstable(row: RateMapRow) {
-    const events = row.casos ?? row.positivos ?? 0;
-    return (row.populacao ?? 0) < 30_000 || events < 30;
-  }
-
   // Build PagedTable columns from tableColumns prop
   const pagedCols: PagedColumn<RateMapRow>[] = tableColumns.map((col) => ({
     key: col.key as string & keyof RateMapRow,
     label: col.label,
     align: (typeof rows[0]?.[col.key] === "number" ? "right" : "left") as "left" | "right",
-    render: (_v, row) => {
-      const formatted = formatCell(row, col);
-      if (col.key !== valueKey || !isUnstable(row)) return formatted;
-      const reason =
-        (row.populacao ?? 0) < 30_000
-          ? `Pop. pequena (${formatNum(row.populacao)} hab.) — taxa pode estar inflada por atendimentos de outros municípios.`
-          : `Poucos eventos (${formatNum(row.casos ?? row.positivos ?? 0)}) — taxa estatisticamente instável.`;
-      return (
-        <span className="inline-flex items-center justify-end gap-1" title={reason}>
-          <AlertTriangle className="h-3 w-3 shrink-0 text-amber-500" />
-          {formatted}
-        </span>
-      );
-    }
+    render: (_v, row) => formatCell(row, col)
   }));
 
   const defaultSortKey = (tableColumns.find((c) => c.key === valueKey) ? valueKey : tableColumns[1]?.key ?? tableColumns[0]?.key) as string & keyof RateMapRow;
@@ -321,13 +302,6 @@ export function RateMap({
               rowKey={(row, i) => `${row.municipio ?? row.gve ?? ""}-${i}`}
               emptyText="Nenhum território com dados calculados."
             />
-            {rows.some(isUnstable) && (
-              <p className="flex items-start gap-1.5 border-t px-4 py-2.5 text-xs text-muted-foreground">
-                <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" />
-                Taxa marcada com <AlertTriangle className="inline h-3 w-3 text-amber-500" /> pode ser instável:
-                município com população &lt; 30 mil hab. ou menos de 30 eventos — passe o mouse sobre o valor para detalhes.
-              </p>
-            )}
           </CardContent>
         </Card>
       </div>

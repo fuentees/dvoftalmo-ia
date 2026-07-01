@@ -366,7 +366,7 @@ function CevespRatesPanel({ data }: { data: CevespRatesData }) {
             { key: "municipio", label: "Município" },
             { key: "gve", label: "GVE" },
             { key: "casos", label: "Casos" },
-            { key: "populacao", label: "População" },
+            { key: "populacao", label: `Pop. IBGE${data.populationYear ? ` ${data.populationYear}` : ""}` },
             { key: "incidencia100k", label: "Incidência/100 mil", decimals: 2 }
           ]}
         />
@@ -383,7 +383,7 @@ function CevespRatesPanel({ data }: { data: CevespRatesData }) {
           tableColumns={[
             { key: "gve", label: "GVE" },
             { key: "casos", label: "Casos" },
-            { key: "populacao", label: "População" },
+            { key: "populacao", label: `Pop. IBGE${data.populationYear ? ` ${data.populationYear}` : ""}` },
             { key: "incidencia100k", label: "Incidência/100 mil", decimals: 2 }
           ]}
         />
