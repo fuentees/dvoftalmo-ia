@@ -722,20 +722,20 @@ export function TracomaAnaliseView({ externalFilters, hideFilters = false }: { e
                   ? [
                       { key: "municipio", label: "Município" },
                       { key: "gve", label: "GVE" },
-                      { key: "examinados", label: "Examinados" },
-                      { key: "positivos", label: "Positivos" },
-                      { key: "prevalencia", label: "Prevalência %", decimals: 2 },
+                      { key: "examinados", label: "Examinados", percentKey: "coberturaExame", percentDecimals: 2 },
+                      { key: "positivos", label: "Positivos", percentKey: "prevalencia", percentDecimals: 2 },
+                      { key: "prevalencia", label: "Prevalência", decimals: 2, suffix: "%" },
                       { key: "taxaDeteccao100k", label: "Detecção/100 mil", decimals: 2 },
-                      { key: "coberturaExame", label: "Cobertura %", decimals: 2 },
+                      { key: "coberturaExame", label: "Cobertura", decimals: 2, suffix: "%" },
                       { key: "populacao", label: "População" }
                     ]
                   : [
                       { key: "gve", label: "GVE" },
-                      { key: "examinados", label: "Examinados" },
-                      { key: "positivos", label: "Positivos" },
-                      { key: "prevalencia", label: "Prevalência %", decimals: 2 },
+                      { key: "examinados", label: "Examinados", percentKey: "coberturaExame", percentDecimals: 2 },
+                      { key: "positivos", label: "Positivos", percentKey: "prevalencia", percentDecimals: 2 },
+                      { key: "prevalencia", label: "Prevalência", decimals: 2, suffix: "%" },
                       { key: "taxaDeteccao100k", label: "Detecção/100 mil", decimals: 2 },
-                      { key: "coberturaExame", label: "Cobertura %", decimals: 2 },
+                      { key: "coberturaExame", label: "Cobertura", decimals: 2, suffix: "%" },
                       { key: "populacao", label: "População" }
                     ]
               }

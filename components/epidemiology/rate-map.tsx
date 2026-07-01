@@ -28,7 +28,14 @@ type RateMapProps = {
   rows: RateMapRow[];
   valueKey: keyof RateMapRow;
   valueLabel: string;
-  tableColumns: Array<{ key: keyof RateMapRow; label: string; decimals?: number }>;
+  tableColumns: Array<{
+    key: keyof RateMapRow;
+    label: string;
+    decimals?: number;
+    suffix?: string;
+    percentKey?: keyof RateMapRow;
+    percentDecimals?: number;
+  }>;
   direction?: "higher-risk" | "higher-better";
   missingPopulation?: boolean;
   message?: string;
@@ -48,6 +55,14 @@ function formatNum(value: unknown, decimals = 0) {
   const n = Number(value);
   if (!Number.isFinite(n)) return String(value);
   return n.toLocaleString("pt-BR", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+}
+
+function formatCell(row: RateMapRow, col: RateMapProps["tableColumns"][number]) {
+  const base = `${formatNum(row[col.key], col.decimals ?? 0)}${col.suffix ?? ""}`;
+  if (!col.percentKey) return base;
+  const percentValue = row[col.percentKey];
+  if (percentValue == null || percentValue === "") return base;
+  return `${base} (${formatNum(percentValue, col.percentDecimals ?? 1)}%)`;
 }
 
 function buildShapeValueMap(rows: RateMapRow[], valueKey: keyof RateMapRow) {
@@ -149,7 +164,7 @@ export function RateMap({
     key: col.key as string & keyof RateMapRow,
     label: col.label,
     align: (typeof rows[0]?.[col.key] === "number" ? "right" : "left") as "left" | "right",
-    render: (v) => formatNum(v, col.decimals ?? 0)
+    render: (_v, row) => formatCell(row, col)
   }));
 
   const defaultSortKey = (tableColumns.find((c) => c.key === valueKey) ? valueKey : tableColumns[1]?.key ?? tableColumns[0]?.key) as string & keyof RateMapRow;
