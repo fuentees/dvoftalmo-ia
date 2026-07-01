@@ -824,52 +824,43 @@ export async function getCacheSyncInfo(): Promise<{
   municipalities: number;
   gves: number;
 }> {
+  const empty = { hasData: false, lastSync: null, totalRows: 0, years: [], minYear: null, maxYear: null, latestNotificationDate: null, totalCases: 0, municipalities: 0, gves: 0 };
   try {
     const supabase = createAdminClient();
-    const [countRes, logRes] = await Promise.all([
-      supabase.from("cevesp_notificacoes").select("id", { count: "exact", head: true }),
+
+    // Use RPC for all aggregates in a single query — avoids fetching all rows
+    const [rpcRes, logRes] = await Promise.all([
+      supabase.rpc("cevesp_status_resumo"),
       supabase.from("cevesp_sync_log").select("synced_at").order("synced_at", { ascending: false }).limit(1)
     ]);
-    const total = countRes.count ?? 0;
-    const last  = (logRes.data?.[0] as { synced_at: string } | undefined)?.synced_at ?? null;
-    const rows = await fetchCacheRows({ metric: "total_casos", dimensions: [], time_grain: "none", date_range: { type: "all" }, filters: [], limit: 500 }, '"ANO","DtNotificacao","TotalCaso","MunicipioNotificacao","GVE_NOME"');
-    const years = Array.from(new Set(
-      rows
-        .map((row) => Number(row.ANO))
-        .filter((year) => Number.isInteger(year) && year > 1900)
-    )).sort((a, b) => a - b);
-    const dates = rows
-      .map((row) => String(row.DtNotificacao ?? ""))
-      .filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date))
-      .sort();
-    const totalCases = rows.reduce((sum, row) => sum + Number(row.TotalCaso ?? 0), 0);
-    const municipalities = new Set(rows.map((row) => String(row.MunicipioNotificacao ?? "")).filter(Boolean)).size;
-    const gves = new Set(rows.map((row) => String(row.GVE_NOME ?? "")).filter(Boolean)).size;
 
-    return {
-      hasData: total > 0,
-      lastSync: last,
-      totalRows: total,
-      years,
-      minYear: years[0] ?? null,
-      maxYear: years[years.length - 1] ?? null,
-      latestNotificationDate: dates[dates.length - 1] ?? null,
-      totalCases,
-      municipalities,
-      gves
-    };
+    const last = (logRes.data?.[0] as { synced_at: string } | undefined)?.synced_at ?? null;
+
+    if (!rpcRes.error && rpcRes.data?.[0]) {
+      const r = rpcRes.data[0] as {
+        total_rows: number; total_cases: number; min_ano: number | null; max_ano: number | null;
+        anos: number[] | null; municipios: number; gves: number; last_date: string | null;
+      };
+      const years = (r.anos ?? []).filter((a) => a > 1900).sort((a, b) => a - b);
+      return {
+        hasData: r.total_rows > 0,
+        lastSync: last,
+        totalRows: r.total_rows,
+        years,
+        minYear: r.min_ano ?? null,
+        maxYear: r.max_ano ?? null,
+        latestNotificationDate: r.last_date ?? null,
+        totalCases: Number(r.total_cases ?? 0),
+        municipalities: Number(r.municipios ?? 0),
+        gves: Number(r.gves ?? 0)
+      };
+    }
+
+    // Fallback if RPC not yet deployed
+    const countRes = await supabase.from("cevesp_notificacoes").select("id", { count: "exact", head: true });
+    const total = countRes.count ?? 0;
+    return { ...empty, hasData: total > 0, lastSync: last, totalRows: total };
   } catch {
-    return {
-      hasData: false,
-      lastSync: null,
-      totalRows: 0,
-      years: [],
-      minYear: null,
-      maxYear: null,
-      latestNotificationDate: null,
-      totalCases: 0,
-      municipalities: 0,
-      gves: 0
-    };
+    return empty;
   }
 }
