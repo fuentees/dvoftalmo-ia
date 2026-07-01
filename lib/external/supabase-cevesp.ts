@@ -30,8 +30,8 @@ function resolveDateRange(dr: CevespAnalysisInput["date_range"]): {
   const month = now.getMonth() + 1;
   const se   = Math.ceil((now.getDate() + new Date(year, 0, 1).getDay()) / 7); // approximation
 
-  if (dr.type === "current_year")  return { anoStart: year, anoEnd: year, startDate: `${year}-01-01`, endDate: `${year}-12-31` };
-  if (dr.type === "last_year")     return { anoStart: year - 1, anoEnd: year - 1, startDate: `${year - 1}-01-01`, endDate: `${year - 1}-12-31` };
+  if (dr.type === "current_year")  return { anoStart: year, anoEnd: year };
+  if (dr.type === "last_year")     return { anoStart: year - 1, anoEnd: year - 1 };
   if (dr.type === "current_month") return { anoStart: year, anoEnd: year, startDate: `${year}-${String(month).padStart(2, "0")}-01`, endDate: now.toISOString().slice(0, 10) };
   if (dr.type === "last_month") {
     const first = new Date(year, month - 2, 1);
@@ -45,7 +45,7 @@ function resolveDateRange(dr: CevespAnalysisInput["date_range"]): {
   }
   if (dr.type === "relative_years" && dr.amount) {
     const startYear = year - dr.amount + 1;
-    return { anoStart: startYear, anoEnd: year, startDate: `${startYear}-01-01`, endDate: `${year}-12-31` };
+    return { anoStart: startYear, anoEnd: year };
   }
   if (dr.type === "relative_months" && dr.amount) {
     const start = new Date(year, month - dr.amount, 1);
