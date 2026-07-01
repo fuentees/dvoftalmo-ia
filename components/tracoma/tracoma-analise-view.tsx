@@ -3,10 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { listarGvesSp, listarMunicipiosPorGve } from "@/lib/municipios-sp";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { AlertTriangle, Download, ExternalLink, FileText, RefreshCw, Search } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { AlertTriangle, Download, FileText, RefreshCw, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,14 +44,6 @@ type TracomaRates = {
   byMunicipality?: MuniRow[];
   byGve?: GveRow[];
   mapRows?: MuniRow[];
-};
-
-type Bulletin = {
-  id: string;
-  se: number | null;
-  ano: number;
-  title: string;
-  created_at: string;
 };
 
 type DemographicBucket = { label: string; total: number };
@@ -115,6 +105,15 @@ function MetricCard({
         {detail && <div className="mt-1 text-xs text-muted-foreground">{detail}</div>}
       </CardContent>
     </Card>
+  );
+}
+
+function SectionIntro({ title, description }: { title: string; description: string }) {
+  return (
+    <div>
+      <h2 className="text-base font-semibold">{title}</h2>
+      <p className="text-sm text-muted-foreground">{description}</p>
+    </div>
   );
 }
 
@@ -295,8 +294,6 @@ function DemographicsPanel({ data, loading }: { data?: TracomaDemographics; load
 }
 
 export function TracomaAnaliseView({ externalFilters, hideFilters = false }: { externalFilters?: TracomaFilters; hideFilters?: boolean } = {}) {
-  const qc = useQueryClient();
-
   // Pending inputs (user edits before clicking Filtrar)
   const [pendingGve, setPendingGve] = useState("");
   const [pendingMunicipio, setPendingMunicipio] = useState("");
@@ -308,14 +305,6 @@ export function TracomaAnaliseView({ externalFilters, hideFilters = false }: { e
   const [municipio, setMunicipio] = useState("");
   const [yearStart, setYearStart] = useState<number | undefined>(undefined);
   const [yearEnd, setYearEnd] = useState<number | undefined>(undefined);
-
-  // Bulletin viewer state
-  const [openBulletinId, setOpenBulletinId] = useState<string | null>(null);
-
-  // Bulletin form state
-  const [bulletinAno, setBulletinAno] = useState(new Date().getFullYear());
-  const [bulletinAnoInicio, setBulletinAnoInicio] = useState<number | undefined>(undefined);
-  const [bulletinForce, setBulletinForce] = useState(false);
 
   const gveOptions = useMemo(() => listarGvesSp(), []);
   const municipioOptions = useMemo(() => listarMunicipiosPorGve(pendingGve), [pendingGve]);
@@ -388,50 +377,6 @@ export function TracomaAnaliseView({ externalFilters, hideFilters = false }: { e
     staleTime: 5 * 60 * 1000
   });
 
-
-  const bulletinsQuery = useQuery<Bulletin[]>({
-    queryKey: ["boletins-tracoma"],
-    queryFn: async () => {
-      const res = await fetch("/api/boletins?agravo=tracoma");
-      if (!res.ok) return [];
-      return res.json() as Promise<Bulletin[]>;
-    },
-    staleTime: 2 * 60 * 1000
-  });
-
-  const bulletinDetailQuery = useQuery<{ id: string; title: string; content: string | null; ano: number; created_at: string }>({
-    queryKey: ["boletim-detail", openBulletinId],
-    queryFn: async () => {
-      const res = await fetch(`/api/boletins/${openBulletinId}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Erro ao carregar boletim");
-      return data;
-    },
-    enabled: !!openBulletinId,
-    staleTime: 10 * 60 * 1000
-  });
-
-  const generateBulletin = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/boletins", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          agravo: "tracoma",
-          ano: bulletinAno,
-          anoInicio: bulletinAnoInicio,
-          force: bulletinForce
-        })
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(data.error ?? "Erro ao gerar boletim");
-      return data;
-    },
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["boletins-tracoma"] });
-      setBulletinForce(false);
-    }
-  });
 
   // Derived indicators
   const byMuni = rates.data?.byMunicipality ?? [];
@@ -604,13 +549,20 @@ export function TracomaAnaliseView({ externalFilters, hideFilters = false }: { e
               Fonte: NOTTRACONET / SINAN Tracoma
               {rates.data!.populationYear ? ` · Pop. IBGE ${rates.data!.populationYear}` : ""}
             </p>
-            <Button variant="outline" size="sm" onClick={downloadTracamaCsv} disabled={!byMuni.length && !byGveData.length}>
-              <Download className="h-3.5 w-3.5" />
-              Exportar CSV
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={downloadTracamaCsv} disabled={!byMuni.length && !byGveData.length}>
+                <Download className="h-3.5 w-3.5" />
+                Exportar CSV
+              </Button>
+              <Button asChild variant="outline" size="sm">
+                <Link href="/boletins?agravo=tracoma">
+                  <FileText className="h-3.5 w-3.5" />
+                  Boletins
+                </Link>
+              </Button>
+            </div>
           </div>
 
-          {/* ── Indicadores ── */}
           <ExecutiveSummary
             totalPositivos={totalPositivos}
             prevMedia={prevMedia}
@@ -618,47 +570,55 @@ export function TracomaAnaliseView({ externalFilters, hideFilters = false }: { e
             demographics={demographics.data}
           />
 
-          {/* ── Indicadores ── */}
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-            <MetricCard
-              label="Municípios com dados"
-              value={byMuni.length}
-              detail="com pelo menos 1 exame registrado"
+          <div className="space-y-4">
+            <SectionIntro
+              title="Indicadores principais"
+              description="Síntese do recorte consolidado para acompanhar eliminação, carga ativa e cobertura operacional."
             />
-            <MetricCard
-              label="Total examinados"
-              value={totalExaminados}
-              detail="acumulado no período selecionado"
-            />
-            <MetricCard
-              label="Total positivos (TF/TI)"
-              value={totalPositivos}
-              detail="formas ativas de tracoma"
-              tone={totalPositivos > 0 ? "amber" : "green"}
-            />
-            <MetricCard
-              label="Prevalência média"
-              value={prevMedia != null ? pct(prevMedia) : "—"}
-              detail="meta OMS de eliminação: < 5%"
-              tone={
-                prevMedia == null ? "default"
-                  : prevMedia >= 5 ? "red"
-                  : prevMedia > 0 ? "amber"
-                  : "green"
-              }
-            />
-            <MetricCard
-              label="Municípios acima da meta"
-              value={muniAcimaMeta}
-              detail="com TF > 5% (threshold OMS)"
-              tone={muniAcimaMeta > 0 ? "red" : "green"}
-            />
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+              <MetricCard
+                label="Municípios com dados"
+                value={byMuni.length}
+                detail="com pelo menos 1 exame registrado"
+              />
+              <MetricCard
+                label="Total examinados"
+                value={totalExaminados}
+                detail="acumulado no período selecionado"
+              />
+              <MetricCard
+                label="Total positivos (TF/TI)"
+                value={totalPositivos}
+                detail="formas ativas de tracoma"
+                tone={totalPositivos > 0 ? "amber" : "green"}
+              />
+              <MetricCard
+                label="Prevalência média"
+                value={prevMedia != null ? pct(prevMedia) : "—"}
+                detail="meta OMS de eliminação: < 5%"
+                tone={
+                  prevMedia == null ? "default"
+                    : prevMedia >= 5 ? "red"
+                    : prevMedia > 0 ? "amber"
+                    : "green"
+                }
+              />
+              <MetricCard
+                label="Municípios acima da meta"
+                value={muniAcimaMeta}
+                detail="com TF > 5% (threshold OMS)"
+                tone={muniAcimaMeta > 0 ? "red" : "green"}
+              />
+            </div>
           </div>
 
           <DemographicsPanel data={demographics.data} loading={demographics.isLoading} />
 
-          {/* ── Mapa epidemiológico ── */}
           <div className="space-y-4">
+            <SectionIntro
+              title="Território e taxas"
+              description="Mapa e tabela para priorizar município ou GVE por prevalência, detecção e cobertura de exame."
+            />
             <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-sm font-semibold">Mapa de taxas do tracoma</p>
@@ -742,131 +702,6 @@ export function TracomaAnaliseView({ externalFilters, hideFilters = false }: { e
           </CardContent>
         </Card>
       )}
-
-      {/* ── Boletins ── */}
-      <div className="grid gap-4 md:grid-cols-[1fr_1.5fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Gerar boletim técnico</CardTitle>
-            <CardDescription>
-              Boletim de eliminação do tracoma gerado por IA com base nos dados SINAN.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex gap-2">
-              <div className="flex flex-1 flex-col gap-1">
-                <label className="text-xs text-muted-foreground">Ano de referência</label>
-                <input
-                  type="number"
-                  value={bulletinAno}
-                  onChange={(e) => setBulletinAno(Number(e.target.value))}
-                  className="h-9 rounded-md border bg-background px-2 text-sm"
-                />
-              </div>
-              <div className="flex flex-1 flex-col gap-1">
-                <label className="text-xs text-muted-foreground">Ano início (opcional)</label>
-                <input
-                  type="number"
-                  placeholder="Ex: 2020"
-                  value={bulletinAnoInicio ?? ""}
-                  onChange={(e) => setBulletinAnoInicio(e.target.value ? Number(e.target.value) : undefined)}
-                  className="h-9 rounded-md border bg-background px-2 text-sm"
-                />
-              </div>
-            </div>
-            <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
-              <input
-                type="checkbox"
-                checked={bulletinForce}
-                onChange={(e) => setBulletinForce(e.target.checked)}
-              />
-              Forçar regeneração (mesmo que já exista)
-            </label>
-            <Button
-              onClick={() => generateBulletin.mutate()}
-              disabled={generateBulletin.isPending}
-              className="w-full"
-            >
-              {generateBulletin.isPending
-                ? <><RefreshCw className="h-4 w-4 animate-spin" /> Gerando...</>
-                : <><FileText className="h-4 w-4" /> Gerar boletim {bulletinAno}</>}
-            </Button>
-            {generateBulletin.isError && (
-              <p className="text-xs text-destructive">{(generateBulletin.error as Error).message}</p>
-            )}
-            {generateBulletin.isSuccess && (
-              <p className="text-xs text-green-700">Boletim gerado com sucesso.</p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Boletins gerados</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {bulletinsQuery.isLoading && (
-              <p className="text-sm text-muted-foreground">Carregando...</p>
-            )}
-            {!bulletinsQuery.isLoading && (bulletinsQuery.data?.length ?? 0) === 0 && (
-              <p className="text-sm text-muted-foreground">Nenhum boletim gerado ainda.</p>
-            )}
-            <ul className="space-y-2">
-              {(bulletinsQuery.data ?? []).slice(0, 8).map((b) => (
-                <li key={b.id} className="rounded-md border p-3 text-sm">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <div className="font-medium leading-tight">{b.title}</div>
-                      <div className="mt-0.5 text-xs text-muted-foreground">
-                        Ano {b.ano}{b.se ? ` · SE ${b.se}` : ""} ·{" "}
-                        {new Date(b.created_at).toLocaleDateString("pt-BR")}
-                      </div>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 shrink-0 px-2 text-xs"
-                      onClick={() => setOpenBulletinId(openBulletinId === b.id ? null : b.id)}
-                    >
-                      {openBulletinId === b.id ? "Fechar" : "Ver"}
-                    </Button>
-                  </div>
-                  {openBulletinId === b.id && (
-                    <div className="mt-3 border-t pt-3">
-                      {bulletinDetailQuery.isLoading && (
-                        <p className="text-xs text-muted-foreground">Carregando...</p>
-                      )}
-                      {bulletinDetailQuery.isError && (
-                        <p className="text-xs text-destructive">Erro ao carregar conteúdo.</p>
-                      )}
-                      {bulletinDetailQuery.data?.content && (
-                        <>
-                          <div className="max-h-80 overflow-y-auto pr-1 text-xs [&_h1]:mb-2 [&_h1]:mt-4 [&_h1]:text-xs [&_h1]:font-bold [&_h1]:uppercase [&_h1]:text-teal-900 [&_h2]:mb-1.5 [&_h2]:mt-3 [&_h2]:text-xs [&_h2]:font-bold [&_h2]:uppercase [&_h2]:text-teal-800 [&_h3]:mb-1 [&_h3]:mt-2 [&_h3]:text-xs [&_h3]:font-semibold [&_li]:ml-4 [&_li]:list-disc [&_li]:leading-relaxed [&_p]:mb-2 [&_p]:leading-relaxed [&_p]:text-foreground/80 [&_strong]:font-semibold [&_table]:w-full [&_table]:text-xs [&_td]:border [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:bg-teal-50 [&_th]:px-2 [&_th]:py-1 [&_th]:font-semibold">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                              {bulletinDetailQuery.data.content}
-                            </ReactMarkdown>
-                          </div>
-                          <div className="mt-2 flex justify-end">
-                            <Button asChild variant="outline" size="sm" className="h-7 gap-1.5 text-xs">
-                              <Link href={`/boletins?id=${b.id}&agravo=tracoma`}>
-                                <ExternalLink className="h-3.5 w-3.5" />
-                                Abrir boletim completo
-                              </Link>
-                            </Button>
-                          </div>
-                        </>
-                      )}
-                      {bulletinDetailQuery.data && !bulletinDetailQuery.data.content && (
-                        <p className="text-xs text-muted-foreground">Conteúdo não disponível.</p>
-                      )}
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      </div>
     </div>
   );
 }

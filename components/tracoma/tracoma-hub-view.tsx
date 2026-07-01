@@ -5,7 +5,6 @@ import { useSearchParams } from "next/navigation";
 import { Activity, Database, ShieldAlert } from "lucide-react";
 import { TracomaAnaliseView } from "@/components/tracoma/tracoma-analise-view";
 import { TracomaConsultaView } from "@/components/tracoma/tracoma-consulta-view";
-import { TracomaChartsView } from "@/components/tracoma/tracoma-charts-view";
 import { SinanQualidadeView } from "@/components/sinan/sinan-qualidade-view";
 import { listarGvesSp, listarMunicipiosPorGve } from "@/lib/municipios-sp";
 
@@ -100,12 +99,7 @@ export function TracomaHubView() {
       </div>
 
       <div className="flex-1">
-        {tab === "situacao" && (
-          <div>
-            <TracomaChartsView filters={filters} />
-            <TracomaAnaliseView externalFilters={filters} hideFilters />
-          </div>
-        )}
+        {tab === "situacao"  && <TracomaAnaliseView externalFilters={filters} hideFilters />}
         {tab === "qualidade" && <SinanQualidadeView externalFilters={filters} />}
         {tab === "consulta"  && <TracomaConsultaView externalFilters={filters} hideFilters />}
       </div>
