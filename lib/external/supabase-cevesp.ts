@@ -312,9 +312,18 @@ function dimensionValue(row: Record<string, unknown>, dimension: string) {
   if (dimension === "drs") return String(row.DRS_NOME ?? "Sem DRS");
   if (dimension === "municipio") return String(row.MunicipioNotificacao ?? "Sem municipio");
   if (dimension === "uvis") return String(row.UVIS ?? "Sem UVIS");
-  if (dimension === "se") return String(row.SemEpidemio ?? "0");
-  if (dimension === "ano") return String(row.ANO ?? "0");
-  if (dimension === "mes") return String(row.Mes ?? "0");
+  if (dimension === "se") {
+    const se = Number(row.SemEpidemio ?? 0);
+    return Number.isInteger(se) && se > 0 ? String(se) : "Nao informado";
+  }
+  if (dimension === "ano") {
+    const ano = Number(row.ANO ?? 0);
+    return Number.isInteger(ano) && ano > 1900 ? String(ano) : "Nao informado";
+  }
+  if (dimension === "mes") {
+    const m = Number(row.Mes ?? 0);
+    return Number.isInteger(m) && m >= 1 && m <= 12 ? monthName(m) : "Nao informado";
+  }
   if (dimension === "dia") return String(row.DtNotificacao ?? "Sem data").split("T")[0];
   if (dimension === "unidade") return String(row.Unid_notificacao ?? "Sem unidade");
   if (dimension === "cnes") return String(row.nCNES ?? "Sem CNES");
@@ -372,6 +381,7 @@ function buildCachedGenericResult(rows: Array<Record<string, unknown>>, analysis
       const year = Number(row.ANO);
       if (!Number.isInteger(year) || year <= 1900) continue;
       const keyValues = dimensions.map((dimension) => dimensionValue(row, dimension));
+      if (keyValues.includes("Nao informado")) continue;
       const key = keyValues.join("||");
       if (!groups.has(key)) {
         const base: Record<string, unknown> = {};
