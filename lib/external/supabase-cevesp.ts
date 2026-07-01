@@ -729,38 +729,34 @@ export async function getCevespHistorico(opts?: {
     }
   }
 
-  // Fetch population for the relevant territory (SP total, GVE, or single municipality)
+  // Fetch population for the relevant territory.
+  // ibge_municipio_populacao armazena código de 7 dígitos (SIDRA = 6 dígitos + dígito verificador),
+  // enquanto MUNICIPIOS_SP usa 6 dígitos — por isso filtramos client-side normalizando para 6 dígitos.
   let popByYear = new Map<number, number>();
   try {
     const supabase = createAdminClient();
-    let q = supabase.from("ibge_municipio_populacao").select("ano, populacao, codigo_ibge");
+    const { data: popRows } = await supabase
+      .from("ibge_municipio_populacao")
+      .select("ano, populacao, codigo_ibge")
+      .eq("uf", "SP");
 
-    if (opts?.municipio) {
-      // Find IBGE codes matching this municipality name
-      const normalizedSearch = opts.municipio.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    // Build set of 6-digit IBGE codes for the territory (null = all SP)
+    let territoryCodes: Set<string> | null = null;
+    if (opts?.gve) {
+      territoryCodes = new Set(listarMunicipiosPorGve(opts.gve).map((m) => m.codigo));
+    } else if (opts?.municipio) {
+      const needle = opts.municipio.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
       const matches = listarMunicipiosSp().filter((m) =>
-        m.nome.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").includes(normalizedSearch)
+        m.nome.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").includes(needle)
       );
-      const codes = matches.map((m) => m.codigo);
-      if (codes.length > 0) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        q = (q as any).in("codigo_ibge", codes);
-      }
-    } else if (opts?.gve) {
-      // All municipalities belonging to this GVE
-      const codes = listarMunicipiosPorGve(opts.gve).map((m) => m.codigo);
-      if (codes.length > 0) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        q = (q as any).in("codigo_ibge", codes);
-      }
-    } else {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      q = (q as any).eq("uf", "SP");
+      territoryCodes = new Set(matches.map((m) => m.codigo));
     }
 
-    const { data: popRows } = await q;
     if (popRows) {
-      for (const r of popRows as Array<{ ano: number; populacao: number }>) {
+      for (const r of popRows as Array<{ ano: number; populacao: number; codigo_ibge: string }>) {
+        // Normaliza para 6 dígitos independente do formato armazenado
+        const code6 = String(r.codigo_ibge ?? "").replace(/\D/g, "").slice(0, 6);
+        if (territoryCodes && !territoryCodes.has(code6)) continue;
         const yr = Number(r.ano);
         popByYear.set(yr, (popByYear.get(yr) ?? 0) + Number(r.populacao ?? 0));
       }
