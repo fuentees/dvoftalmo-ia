@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { generateEpidemiologicalAlerts } from "@/services/epidemiological-alerts";
 
 const VALID_STATUSES = new Set(["novo", "em_investigacao", "confirmado", "descartado", "encerrado"]);
 
@@ -69,4 +70,19 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ ok: true, legacy: true });
   }
   return NextResponse.json({ ok: true });
+}
+
+export async function POST() {
+  const supabase = await createClient();
+  const user = await getCurrentUser(supabase);
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  try {
+    return NextResponse.json(await generateEpidemiologicalAlerts());
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Erro ao gerar alertas." },
+      { status: 500 }
+    );
+  }
 }

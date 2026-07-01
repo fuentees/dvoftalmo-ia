@@ -32,6 +32,16 @@ type AlertsResponse = {
   warning?: string | null;
 };
 
+type GenerateResponse = {
+  ok: boolean;
+  alerts: number;
+  source?: "external" | "cache";
+  ano?: number;
+  se?: number;
+  reason?: string;
+  warning?: string;
+};
+
 const severityConfig = {
   critical: { label: "Crítica", icon: AlertCircle, cls: "border-red-200 bg-red-50 text-red-700" },
   warning:  { label: "Atenção", icon: AlertTriangle, cls: "border-amber-200 bg-amber-50 text-amber-700" },
@@ -86,6 +96,15 @@ export function AlertsView() {
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["alerts"] })
   });
+  const generateAlerts = useMutation({
+    mutationFn: async () => {
+      const response = await fetch("/api/alertas", { method: "POST" });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error ?? "Erro ao gerar alertas.");
+      return body as GenerateResponse;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["alerts"] })
+  });
 
   const pending  = alerts.filter(isActive).length;
   const critical = alerts.filter((a) => a.severity === "critical" && isActive(a)).length;
@@ -125,6 +144,9 @@ export function AlertsView() {
               <p className="text-lg font-semibold tabular-nums">{investigating}</p>
             </div>
           </div>
+          <Button variant="outline" size="sm" onClick={() => generateAlerts.mutate()} disabled={generateAlerts.isPending}>
+            {generateAlerts.isPending ? "Gerando..." : "Gerar alertas agora"}
+          </Button>
         </div>
       </div>
 
@@ -153,14 +175,16 @@ export function AlertsView() {
 
         {isLoading && <div className="rounded-md border bg-card p-8 text-center text-sm text-muted-foreground">Carregando alertas...</div>}
 
-        {(data?.warning || error || updateStatus.error) && (
+        {(data?.warning || error || updateStatus.error || generateAlerts.error || generateAlerts.data?.warning || generateAlerts.data?.reason) && (
           <Card className="border-amber-200 bg-amber-50">
             <CardContent className="flex gap-3 py-4 text-sm text-amber-900">
               <AlertTriangle className="mt-0.5 h-4 w-4" />
               <div>
                 <p className="font-medium">Verifique a fonte dos alertas</p>
                 <p className="text-amber-800">
-                  {data?.warning ?? error?.message ?? updateStatus.error?.message}
+                  {generateAlerts.data
+                    ? `${generateAlerts.data.alerts.toLocaleString("pt-BR")} alerta(s) gerado(s) na SE ${generateAlerts.data.se ?? "-"} / ${generateAlerts.data.ano ?? "-"} via ${generateAlerts.data.source ?? "fonte"}. ${generateAlerts.data.reason ?? generateAlerts.data.warning ?? ""}`
+                    : data?.warning ?? error?.message ?? updateStatus.error?.message ?? generateAlerts.error?.message}
                 </p>
               </div>
             </CardContent>
