@@ -133,12 +133,13 @@ export async function GET(req: NextRequest) {
     const format = searchParams.get("format");
     const anoParam = searchParams.get("ano");
     const ano = anoParam ? Number(anoParam) : undefined;
+    const anoFim = searchParams.get("anoFim") ? Number(searchParams.get("anoFim")) : undefined;
     const gve = searchParams.get("gve") ?? undefined;
     const municipio = searchParams.get("municipio") ?? undefined;
     const seInicio = searchParams.get("seInicio") ? Number(searchParams.get("seInicio")) : undefined;
     const seFim = searchParams.get("seFim") ? Number(searchParams.get("seFim")) : undefined;
 
-    const records = await findInvalidRecords(undefined, ano, gve);
+    const records = await findInvalidRecords(undefined, ano, gve, anoFim);
     const scopedRecords = applyScopeFilters(records, { municipio, seInicio, seFim });
     const filteredRecords = filterRecords(scopedRecords, issueFilter, query);
 

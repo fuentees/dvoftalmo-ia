@@ -630,6 +630,7 @@ function CompletudeCevespPanel({ data }: { data: CompletudeCevespData }) {
 type CevespQualidadeViewProps = {
   externalFilters?: {
     year?: number;
+    yearEnd?: number;
     gve?: string;
     municipio?: string;
   };
@@ -641,6 +642,7 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
   const [filterType, setFilterType] = useState<string>("todos");
   const [recordQuery, setRecordQuery] = useState("");
   const [anoFilter, setAnoFilter] = useState("");
+  const [anoFimFilter, setAnoFimFilter] = useState("");
   const [gveFilter, setGveFilter] = useState("");
   const [municipioFilter, setMunicipioFilter] = useState("");
   const [page, setPage] = useState(0);
@@ -660,6 +662,7 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
   useEffect(() => {
     if (!externalFilters) return;
     setAnoFilter(externalFilters.year ? String(externalFilters.year) : "");
+    setAnoFimFilter(externalFilters.yearEnd ? String(externalFilters.yearEnd) : "");
     setGveFilter(externalFilters.gve ?? "");
     setMunicipioFilter(externalFilters.municipio ?? "");
     setPage(0);
@@ -682,7 +685,7 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
   }
 
   const { data, isLoading, isError, error, refetch } = useQuery<QualidadeData, ApiError>({
-    queryKey: ["cevesp-qualidade", filterType, recordQuery, anoFilter, gveFilter, municipioFilter, page],
+    queryKey: ["cevesp-qualidade", filterType, recordQuery, anoFilter, anoFimFilter, gveFilter, municipioFilter, page],
     queryFn: async () => {
       const params = new URLSearchParams({
         limit: String(pageSize),
@@ -691,6 +694,7 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
         q: recordQuery
       });
       if (anoFilter) params.set("ano", anoFilter);
+      if (anoFimFilter && anoFimFilter !== anoFilter) params.set("anoFim", anoFimFilter);
       if (gveFilter) params.set("gve", gveFilter);
       if (municipioFilter) params.set("municipio", municipioFilter);
       const res  = await fetch(`/api/cevesp/qualidade?${params.toString()}`);

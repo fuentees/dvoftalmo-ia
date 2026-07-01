@@ -132,7 +132,7 @@ export function mapInvalidCacheRow(r: Record<string, unknown>): InvalidRecord | 
   };
 }
 
-async function findInvalidRecordsFromCache(limit?: number, ano?: number, gve?: string): Promise<InvalidRecord[]> {
+async function findInvalidRecordsFromCache(limit?: number, ano?: number, anoFim?: number, gve?: string): Promise<InvalidRecord[]> {
   const supabase = createAdminClient();
   const pageSize = 1000;
   const invalid: InvalidRecord[] = [];
@@ -142,7 +142,13 @@ async function findInvalidRecordsFromCache(limit?: number, ano?: number, gve?: s
       .from("cevesp_notificacoes")
       .select('id,row_key,"ID","ControlaSubmit","DtNotificacao","SemEpidemio","MunicipioNotificacao","GVE_NOME","ANO","TotalCaso","FxMenorUmAno","FxUmQuatro","FxCincoNove","FxDezQuatorze","FxQuizeOuMais","SexMasc","SexFem"')
       .range(from, from + pageSize - 1);
-    if (ano) q = q.eq('"ANO"', ano) as typeof q;
+    if (ano && anoFim && anoFim > ano) {
+      q = q.gte('"ANO"', ano).lte('"ANO"', anoFim) as typeof q;
+    } else if (ano) {
+      q = q.eq('"ANO"', ano) as typeof q;
+    } else if (anoFim) {
+      q = q.lte('"ANO"', anoFim) as typeof q;
+    }
     if (gve) q = q.eq('"GVE_NOME"', gve) as typeof q;
     const { data, error } = await q;
     if (error) throw new Error(`Erro ao consultar cache CEVESP: ${error.message}`);
@@ -181,7 +187,7 @@ async function getPrimaryKeyColumn(tableName: string, dbName: string): Promise<s
   }
 }
 
-export async function findInvalidRecords(limit?: number, ano?: number, gve?: string): Promise<InvalidRecord[]> {
+export async function findInvalidRecords(limit?: number, ano?: number, gve?: string, anoFim?: number): Promise<InvalidRecord[]> {
   let tableName: string;
   let conn: Awaited<ReturnType<typeof createNotificationConnection>>;
   try {
@@ -189,7 +195,7 @@ export async function findInvalidRecords(limit?: number, ano?: number, gve?: str
     conn = await createNotificationConnection();
   } catch (error) {
     if (isNotificationConnectionError(error) || !process.env.NOTIFY_DB_HOST) {
-      return findInvalidRecordsFromCache(limit, ano, gve);
+      return findInvalidRecordsFromCache(limit, ano, anoFim, gve);
     }
     throw error;
   }
@@ -206,9 +212,15 @@ export async function findInvalidRecords(limit?: number, ano?: number, gve?: str
 
     const scopeConditions: string[] = [];
     const scopeParams: unknown[] = [];
-    if (ano) {
+    if (ano && anoFim && anoFim > ano) {
+      scopeConditions.push("ANO >= ?"); scopeParams.push(ano);
+      scopeConditions.push("ANO <= ?"); scopeParams.push(anoFim);
+    } else if (ano) {
       scopeConditions.push("ANO = ?");
       scopeParams.push(ano);
+    } else if (anoFim) {
+      scopeConditions.push("ANO <= ?");
+      scopeParams.push(anoFim);
     }
     if (gve) {
       scopeConditions.push("GVE_NOME = ?");
@@ -351,7 +363,7 @@ export async function findInvalidRecords(limit?: number, ano?: number, gve?: str
     return allRecords;
   } catch (error) {
     if (isNotificationConnectionError(error)) {
-      return findInvalidRecordsFromCache(limit, ano, gve);
+      return findInvalidRecordsFromCache(limit, ano, anoFim, gve);
     }
     throw error;
   } finally {
