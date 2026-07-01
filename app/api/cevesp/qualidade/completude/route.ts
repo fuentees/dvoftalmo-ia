@@ -4,7 +4,6 @@ import { getCurrentUser } from "@/lib/supabase/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const CEVESP_FIELD_LABELS: Record<string, string> = {
-  // Identificação e localização
   ANO: "Ano",
   Mes: "Mês",
   SemEpidemio: "Semana epidemiológica",
@@ -18,20 +17,16 @@ const CEVESP_FIELD_LABELS: Record<string, string> = {
   UVIS: "UVIS",
   Nome_notificante: "Nome do notificante",
   CargoFuncao: "Cargo/Função",
-  // Contagens principais
   TotalCaso: "Total de casos",
   SexMasc: "Sexo masculino",
   SexFem: "Sexo feminino",
-  // Faixas etárias
   FxMenorUmAno: "Faixa <1 ano",
   FxUmQuatro: "Faixa 1–4 anos",
   FxCincoNove: "Faixa 5–9 anos",
   FxDezQuatorze: "Faixa 10–14 anos",
   FxQuizeOuMais: "Faixa 15+ anos",
-  // Surto / investigação
   Surto: "Surto",
   NuSurto: "N° surto",
-  // Ações
   NuColetaMaterialBio: "N° coleta material biológico",
   ColetaMaterialBio: "Coleta mat. biológico",
   NuAcaoEducativa: "N° ações educativas",
@@ -40,6 +35,8 @@ const CEVESP_FIELD_LABELS: Record<string, string> = {
   NuEncamimento: "N° encaminhamentos",
   MedidaAdotada: "Medida adotada",
 };
+
+const cols = Object.keys(CEVESP_FIELD_LABELS);
 
 export async function GET(req: NextRequest) {
   const supabase = await createClient();
@@ -53,7 +50,44 @@ export async function GET(req: NextRequest) {
     const gve = searchParams.get("gve") ?? undefined;
 
     const admin = createAdminClient();
-    const cols = Object.keys(CEVESP_FIELD_LABELS);
+
+    // Fast path: três RPCs em paralelo — uma passagem no banco por tipo de agregação.
+    // Substitui a paginação de 300k linhas × 30 colunas que causava timeout no Vercel.
+    const [fieldsRes, gveRes, anoRes] = await Promise.all([
+      admin.rpc("cevesp_completude_campos", { p_ano: ano ?? null, p_gve: gve ?? null }),
+      admin.rpc("cevesp_completude_gve",    { p_ano: ano ?? null }),
+      admin.rpc("cevesp_completude_ano",    { p_gve: gve ?? null }),
+    ]);
+
+    if (!fieldsRes.error && fieldsRes.data) {
+      const d = fieldsRes.data as Record<string, number>;
+      const total = Number(d.total ?? 0);
+
+      const fieldCompleteness: Record<string, { total: number; filled: number; pct: number; label: string }> = {};
+      for (const col of cols) {
+        const filled = Number(d[col] ?? 0);
+        fieldCompleteness[col] = {
+          total,
+          filled,
+          pct: total ? Math.round((filled / total) * 100) : 0,
+          label: CEVESP_FIELD_LABELS[col]
+        };
+      }
+
+      const byGve = (!gveRes.error && Array.isArray(gveRes.data))
+        ? (gveRes.data as Array<{ gve: string; total_rows: number; avg_pct: number; critical_fields: number }>)
+            .map((r) => ({ gve: r.gve, totalRows: r.total_rows, avgPct: r.avg_pct, criticalFields: r.critical_fields }))
+        : [];
+
+      const byYear = (!anoRes.error && Array.isArray(anoRes.data))
+        ? (anoRes.data as Array<{ ano: number; total_rows: number; avg_pct: number }>)
+            .map((r) => ({ ano: r.ano, totalRows: r.total_rows, avgPct: r.avg_pct }))
+        : [];
+
+      return NextResponse.json({ fieldCompleteness, totalRows: total, byGve, byYear });
+    }
+
+    // Fallback: paginação lenta (só usado se as RPCs não estiverem deployadas)
     const selectCols = cols.map((c) => `"${c}"`).join(",");
     const pageSize = 1000;
     const allRows: Array<Record<string, unknown>> = [];
@@ -88,24 +122,22 @@ export async function GET(req: NextRequest) {
       };
     }
 
-    // byGve: group by GVE_NOME, compute avg fill rate across all tracked cols
     const gveGroups = new Map<string, Array<Record<string, unknown>>>();
     for (const row of allRows) {
-      const gve = String(row["GVE_NOME"] ?? "").trim() || "Não informado";
-      if (!gveGroups.has(gve)) gveGroups.set(gve, []);
-      gveGroups.get(gve)!.push(row);
+      const g = String(row["GVE_NOME"] ?? "").trim() || "Não informado";
+      if (!gveGroups.has(g)) gveGroups.set(g, []);
+      gveGroups.get(g)!.push(row);
     }
-    const byGve = Array.from(gveGroups.entries()).map(([gve, rows]) => {
+    const byGve = Array.from(gveGroups.entries()).map(([g, rows]) => {
       const fieldPcts = cols.map((col) => {
         const filled = rows.filter((r) => isFilled(r[col])).length;
         return rows.length ? (filled / rows.length) * 100 : 0;
       });
       const avgPct = Math.round(fieldPcts.reduce((a, b) => a + b, 0) / (fieldPcts.length || 1));
       const criticalFields = fieldPcts.filter((p) => p < 70).length;
-      return { gve, totalRows: rows.length, avgPct, criticalFields };
+      return { gve: g, totalRows: rows.length, avgPct, criticalFields };
     }).sort((a, b) => a.avgPct - b.avgPct);
 
-    // byYear: group by year extracted from DtNotificacao
     const yearGroups = new Map<number, Array<Record<string, unknown>>>();
     for (const row of allRows) {
       const raw = String(row["DtNotificacao"] ?? "");
@@ -114,13 +146,13 @@ export async function GET(req: NextRequest) {
       if (!yearGroups.has(key)) yearGroups.set(key, []);
       yearGroups.get(key)!.push(row);
     }
-    const byYear = Array.from(yearGroups.entries()).map(([ano, rows]) => {
+    const byYear = Array.from(yearGroups.entries()).map(([a, rows]) => {
       const fieldPcts = cols.map((col) => {
         const filled = rows.filter((r) => isFilled(r[col])).length;
         return rows.length ? (filled / rows.length) * 100 : 0;
       });
       const avgPct = Math.round(fieldPcts.reduce((a, b) => a + b, 0) / (fieldPcts.length || 1));
-      return { ano, totalRows: rows.length, avgPct };
+      return { ano: a, totalRows: rows.length, avgPct };
     }).sort((a, b) => a.ano - b.ano);
 
     return NextResponse.json({ fieldCompleteness, totalRows: total, byGve, byYear });

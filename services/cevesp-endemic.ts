@@ -84,6 +84,37 @@ async function runEndemicChannelFromCache(options: {
   const histMap = new Map<string, number>();
   const currMap = new Map<number, number>();
 
+  // Fast path: cevesp_agrupado retorna ~300 linhas (6 anos × 53 SE) vs ~100k linhas brutas
+  try {
+    const { data, error } = await supabase.rpc("cevesp_agrupado", {
+      p_grain: "week", p_metric: "total_casos", p_dim: null,
+      p_ano_start: startYear, p_ano_end: currentYear,
+      p_gve: options.gve ?? null, p_municipio: options.municipality ?? null,
+      p_se_start: null, p_se_end: null
+    });
+    if (!error && data && Array.isArray(data) && data.length > 0) {
+      for (const r of data as Array<{ ano: number; se: number | null; total: number }>) {
+        const year = r.ano;
+        const se = r.se ?? 0;
+        const cases = Number(r.total);
+        if (!Number.isFinite(year) || se < 1 || se > 53) continue;
+        if (year >= startYear && year <= currentYear - 1) {
+          const key = `${year}-${se}`;
+          histMap.set(key, (histMap.get(key) ?? 0) + cases);
+        } else if (year === currentYear) {
+          currMap.set(se, (currMap.get(se) ?? 0) + cases);
+        }
+      }
+      const hist = Array.from(histMap.entries()).map(([key, cases]) => {
+        const [, se] = key.split("-").map(Number);
+        return { se, cases };
+      });
+      const curr = Array.from(currMap.entries()).map(([se, cases]) => ({ se, cases }));
+      return buildChannel(hist, curr);
+    }
+  } catch { /* fallback */ }
+
+  // Fallback lento: paginação de ~100k linhas
   const pageSize = 1000;
   for (let from = 0; ; from += pageSize) {
     let query = supabase

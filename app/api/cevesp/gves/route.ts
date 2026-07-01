@@ -38,8 +38,15 @@ export async function GET(request: NextRequest) {
       // In that case, keep the Sala de Situacao alive with the Supabase cache.
     }
 
-    // Fallback: Supabase cache — scan GVE_NOME in batches
+    // Fast path: cevesp_gves_disponiveis faz DISTINCT no banco sem varrer todas as linhas
     const admin = createAdminClient();
+    const { data: rpcData, error: rpcError } = await admin.rpc("cevesp_gves_disponiveis", { p_ano: ano ?? null });
+    if (!rpcError && Array.isArray(rpcData)) {
+      const gves = (rpcData as Array<{ gve: string }>).map((r) => r.gve).filter(Boolean).sort();
+      return NextResponse.json({ gves }, { headers: { "Cache-Control": "s-maxage=600" } });
+    }
+
+    // Fallback: Supabase cache — scan GVE_NOME in batches
     const gveSet = new Set<string>();
     const pageSize = 1000;
     for (let from = 0; ; from += pageSize) {
