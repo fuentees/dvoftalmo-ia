@@ -5,6 +5,7 @@
  */
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { listarMunicipiosPorGve, listarMunicipiosSp } from "@/lib/municipios-sp";
 
 interface CevespAnalysisInput {
   metric: string;
@@ -728,42 +729,60 @@ export async function getCevespHistorico(opts?: {
     }
   }
 
-  // Fetch SP population per year for incidência calculation
-  let spPopByYear = new Map<number, number>();
+  // Fetch population for the relevant territory (SP total, GVE, or single municipality)
+  let popByYear = new Map<number, number>();
   try {
     const supabase = createAdminClient();
-    const { data: popRows } = await supabase
-      .from("ibge_municipio_populacao")
-      .select("ano, populacao")
-      .eq("uf", "SP");
+    let q = supabase.from("ibge_municipio_populacao").select("ano, populacao, codigo_ibge");
+
+    if (opts?.municipio) {
+      // Find IBGE codes matching this municipality name
+      const normalizedSearch = opts.municipio.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+      const matches = listarMunicipiosSp().filter((m) =>
+        m.nome.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").includes(normalizedSearch)
+      );
+      const codes = matches.map((m) => m.codigo);
+      if (codes.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        q = (q as any).in("codigo_ibge", codes);
+      }
+    } else if (opts?.gve) {
+      // All municipalities belonging to this GVE
+      const codes = listarMunicipiosPorGve(opts.gve).map((m) => m.codigo);
+      if (codes.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        q = (q as any).in("codigo_ibge", codes);
+      }
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      q = (q as any).eq("uf", "SP");
+    }
+
+    const { data: popRows } = await q;
     if (popRows) {
       for (const r of popRows as Array<{ ano: number; populacao: number }>) {
         const yr = Number(r.ano);
-        spPopByYear.set(yr, (spPopByYear.get(yr) ?? 0) + Number(r.populacao ?? 0));
+        popByYear.set(yr, (popByYear.get(yr) ?? 0) + Number(r.populacao ?? 0));
       }
     }
   } catch { /* population table may not exist yet — degrade gracefully */ }
 
-  function closestSpPop(ano: number) {
-    const exact = spPopByYear.get(ano);
+  function closestPop(ano: number) {
+    const exact = popByYear.get(ano);
     if (exact) return exact;
     let best: number | null = null;
     let bestDiff = Infinity;
-    for (const [yr, pop] of spPopByYear.entries()) {
+    for (const [yr, pop] of popByYear.entries()) {
       const diff = Math.abs(yr - ano);
       if (diff < bestDiff) { bestDiff = diff; best = pop; }
     }
     return best;
   }
 
-  // Incidência só é válida sem filtro geográfico — com filtro, o denominador
-  // seria toda a população de SP mas o numerador seria apenas o território filtrado.
-  const hasGeoFilter = !!(opts?.gve || opts?.municipio);
-
   const allYears = Array.from(yearMap.keys()).sort((a, b) => a - b);
   const byYear = allYears.map((ano) => {
     const casos = yearMap.get(ano) ?? 0;
-    const pop = hasGeoFilter ? null : closestSpPop(ano);
+    const pop = closestPop(ano);
     const incidencia100k = pop && pop > 0 ? Number(((casos / pop) * 100_000).toFixed(2)) : null;
     return { ano, casos, incidencia100k };
   });
