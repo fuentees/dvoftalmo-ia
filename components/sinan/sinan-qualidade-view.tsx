@@ -8,7 +8,7 @@ import {
   MapPin, Stethoscope, BarChart2, Download, Search, Target, ChevronDown
 } from "lucide-react";
 import { PagedTable } from "@/components/ui/paged-table";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   CartesianGrid, Line, LineChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -16,7 +16,6 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { listarGvesSp, listarMunicipiosPorGve } from "@/lib/municipios-sp";
 import type { SinanAuditResult } from "@/services/sinan-tracoma";
 
 interface ApiError { error: string; message?: string }
@@ -1721,28 +1720,17 @@ type SinanQualidadeViewProps = {
 };
 
 export function SinanQualidadeView({ externalFilters }: SinanQualidadeViewProps = {}) {
-  const [municipio, setMunicipio] = useState("");
-  const [gve,       setGve]       = useState("");
-  const [yearStart, setYearStart] = useState("");
-  const [yearEnd,   setYearEnd]   = useState("");
   const [filters,   setFilters]   = useState<Record<string, string>>({});
   const [pageTab,   setPageTab]   = useState<PageTab>("situacao");
-  const gveOptions = useMemo(() => listarGvesSp(), []);
-  const municipioOptions = useMemo(() => listarMunicipiosPorGve(gve), [gve]);
 
   useEffect(() => {
     if (!externalFilters) return;
-    const nextFilters = {
+    setFilters({
       municipio: externalFilters.municipio ?? "",
       gve: externalFilters.gve ?? "",
       yearStart: externalFilters.yearStart ?? "",
       yearEnd: externalFilters.yearEnd ?? ""
-    };
-    setMunicipio(nextFilters.municipio);
-    setGve(nextFilters.gve);
-    setYearStart(nextFilters.yearStart);
-    setYearEnd(nextFilters.yearEnd);
-    setFilters(nextFilters);
+    });
   }, [externalFilters]);
 
   const buildFilterParams = (source: Record<string, string>) => {
@@ -1837,70 +1825,6 @@ export function SinanQualidadeView({ externalFilters }: SinanQualidadeViewProps 
             Atualizar
           </Button>
         </div>
-      </div>
-
-      {/* ── Filtros ─────────────────────────────────────────────────────────── */}
-      <div className="sticky top-0 z-10 flex flex-wrap items-end gap-3 rounded-xl border bg-card/95 px-5 py-4 shadow-sm backdrop-blur">
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-muted-foreground">Região de Saúde (GVE)</label>
-          <select
-            value={gve}
-            onChange={(e) => {
-              setGve(e.target.value);
-              setMunicipio("");
-            }}
-            className="h-8 w-56 rounded-md border bg-background px-2.5 text-sm"
-          >
-            <option value="">Todos os GVE</option>
-            {gveOptions.map((item) => (
-              <option key={item} value={item}>{item}</option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-muted-foreground">Município</label>
-          <select
-            value={municipio}
-            onChange={(e) => setMunicipio(e.target.value)}
-            className="h-8 w-64 rounded-md border bg-background px-2.5 text-sm"
-          >
-            <option value="">Todos os municípios</option>
-            {municipioOptions.map((item) => (
-              <option key={item.codigo} value={item.codigo}>{item.nome}</option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-muted-foreground">Ano — de</label>
-          <input
-            value={yearStart}
-            onChange={(e) => setYearStart(e.target.value)}
-            placeholder="2020"
-            type="number"
-            className="h-8 w-24 rounded-md border bg-background px-2.5 text-sm"
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-muted-foreground">até</label>
-          <input
-            value={yearEnd}
-            onChange={(e) => setYearEnd(e.target.value)}
-            placeholder="2024"
-            type="number"
-            className="h-8 w-24 rounded-md border bg-background px-2.5 text-sm"
-          />
-        </div>
-        <Button size="sm" onClick={() => setFilters({ municipio, gve, yearStart, yearEnd })} disabled={isFetching}>
-          Aplicar
-        </Button>
-        {Object.values(filters).some(Boolean) && (
-          <Button size="sm" variant="ghost" onClick={() => {
-            setMunicipio(""); setGve(""); setYearStart(""); setYearEnd("");
-            setFilters({});
-          }}>
-            Limpar
-          </Button>
-        )}
       </div>
 
       {/* ── Estados de carregamento / erro / sem dados ───────────────────── */}

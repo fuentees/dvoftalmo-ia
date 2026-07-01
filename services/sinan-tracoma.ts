@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { nomeMunicipio, gvePorCodigo, gvePorNomeMunicipio } from "@/lib/municipios-sp";
+import { nomeMunicipio, gvePorCodigo, gvePorNomeMunicipio, listarMunicipiosSp } from "@/lib/municipios-sp";
 
 export type SinanTracomaBank = "traconet" | "nottraconet";
 
@@ -223,6 +223,15 @@ export function normalizeSinanTracomaRow(row: RawRow, bank: SinanTracomaBank): N
 
 function normalizeText(value: string) {
   return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function resolveMunicipioAuditFilter(value: string | null | undefined) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length >= 6) return digits.slice(0, 6);
+  const normalized = normalizeText(raw);
+  return listarMunicipiosSp().find((municipio) => normalizeText(municipio.nome) === normalized)?.codigo ?? raw;
 }
 
 function parseQuestion(question: string) {
@@ -858,6 +867,7 @@ export async function auditarSinanTracoma(opts?: {
   yearEnd?: number;
 }): Promise<SinanAuditResult> {
   const supabase = createAdminClient();
+  const municipioFilter = resolveMunicipioAuditFilter(opts?.municipio);
 
   async function fetchAuditRows(bank: SinanTracomaBank, columns: string) {
     const pageSize = 1000;
@@ -870,7 +880,7 @@ export async function auditarSinanTracoma(opts?: {
         .eq("source_bank", bank)
         .range(from, from + pageSize - 1);
 
-      if (opts?.municipio) query = query.ilike("municipio", `%${opts.municipio}%`);
+      if (municipioFilter) query = query.ilike("municipio", `%${municipioFilter}%`);
       if (opts?.yearStart) query = query.gte("ano", opts.yearStart);
       if (opts?.yearEnd) query = query.lte("ano", opts.yearEnd);
 
@@ -892,7 +902,7 @@ export async function auditarSinanTracoma(opts?: {
     .from("sinan_tracoma_rows")
     .select("row_key, source_bank, agravo, ano, municipio, gve, drs, classificacao, criterio, evolucao, tratamento, conclusao, raw")
     .eq("source_bank", "traconet");
-  if (opts?.municipio) tcQ = tcQ.ilike("municipio", `%${opts.municipio}%`);
+  if (municipioFilter) tcQ = tcQ.ilike("municipio", `%${municipioFilter}%`);
   if (opts?.yearStart) tcQ = tcQ.gte("ano", opts.yearStart);
   if (opts?.yearEnd)   tcQ = tcQ.lte("ano", opts.yearEnd);
 
@@ -900,7 +910,7 @@ export async function auditarSinanTracoma(opts?: {
     .from("sinan_tracoma_rows")
     .select("row_key, source_bank, ano, municipio, gve, raw")
     .eq("source_bank", "nottraconet");
-  if (opts?.municipio) ntcQ = ntcQ.ilike("municipio", `%${opts.municipio}%`);
+  if (municipioFilter) ntcQ = ntcQ.ilike("municipio", `%${municipioFilter}%`);
   if (opts?.yearStart) ntcQ = ntcQ.gte("ano", opts.yearStart);
   if (opts?.yearEnd)   ntcQ = ntcQ.lte("ano", opts.yearEnd);
 
