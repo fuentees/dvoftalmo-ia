@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/supabase/auth";
-import { findInvalidRecords, saveCorrectionsToQueue, type InvalidRecord } from "@/services/cevesp-corrections";
+import { findInvalidRecords, findInvalidRecordsFromCache, saveCorrectionsToQueue, type InvalidRecord } from "@/services/cevesp-corrections";
 import { getNotificationTableName } from "@/lib/external/notification-db";
 
 function normalizeSearch(value: string | null | undefined) {
@@ -138,8 +138,11 @@ export async function GET(req: NextRequest) {
     const municipio = searchParams.get("municipio") ?? undefined;
     const seInicio = searchParams.get("seInicio") ? Number(searchParams.get("seInicio")) : undefined;
     const seFim = searchParams.get("seFim") ? Number(searchParams.get("seFim")) : undefined;
+    const source = searchParams.get("source");
 
-    const records = await findInvalidRecords(undefined, ano, gve, anoFim);
+    const records = source === "cache"
+      ? await findInvalidRecordsFromCache(undefined, ano, anoFim, gve)
+      : await findInvalidRecords(undefined, ano, gve, anoFim);
     const scopedRecords = applyScopeFilters(records, { municipio, seInicio, seFim });
     const filteredRecords = filterRecords(scopedRecords, issueFilter, query);
 
@@ -159,7 +162,7 @@ export async function GET(req: NextRequest) {
       filteredTotal: filteredRecords.length,
       limit,
       offset,
-      source: "cevesp_quality_audit"
+      source: source === "cache" ? "cevesp_quality_cache" : "cevesp_quality_audit"
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

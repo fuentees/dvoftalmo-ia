@@ -372,7 +372,7 @@ function StatCard({
 export function QualityCenterView() {
   const cevesp = useQuery<CevespQuality>({
     queryKey: ["quality-center-cevesp"],
-    queryFn: () => fetchJsonWithTimeout<CevespQuality>("/api/cevesp/qualidade"),
+    queryFn: () => fetchJsonWithTimeout<CevespQuality>("/api/cevesp/qualidade?source=cache", 25000),
     retry: false,
     staleTime: 2 * 60 * 1000
   });
@@ -489,7 +489,7 @@ export function QualityCenterView() {
             <CardContent className="grid gap-3 pt-5 md:grid-cols-3">
               <div className="rounded-md border bg-muted/30 p-3">
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Fonte CEVESP</p>
-                <p className="mt-1 text-sm font-semibold">{cevesp.data?.source === "cevesp_quality_audit" ? "Auditoria com fallback para cache" : "Não carregada"}</p>
+                <p className="mt-1 text-sm font-semibold">{cevesp.data ? "Cache Supabase auditado" : "Não carregada"}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {cevesp.data ? `${cevesp.data.total.toLocaleString("pt-BR")} pendências totais` : "Sem resposta da API"}
                 </p>

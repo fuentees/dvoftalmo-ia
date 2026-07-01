@@ -132,7 +132,64 @@ export function mapInvalidCacheRow(r: Record<string, unknown>): InvalidRecord | 
   };
 }
 
-async function findInvalidRecordsFromCache(limit?: number, ano?: number, anoFim?: number, gve?: string): Promise<InvalidRecord[]> {
+type CevespQualityAuditRpcRow = {
+  record_id: string;
+  pk_column: string;
+  controla_submit: string | null;
+  dt_notificacao: string | null;
+  sem_epidemio: number | null;
+  municipio: string | null;
+  gve: string | null;
+  ano: number | null;
+  total_caso: number | null;
+  issue: string;
+  issue_type: "data_tempo" | "conteudo";
+  suggested_field: string | null;
+  suggested_value: string | null;
+};
+
+function mapQualityAuditRpcRow(row: CevespQualityAuditRpcRow): InvalidRecord {
+  return {
+    recordId: row.record_id,
+    pkColumn: row.pk_column || "ID",
+    controlaSubmit: row.controla_submit,
+    dtNotificacao: row.dt_notificacao,
+    semEpidemio: row.sem_epidemio,
+    municipio: row.municipio,
+    gve: row.gve,
+    ano: row.ano,
+    totalCaso: row.total_caso,
+    issue: row.issue,
+    issueType: row.issue_type,
+    suggestedField: row.suggested_field ?? "",
+    suggestedValue: row.suggested_value ?? ""
+  };
+}
+
+async function findInvalidRecordsFromCacheRpc(limit?: number, ano?: number, anoFim?: number, gve?: string): Promise<InvalidRecord[] | null> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase.rpc("cevesp_quality_audit", {
+    p_limit: limit ?? null,
+    p_ano_start: ano ?? null,
+    p_ano_end: anoFim ?? ano ?? null,
+    p_gve: gve ?? null
+  });
+
+  if (error) {
+    const message = error.message.toLowerCase();
+    if (message.includes("cevesp_quality_audit") || message.includes("schema cache") || message.includes("function")) {
+      return null;
+    }
+    throw new Error(`Erro ao auditar cache CEVESP: ${error.message}`);
+  }
+
+  return ((data ?? []) as CevespQualityAuditRpcRow[]).map(mapQualityAuditRpcRow);
+}
+
+export async function findInvalidRecordsFromCache(limit?: number, ano?: number, anoFim?: number, gve?: string): Promise<InvalidRecord[]> {
+  const rpcRecords = await findInvalidRecordsFromCacheRpc(limit, ano, anoFim, gve);
+  if (rpcRecords) return rpcRecords;
+
   const supabase = createAdminClient();
   const pageSize = 1000;
   const invalid: InvalidRecord[] = [];
@@ -155,6 +212,14 @@ async function findInvalidRecordsFromCache(limit?: number, ano?: number, anoFim?
       `and(ANO.eq.${currentYear},SemEpidemio.gt.${currentSe})`,
       "TotalCaso.is.null",
       "TotalCaso.lt.0",
+      "and(TotalCaso.eq.0,FxMenorUmAno.gt.0)",
+      "and(TotalCaso.eq.0,FxUmQuatro.gt.0)",
+      "and(TotalCaso.eq.0,FxCincoNove.gt.0)",
+      "and(TotalCaso.eq.0,FxDezQuatorze.gt.0)",
+      "and(TotalCaso.eq.0,FxQuizeOuMais.gt.0)",
+      "and(TotalCaso.eq.0,SexMasc.gt.0)",
+      "and(TotalCaso.eq.0,SexFem.gt.0)",
+      "and(TotalCaso.gt.0,FxMenorUmAno.eq.0,FxUmQuatro.eq.0,FxCincoNove.eq.0,FxDezQuatorze.eq.0,FxQuizeOuMais.eq.0)",
       "MunicipioNotificacao.is.null",
       "GVE_NOME.is.null",
       `DtNotificacao.gt.${today}`,
