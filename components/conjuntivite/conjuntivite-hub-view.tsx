@@ -28,12 +28,12 @@ export function ConjuntiviteHubView() {
   const gveOptions = useMemo(() => listarGvesSp(), []);
   const municipioOptions = useMemo(() => listarMunicipiosPorGve(gve), [gve]);
 
-  // Filtros para NotificationsReportView (usa year único = yearStart como referência)
   const reportFilters = useMemo(() => ({
     year: yearStart ? Number(yearStart) : undefined,
+    yearEnd: yearEnd ? Number(yearEnd) : undefined,
     gve,
     municipio
-  }), [yearStart, gve, municipio]);
+  }), [yearStart, yearEnd, gve, municipio]);
 
   // Filtros para ConjuntiviteChartsView e outras views que aceitam range
   const chartFilters = useMemo(() => ({

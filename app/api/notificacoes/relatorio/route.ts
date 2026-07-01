@@ -11,13 +11,14 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const ano = searchParams.get("ano") ? Number(searchParams.get("ano")) : undefined;
+  const anoFim = searchParams.get("anoFim") ? Number(searchParams.get("anoFim")) : undefined;
   const gve = searchParams.get("gve") ?? undefined;
   const municipio = searchParams.get("municipio") ?? undefined;
   const seInicio = searchParams.get("seInicio") ? Number(searchParams.get("seInicio")) : undefined;
   const seFim = searchParams.get("seFim") ? Number(searchParams.get("seFim")) : undefined;
 
   try {
-    const data = await readNotificationRows({ ano, gve, municipio, seInicio, seFim });
+    const data = await readNotificationRows({ ano, anoFim, gve, municipio, seInicio, seFim });
     const summary = summarizeNotificationRows(data.rows, data.total);
 
     // Fetch previous year for comparison (only when a specific year is selected)

@@ -23,22 +23,21 @@ export function exportChartSvg(container: HTMLElement | null, filename = "grafic
   ctx.fillRect(0, 0, w, h);
 
   // Serializa o SVG com dimensões explícitas
+  // Usa base64 data URL em vez de createObjectURL para compatibilidade com Safari
   const clone = svg.cloneNode(true) as SVGSVGElement;
   clone.setAttribute("width", String(w));
   clone.setAttribute("height", String(h));
   const serialized = new XMLSerializer().serializeToString(clone);
-  const blob = new Blob([serialized], { type: "image/svg+xml;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
+  const base64 = btoa(unescape(encodeURIComponent(serialized)));
+  const url = `data:image/svg+xml;base64,${base64}`;
 
   const img = new Image();
   img.onload = () => {
     ctx.drawImage(img, 0, 0);
-    URL.revokeObjectURL(url);
     const link = document.createElement("a");
     link.href = canvas.toDataURL("image/png");
     link.download = `${filename}.png`;
     link.click();
   };
-  img.onerror = () => URL.revokeObjectURL(url);
   img.src = url;
 }

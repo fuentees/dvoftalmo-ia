@@ -677,7 +677,7 @@ function buildCacheUnderstanding(analysis: CevespAnalysisInput) {
 // ── Histórico agregado para dashboard de gráficos ────────────────────────────
 
 export type CevespHistorico = {
-  byYear: Array<{ ano: number; casos: number }>;
+  byYear: Array<{ ano: number; casos: number; incidencia100k: number | null }>;
   byGveYear: Array<{ gve: string; ano: number; casos: number }>;
   byYearMonth: Array<{ ano: number; mes: number; casos: number }>;
   totalCasos: number;
@@ -728,8 +728,41 @@ export async function getCevespHistorico(opts?: {
     }
   }
 
+  // Fetch SP population per year for incidência calculation
+  let spPopByYear = new Map<number, number>();
+  try {
+    const supabase = createAdminClient();
+    const { data: popRows } = await supabase
+      .from("ibge_municipio_populacao")
+      .select("ano, populacao")
+      .eq("uf", "SP");
+    if (popRows) {
+      for (const r of popRows as Array<{ ano: number; populacao: number }>) {
+        const yr = Number(r.ano);
+        spPopByYear.set(yr, (spPopByYear.get(yr) ?? 0) + Number(r.populacao ?? 0));
+      }
+    }
+  } catch { /* population table may not exist yet — degrade gracefully */ }
+
+  function closestSpPop(ano: number) {
+    const exact = spPopByYear.get(ano);
+    if (exact) return exact;
+    let best: number | null = null;
+    let bestDiff = Infinity;
+    for (const [yr, pop] of spPopByYear.entries()) {
+      const diff = Math.abs(yr - ano);
+      if (diff < bestDiff) { bestDiff = diff; best = pop; }
+    }
+    return best;
+  }
+
   const allYears = Array.from(yearMap.keys()).sort((a, b) => a - b);
-  const byYear = allYears.map((ano) => ({ ano, casos: yearMap.get(ano) ?? 0 }));
+  const byYear = allYears.map((ano) => {
+    const casos = yearMap.get(ano) ?? 0;
+    const pop = closestSpPop(ano);
+    const incidencia100k = pop && pop > 0 ? Number(((casos / pop) * 100_000).toFixed(2)) : null;
+    return { ano, casos, incidencia100k };
+  });
 
   const gveTotals = Array.from(gveYearMap.entries())
     .map(([gve, m]) => ({ gve, total: Array.from(m.values()).reduce((s, v) => s + v, 0) }))

@@ -26,6 +26,7 @@ type NotificationsReportViewProps = {
   section?: "situacao" | "consulta";
   externalFilters?: {
     year?: number;
+    yearEnd?: number;
     gve?: string;
     municipio?: string;
   };
@@ -386,6 +387,7 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
   const [structuredPeriod, setStructuredPeriod] = useState("últimos 5 anos");
   const [showEndemic, setShowEndemic] = useState(false);
   const [selectedYear, setSelectedYear] = useState<number | undefined>(undefined);
+  const [selectedYearEnd, setSelectedYearEnd] = useState<number | undefined>(undefined);
   const [selectedGve, setSelectedGve] = useState<string>("");
   const [seInicio, setSeInicio] = useState<number | undefined>(undefined);
   const [seFim, setSeFim] = useState<number | undefined>(undefined);
@@ -397,6 +399,7 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
   useEffect(() => {
     if (!externalFilters) return;
     setSelectedYear(externalFilters.year);
+    setSelectedYearEnd(externalFilters.yearEnd);
     setSelectedGve(externalFilters.gve ?? "");
     setSelectedMunicipio(externalFilters.municipio ?? "");
     setSeInicio(undefined);
@@ -425,6 +428,7 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
   function buildQueryParams() {
     const params = new URLSearchParams();
     if (selectedYear) params.set("ano", String(selectedYear));
+    if (selectedYearEnd && selectedYearEnd !== selectedYear) params.set("anoFim", String(selectedYearEnd));
     if (selectedGve) params.set("gve", selectedGve);
     if (selectedMunicipio) params.set("municipio", selectedMunicipio);
     if (seStart != null) params.set("seInicio", String(seStart));
@@ -434,7 +438,11 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
 
   function buildFilteredQuestion() {
     const parts = [question.trim()];
-    if (selectedYear) parts.push(`ano ${selectedYear}`);
+    if (selectedYear && selectedYearEnd && selectedYearEnd > selectedYear) {
+      parts.push(`de ${selectedYear} a ${selectedYearEnd}`);
+    } else if (selectedYear) {
+      parts.push(`ano ${selectedYear}`);
+    }
     if (selectedGve) parts.push(`GVE ${selectedGve}`);
     if (selectedMunicipio) parts.push(`município ${selectedMunicipio}`);
     if (seStart != null || seEnd != null) parts.push(`semana epidemiológica ${seStart ?? 1} a ${seEnd ?? 53}`);
@@ -454,7 +462,7 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
   }
 
   const report = useQuery<ReportData>({
-    queryKey: ["notifications-report", selectedYear, selectedGve, selectedMunicipio, seStart, seEnd],
+    queryKey: ["notifications-report", selectedYear, selectedYearEnd, selectedGve, selectedMunicipio, seStart, seEnd],
     queryFn: async () => {
       const qs = buildQueryParams();
       const response = await fetch(`/api/notificacoes/relatorio${qs ? `?${qs}` : ""}`);

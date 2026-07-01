@@ -125,18 +125,44 @@ function buildCompareData(
   }));
 }
 
+const POSITIVOS_COLS = ["positivos", "nu_casopos", "nu_cas_pos", "casopos"];
+const EXAMINADOS_COLS = ["examinados", "nu_casoexa", "nu_examina", "casoexa"];
+
+function findRateCol(columns: string[], candidates: string[]) {
+  return columns.find((c) => candidates.includes(c.toLowerCase().replace(/[^a-z0-9]/g, "")));
+}
+
+function withPrevalence(
+  columns: string[],
+  rows: Array<Record<string, unknown>>,
+): { columns: string[]; rows: Array<Record<string, unknown>> } {
+  const posCol = findRateCol(columns, POSITIVOS_COLS);
+  const exaCol = findRateCol(columns, EXAMINADOS_COLS);
+  if (!posCol || !exaCol || columns.includes("Prevalência (%)")) return { columns, rows };
+  const enrichedCols = [...columns, "Prevalência (%)"];
+  const enrichedRows = rows.map((row) => {
+    const pos = Number(row[posCol] ?? 0);
+    const exa = Number(row[exaCol] ?? 0);
+    const prev = exa > 0 ? Number(((pos / exa) * 100).toFixed(1)) : null;
+    return { ...row, "Prevalência (%)": prev != null ? prev : null };
+  });
+  return { columns: enrichedCols, rows: enrichedRows };
+}
+
 type AnalysisChartProps = {
   columns: string[];
   rows: Array<Record<string, unknown>>;
   title?: string;
 };
 
-export function AnalysisChart({ columns, rows, title }: AnalysisChartProps) {
+export function AnalysisChart({ columns: rawColumns, rows: rawRows, title }: AnalysisChartProps) {
   const [mode, setMode] = useState<"line" | "bar">("line");
   const [compareMode, setCompareMode] = useState(false);
   const [yearA, setYearA] = useState("");
   const [yearB, setYearB] = useState("");
   const ref = useRef<HTMLDivElement>(null);
+
+  const { columns, rows } = useMemo(() => withPrevalence(rawColumns, rawRows), [rawColumns, rawRows]);
 
   const shape = useMemo(() => detectShape(columns, rows), [columns, rows]);
   const { data, series, xKey, truncated } = useMemo(
@@ -240,6 +266,10 @@ export function AnalysisChart({ columns, rows, title }: AnalysisChartProps) {
         <p className="text-xs text-muted-foreground">
           Exibindo as {shape.kind === "rank" ? MAX_RANK : MAX_SERIES} séries com maior total. Consulte a tabela para o conjunto completo.
         </p>
+      )}
+
+      {compareMode && resolvedYearA === resolvedYearB && (
+        <p className="text-xs text-amber-600">Selecione dois anos diferentes para comparar.</p>
       )}
 
       <div

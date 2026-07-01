@@ -40,6 +40,7 @@ export function isNotificationConnectionError(error: unknown) {
 
 export interface NotificationRowsFilter {
   ano?: number;
+  anoFim?: number;
   gve?: string;
   municipio?: string;
   seInicio?: number;
@@ -47,11 +48,24 @@ export interface NotificationRowsFilter {
   limit?: number;
 }
 
+function applyAnoFilter<T extends object>(q: T, ano?: number, anoFim?: number): T {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let next = q as any;
+  if (ano && anoFim && anoFim > ano) {
+    next = next.gte('"ANO"', ano).lte('"ANO"', anoFim);
+  } else if (ano) {
+    next = next.eq('"ANO"', ano);
+  } else if (anoFim) {
+    next = next.lte('"ANO"', anoFim);
+  }
+  return next as T;
+}
+
 async function readNotificationRowsFromCache(filter: NotificationRowsFilter = {}) {
-  const { ano, gve, municipio, seInicio, seFim, limit } = filter;
+  const { ano, anoFim, gve, municipio, seInicio, seFim, limit } = filter;
   const supabase = createAdminClient();
   let q = supabase.from("cevesp_notificacoes").select("id", { count: "exact", head: true });
-  if (ano) q = q.eq('"ANO"', ano) as typeof q;
+  q = applyAnoFilter(q, ano, anoFim);
   if (gve) q = q.eq('"GVE_NOME"', gve) as typeof q;
   if (municipio) q = q.ilike('"MunicipioNotificacao"', `%${municipio}%`) as typeof q;
   if (seInicio != null) q = q.gte('"SemEpidemio"', seInicio) as typeof q;
@@ -66,7 +80,7 @@ async function readNotificationRowsFromCache(filter: NotificationRowsFilter = {}
   for (let from = 0; from < maxRows; from += pageSize) {
     const to = Math.min(from + pageSize - 1, maxRows - 1);
     let dq = supabase.from("cevesp_notificacoes").select("*").range(from, to);
-    if (ano) dq = dq.eq('"ANO"', ano) as typeof dq;
+    dq = applyAnoFilter(dq, ano, anoFim);
     if (gve) dq = dq.eq('"GVE_NOME"', gve) as typeof dq;
     if (municipio) dq = dq.ilike('"MunicipioNotificacao"', `%${municipio}%`) as typeof dq;
     if (seInicio != null) dq = dq.gte('"SemEpidemio"', seInicio) as typeof dq;
@@ -86,7 +100,7 @@ async function readNotificationRowsFromCache(filter: NotificationRowsFilter = {}
 }
 
 export async function readNotificationRows(filter: NotificationRowsFilter = {}) {
-  const { ano, gve, municipio, seInicio, seFim, limit } = filter;
+  const { ano, anoFim, gve, municipio, seInicio, seFim, limit } = filter;
 
   let table: string;
   let connection: Awaited<ReturnType<typeof createNotificationConnection>>;
@@ -102,7 +116,14 @@ export async function readNotificationRows(filter: NotificationRowsFilter = {}) 
 
   const conditions: string[] = [];
   const params: unknown[] = [];
-  if (ano) { conditions.push("ANO = ?"); params.push(ano); }
+  if (ano && anoFim && anoFim > ano) {
+    conditions.push("ANO >= ?"); params.push(ano);
+    conditions.push("ANO <= ?"); params.push(anoFim);
+  } else if (ano) {
+    conditions.push("ANO = ?"); params.push(ano);
+  } else if (anoFim) {
+    conditions.push("ANO <= ?"); params.push(anoFim);
+  }
   if (gve) { conditions.push("GVE_NOME = ?"); params.push(gve); }
   if (municipio) { conditions.push("MunicipioNotificacao LIKE ?"); params.push(`%${municipio}%`); }
   if (seInicio != null) { conditions.push("SemEpidemio >= ?"); params.push(seInicio); }

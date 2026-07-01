@@ -3,7 +3,7 @@
 import { useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Bar, BarChart, CartesianGrid, Legend, Line, LineChart,
+  Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, LineChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { Download, RefreshCw } from "lucide-react";
@@ -88,7 +88,12 @@ export function ConjuntiviteChartsView({ filters }: Props) {
   );
 
   // ── Série anual ───────────────────────────────────────────────────────────
-  const anualData = data.byYear.map((r) => ({ ano: String(r.ano), Casos: r.casos }));
+  const anualData = data.byYear.map((r) => ({
+    ano: String(r.ano),
+    Casos: r.casos,
+    "Incidência/100k": r.incidencia100k,
+  }));
+  const hasIncidencia = data.byYear.some((r) => r.incidencia100k != null);
 
   // ── Série mensal por ano (pivot mes × anos) ───────────────────────────────
   const years = data.anosComDados;
@@ -151,15 +156,28 @@ export function ConjuntiviteChartsView({ filters }: Props) {
           </div>
         </CardHeader>
         <CardContent>
-          <div ref={refAnual} className="h-64">
+          <div ref={refAnual} className={hasIncidencia ? "h-72" : "h-64"}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={anualData} margin={{ top: 4, right: 16, left: 4, bottom: 4 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="ano" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} width={56} tickFormatter={fmt} />
-                <Tooltip formatter={fmt} />
-                <Bar dataKey="Casos" fill="#2563eb" radius={[3, 3, 0, 0]} />
-              </BarChart>
+              {hasIncidencia ? (
+                <ComposedChart data={anualData} margin={{ top: 4, right: 48, left: 4, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="ano" tick={{ fontSize: 11 }} />
+                  <YAxis yAxisId="left" tick={{ fontSize: 11 }} width={60} tickFormatter={fmt} />
+                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} width={44} tickFormatter={(v) => `${Number(v).toFixed(1)}`} domain={[0, "auto"]} />
+                  <Tooltip formatter={(v, name) => name === "Incidência/100k" ? `${Number(v).toFixed(1)} /100k` : fmt(v)} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar yAxisId="left" dataKey="Casos" fill="#2563eb" radius={[3, 3, 0, 0]} />
+                  <Line yAxisId="right" type="monotone" dataKey="Incidência/100k" stroke="#dc2626" strokeWidth={2} dot={anualData.length <= 15} connectNulls />
+                </ComposedChart>
+              ) : (
+                <BarChart data={anualData} margin={{ top: 4, right: 16, left: 4, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="ano" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} width={56} tickFormatter={fmt} />
+                  <Tooltip formatter={fmt} />
+                  <Bar dataKey="Casos" fill="#2563eb" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              )}
             </ResponsiveContainer>
           </div>
         </CardContent>

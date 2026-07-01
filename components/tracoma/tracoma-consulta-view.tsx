@@ -89,6 +89,31 @@ function downloadCsv(columns: string[], rows: Array<Record<string, unknown>>) {
   URL.revokeObjectURL(link.href);
 }
 
+const POSITIVOS_COLS = ["positivos", "nu_casopos", "nu_cas_pos", "casopos"];
+const EXAMINADOS_COLS = ["examinados", "nu_casoexa", "nu_examina", "casoexa"];
+
+function findCol(columns: string[], candidates: string[]) {
+  return columns.find((c) => candidates.includes(c.toLowerCase().replace(/[^a-z0-9]/g, "")));
+}
+
+function enrichWithPrevalence(
+  columns: string[],
+  rows: Array<Record<string, unknown>>,
+): { columns: string[]; rows: Array<Record<string, unknown>> } {
+  const posCol = findCol(columns, POSITIVOS_COLS);
+  const exaCol = findCol(columns, EXAMINADOS_COLS);
+  if (!posCol || !exaCol || columns.includes("Prevalência (%)")) return { columns, rows };
+
+  const enrichedCols = [...columns, "Prevalência (%)"];
+  const enrichedRows = rows.map((row) => {
+    const pos = Number(row[posCol] ?? 0);
+    const exa = Number(row[exaCol] ?? 0);
+    const prev = exa > 0 ? Number(((pos / exa) * 100).toFixed(1)) : null;
+    return { ...row, "Prevalência (%)": prev != null ? `${prev}%` : "—" };
+  });
+  return { columns: enrichedCols, rows: enrichedRows };
+}
+
 function ResultTable({ columns, rows }: { columns: string[]; rows: Array<Record<string, unknown>> }) {
   return (
     <div className="overflow-x-auto rounded-md border">
@@ -170,8 +195,9 @@ export function TracomaConsultaView({ externalFilters, hideFilters = false }: Tr
     }
   });
 
-  const rows = ask.data?.rows ?? [];
-  const columns = ask.data?.columns ?? Object.keys(rows[0] ?? {});
+  const rawRows = ask.data?.rows ?? [];
+  const rawColumns = ask.data?.columns ?? Object.keys(rawRows[0] ?? {});
+  const { columns, rows } = enrichWithPrevalence(rawColumns, rawRows);
 
   return (
     <div className="space-y-6 p-6">
