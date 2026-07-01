@@ -22,6 +22,25 @@ function toNumber(value: unknown) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function getSaoPauloDate() {
+  return new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+}
+
+function epidemiologicalWeek(date: Date) {
+  const yearStart = new Date(date.getFullYear(), 0, 1);
+  const dayOfYear = Math.floor((date.getTime() - yearStart.getTime()) / 86_400_000) + 1;
+  return Math.min(53, Math.max(1, Math.ceil((dayOfYear + yearStart.getDay()) / 7)));
+}
+
+function currentReferenceWeek() {
+  const today = getSaoPauloDate();
+  const currentSe = epidemiologicalWeek(today);
+  if (currentSe <= 1) {
+    return { ano: today.getFullYear() - 1, se: 52 };
+  }
+  return { ano: today.getFullYear(), se: currentSe - 1 };
+}
+
 async function upsertAlerts(current: AlertCandidate[], avgRows: Array<{ gve: string; avg_cases: number }>, ano: number, se: number, source: AlertGenerationResult["source"], warning?: string): Promise<AlertGenerationResult> {
   if (!current.length) return { ok: true, alerts: 0, source, ano, se, reason: "Sem dados para a SE avaliada", warning };
 
@@ -116,21 +135,32 @@ async function generateFromExternal(): Promise<AlertGenerationResult> {
 
 async function generateFromCache(warning?: string): Promise<AlertGenerationResult> {
   const supabase = createAdminClient();
+  const reference = currentReferenceWeek();
   const { data: latest, error: latestError } = await supabase
     .from("cevesp_notificacoes")
     .select('"ANO","SemEpidemio"')
     .not('"ANO"', "is", null)
     .not('"SemEpidemio"', "is", null)
-    .order('"ANO"', { ascending: false })
+    .eq('"ANO"', reference.ano)
+    .gte('"SemEpidemio"', 1)
+    .lte('"SemEpidemio"', reference.se)
     .order('"SemEpidemio"', { ascending: false })
     .limit(1);
   if (latestError) throw new Error(`Erro ao localizar SE no cache CEVESP: ${latestError.message}`);
 
   const latestRow = latest?.[0] as { ANO?: number; SemEpidemio?: number } | undefined;
-  const ano = Number(latestRow?.ANO);
+  const ano = Number(latestRow?.ANO ?? reference.ano);
   const se = Number(latestRow?.SemEpidemio);
   if (!Number.isFinite(ano) || !Number.isFinite(se)) {
-    return { ok: true, alerts: 0, source: "cache", reason: "Cache CEVESP sem ano/SE para gerar alertas", warning };
+    return {
+      ok: true,
+      alerts: 0,
+      source: "cache",
+      ano: reference.ano,
+      se: reference.se,
+      reason: `Cache CEVESP sem dados até a última SE completa (${reference.se}/${reference.ano})`,
+      warning
+    };
   }
 
   const seStart = Math.max(1, se - 4);
