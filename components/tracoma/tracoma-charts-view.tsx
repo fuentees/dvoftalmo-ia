@@ -103,11 +103,20 @@ export function TracomaChartsView({ filters }: Props) {
   const refNtc = useRef<HTMLDivElement>(null);
   const refFormas = useRef<HTMLDivElement>(null);
   const [excludedYears, setExcludedYears] = useState<Set<string>>(new Set());
+  const [hiddenForms, setHiddenForms] = useState<Set<string>>(new Set());
 
   function toggleYear(year: string) {
     setExcludedYears((prev) => {
       const next = new Set(prev);
       next.has(year) ? next.delete(year) : next.add(year);
+      return next;
+    });
+  }
+
+  function toggleForm(form: string) {
+    setHiddenForms((prev) => {
+      const next = new Set(prev);
+      next.has(form) ? next.delete(form) : next.add(form);
       return next;
     });
   }
@@ -296,12 +305,20 @@ export function TracomaChartsView({ filters }: Props) {
                   <XAxis dataKey="ano" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} width={52} tickFormatter={fmtTick} />
                   <Tooltip formatter={(v) => num(v)} />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar dataKey="TF" stackId="a" fill={FORM_COLORS.TF} />
-                  <Bar dataKey="TI" stackId="a" fill={FORM_COLORS.TI} />
-                  <Bar dataKey="TS" stackId="a" fill={FORM_COLORS.TS} />
-                  <Bar dataKey="TT" stackId="a" fill={FORM_COLORS.TT} />
-                  <Bar dataKey="CO" stackId="a" fill={FORM_COLORS.CO} radius={[3, 3, 0, 0]} />
+                  <Legend
+                    wrapperStyle={{ fontSize: 11, cursor: "pointer" }}
+                    onClick={(d) => toggleForm(String(d.dataKey))}
+                    formatter={(value) => (
+                      <span style={{ opacity: hiddenForms.has(value) ? 0.35 : 1, textDecoration: hiddenForms.has(value) ? "line-through" : "none" }}>
+                        {value}
+                      </span>
+                    )}
+                  />
+                  <Bar dataKey="TF" stackId="a" fill={FORM_COLORS.TF} hide={hiddenForms.has("TF")} />
+                  <Bar dataKey="TI" stackId="a" fill={FORM_COLORS.TI} hide={hiddenForms.has("TI")} />
+                  <Bar dataKey="TS" stackId="a" fill={FORM_COLORS.TS} hide={hiddenForms.has("TS")} />
+                  <Bar dataKey="TT" stackId="a" fill={FORM_COLORS.TT} hide={hiddenForms.has("TT")} />
+                  <Bar dataKey="CO" stackId="a" fill={FORM_COLORS.CO} radius={[3, 3, 0, 0]} hide={hiddenForms.has("CO")} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
