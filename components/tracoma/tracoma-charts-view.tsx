@@ -167,8 +167,9 @@ export function TracomaChartsView({ filters }: Props) {
 
   // Média de positividade para linha de referência
   const ntcSeries = mainSeries.filter((r) => !excludedYears.has(r.ano));
-  const posValues = ntcSeries.map((r) => r["Positividade (%)"]).filter((v): v is number => v != null);
-  const avgPos = posValues.length ? posValues.reduce((s, v) => s + v, 0) / posValues.length : null;
+  const totalNtcPos = ntcSeries.reduce((s, r) => s + (Number(r["NOTTRACONET (positivos)"]) || 0), 0);
+  const totalNtcExa = ntcSeries.reduce((s, r) => s + (Number(r["Examinados"]) || 0), 0);
+  const avgPos = totalNtcExa > 0 ? (totalNtcPos / totalNtcExa) * 100 : null;
 
   const fmtTick = (v: unknown) => Number(v).toLocaleString("pt-BR");
   const fmtPct = (v: unknown) => `${Number(v).toFixed(1)}%`;
