@@ -92,7 +92,7 @@ export function ConjuntiviteChartsView({ filters }: Props) {
     "Incidência/100k": r.incidencia100k,
   }));
   const filteredAnual = anualData.filter((r) => !excludedYears.has(r.ano));
-  const hasIncidencia = metricAnual === "casos" && data.byYear.some((r) => r.incidencia100k != null);
+  const hasIncidencia = data.byYear.some((r) => r.incidencia100k != null);
   const activeKey = metricAnual === "municipios" ? "Municípios notificantes" : "Casos";
   const activeColor = metricAnual === "municipios" ? "#16a34a" : "#2563eb";
 
@@ -121,7 +121,7 @@ export function ConjuntiviteChartsView({ filters }: Props) {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-sm">Série histórica anual — Conjuntivites CEVESP</CardTitle>
-              <CardDescription className="text-xs">Clique em um ano para ocultá-lo da análise.</CardDescription>
+              <CardDescription className="text-xs">Clique em um ano para ocultá-lo da análise. Linha vermelha = coef. de incidência/100 mil hab. (requer tabela IBGE).</CardDescription>
             </div>
             <div className="flex items-center gap-2">
               {hasMunicipios && (
