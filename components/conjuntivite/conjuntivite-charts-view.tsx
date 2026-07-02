@@ -62,7 +62,6 @@ export function ConjuntiviteChartsView({ filters }: Props) {
 
   const refAnual = useRef<HTMLDivElement>(null);
   const refMensal = useRef<HTMLDivElement>(null);
-  const refGve = useRef<HTMLDivElement>(null);
   const [excludedYears, setExcludedYears] = useState<Set<string>>(new Set());
 
   function toggleYear(year: string) {
@@ -120,17 +119,6 @@ export function ConjuntiviteChartsView({ filters }: Props) {
   // Só mostra se tiver dados mensais
   const hasMensal = data.byYearMonth.length > 0;
 
-  // ── Top GVEs série histórica ──────────────────────────────────────────────
-  const gveNames = Array.from(new Set(data.byGveYear.map((r) => r.gve)));
-  const gveAnoMap = new Map<number, Record<string, number>>();
-  for (const r of data.byGveYear) {
-    if (!gveAnoMap.has(r.ano)) gveAnoMap.set(r.ano, {});
-    gveAnoMap.get(r.ano)![r.gve] = r.casos;
-  }
-  const gveSeries = Array.from(gveAnoMap.entries())
-    .sort(([a], [b]) => a - b)
-    .map(([ano, vals]) => ({ ano: String(ano), ...vals }));
-
   const fmt = (v: unknown) => num(v);
   const primYear = years[years.length - 1];
   const secYear = years[years.length - 2];
@@ -150,7 +138,7 @@ export function ConjuntiviteChartsView({ filters }: Props) {
           value={data.byYear.find((r) => r.ano === primYear)?.casos ?? 0}
           detail={secYear ? `vs ${secYear}: ${num(data.byYear.find((r) => r.ano === secYear)?.casos ?? 0)}` : undefined}
         />
-        <KpiCard label="GVEs com registro" value={gveNames.length} detail="No período selecionado" />
+        <KpiCard label="GVEs com registro" value={new Set(data.byGveYear.map((r) => r.gve)).size} detail="No período selecionado" />
       </div>
 
       {/* ── Chart 1: Casos por ano ────────────────────────────────────────── */}
@@ -259,39 +247,6 @@ export function ConjuntiviteChartsView({ filters }: Props) {
         </Card>
       )}
 
-      {/* ── Chart 3: Top GVEs série histórica ────────────────────────────── */}
-      {gveSeries.length > 1 && gveNames.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-sm">Série histórica por GVE — Top {gveNames.length}</CardTitle>
-                <CardDescription className="text-xs">Casos por GVE ao longo dos anos. Apenas as GVEs com maior volume total.</CardDescription>
-              </div>
-              <button onClick={() => exportChartSvg(refGve.current, "cevesp-gves")} className="flex items-center gap-1 rounded border px-2 py-1 text-xs hover:bg-muted">
-                <Download className="h-3 w-3" /> PNG
-              </button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div ref={refGve} className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={gveSeries} margin={{ top: 4, right: 16, left: 4, bottom: 4 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="ano" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} width={56} tickFormatter={fmt} />
-                  <Tooltip formatter={fmt} />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                  {gveNames.map((gve, i) => (
-                    <Line key={gve} type="monotone" dataKey={gve} stroke={PALETTE[i % PALETTE.length]}
-                      strokeWidth={2} dot={gveSeries.length <= 12} activeDot={{ r: 4 }} connectNulls />
-                  ))}
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }

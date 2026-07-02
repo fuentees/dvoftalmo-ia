@@ -355,7 +355,7 @@ async function tryFetchAggregated(analysis: CevespAnalysisInput): Promise<AggRow
       p_municipio: munFilter ?? null,
       p_se_start: dr.seStart ?? null,
       p_se_end: dr.seEnd ?? null
-    });
+    }).limit(10000);
     if (error || !data) return null;
     return data as AggRow[];
   } catch {
@@ -1029,7 +1029,7 @@ export async function getCevespHistorico(opts?: {
       p_ano_start: opts?.yearStart ?? null, p_ano_end: opts?.yearEnd ?? null,
       p_gve: opts?.gve ?? null, p_municipio: opts?.municipio ?? null,
       p_se_start: null, p_se_end: null
-    });
+    }).limit(10000);
     if (!error && data && Array.isArray(data) && data.length > 0) {
       usedRpc = true;
       for (const r of data as AggRow[]) {

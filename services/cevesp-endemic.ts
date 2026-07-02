@@ -91,7 +91,7 @@ async function runEndemicChannelFromCache(options: {
       p_ano_start: startYear, p_ano_end: currentYear,
       p_gve: options.gve ?? null, p_municipio: options.municipality ?? null,
       p_se_start: null, p_se_end: null
-    });
+    }).limit(10000);
     if (!error && data && Array.isArray(data) && data.length > 0) {
       for (const r of data as Array<{ ano: number; se: number | null; total: number }>) {
         const year = r.ano;
