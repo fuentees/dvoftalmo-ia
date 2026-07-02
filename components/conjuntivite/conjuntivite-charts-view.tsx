@@ -3,21 +3,13 @@
 import { useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, LineChart,
+  Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { Download, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { exportChartSvg } from "@/lib/chart-export";
 import type { CevespHistorico } from "@/lib/external/supabase-cevesp";
-
-const PALETTE = [
-  "#2563eb","#16a34a","#dc2626","#d97706","#7c3aed",
-  "#0891b2","#be185d","#059669","#ea580c","#4f46e5",
-  "#b45309","#0f766e",
-];
-
-const MONTH_LABELS = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
 
 function num(v: unknown) { return Number(v ?? 0).toLocaleString("pt-BR"); }
 
@@ -58,7 +50,6 @@ export function ConjuntiviteChartsView({ filters }: Props) {
   });
 
   const refAnual = useRef<HTMLDivElement>(null);
-  const refMensal = useRef<HTMLDivElement>(null);
   const [excludedYears, setExcludedYears] = useState<Set<string>>(new Set());
   const [metricAnual, setMetricAnual] = useState<"casos" | "municipios">("casos");
 
@@ -118,21 +109,6 @@ export function ConjuntiviteChartsView({ filters }: Props) {
   );
   const singleAxisTicks = niceTicks(singleAxisMax);
 
-  // ── Série mensal por ano (pivot mes × anos) ───────────────────────────────
-  const years = data.anosComDados;
-  const filteredYears = years.filter((y) => !excludedYears.has(String(y)));
-  const mensalData = MONTH_LABELS.map((label, idx) => {
-    const mes = idx + 1;
-    const point: Record<string, unknown> = { mes: label };
-    for (const ano of filteredYears) {
-      const found = data.byYearMonth.find((r) => r.ano === ano && r.mes === mes);
-      point[String(ano)] = found?.casos ?? 0;
-    }
-    return point;
-  });
-  // Só mostra se tiver dados mensais
-  const hasMensal = data.byYearMonth.length > 0;
-
   const fmt = (v: unknown) => num(v);
 
   return (
@@ -173,7 +149,7 @@ export function ConjuntiviteChartsView({ filters }: Props) {
           </div>
         </CardHeader>
         <CardContent>
-          <div ref={refAnual} className={hasIncidencia ? "h-72" : "h-64"}>
+          <div ref={refAnual} className={hasIncidencia ? "h-[28rem]" : "h-96"}>
             <ResponsiveContainer width="100%" height="100%">
               {hasIncidencia ? (
                 <ComposedChart
@@ -238,48 +214,6 @@ export function ConjuntiviteChartsView({ filters }: Props) {
           )}
         </CardContent>
       </Card>
-
-      {/* ── Chart 2: Série mensal comparativa ────────────────────────────── */}
-      {hasMensal && years.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-sm">Perfil mensal por ano</CardTitle>
-                <CardDescription className="text-xs">Distribuição de casos por mês — cada linha representa um ano. Útil para comparar sazonalidade.</CardDescription>
-              </div>
-              <button onClick={() => exportChartSvg(refMensal.current, "cevesp-mensal")} className="flex items-center gap-1 rounded border px-2 py-1 text-xs hover:bg-muted">
-                <Download className="h-3 w-3" /> PNG
-              </button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div ref={refMensal} className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={mensalData} margin={{ top: 4, right: 16, left: 4, bottom: 4 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="mes" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} width={56} tickFormatter={fmt} />
-                  <Tooltip formatter={fmt} />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                  {filteredYears.slice(-6).map((ano, i) => (
-                    <Line
-                      key={ano}
-                      type="monotone"
-                      dataKey={String(ano)}
-                      stroke={PALETTE[i % PALETTE.length]}
-                      strokeWidth={2}
-                      dot={false}
-                      activeDot={{ r: 4 }}
-                    />
-                  ))}
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
     </div>
   );
 }
