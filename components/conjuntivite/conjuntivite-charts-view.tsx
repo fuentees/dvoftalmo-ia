@@ -23,15 +23,13 @@ function num(v: unknown) { return Number(v ?? 0).toLocaleString("pt-BR"); }
 
 // Gera ticks redondos e igualmente espaçados (0, 300, 600, ...), como no gráfico do CVE,
 // em vez de depender do cálculo automático de "nice ticks" do recharts (que pode degenerar
-// com poucos pontos ou valores repetidos).
+// com poucos pontos ou valores repetidos). Arredonda o passo para o múltiplo de 100 mais
+// próximo — para o intervalo típico dessa série (0–2400) isso já resulta em passos de 300.
 function niceTicks(max: number, targetCount = 8): number[] {
-  if (!Number.isFinite(max) || max <= 0) return [0, 1];
-  const rawStep = max / targetCount;
-  const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)));
-  const residual = rawStep / magnitude;
-  const step = residual > 5 ? 10 * magnitude : residual > 2 ? 5 * magnitude : residual > 1 ? 2 * magnitude : magnitude;
+  if (!Number.isFinite(max) || max <= 0) return [0, 100];
+  const step = Math.max(100, Math.ceil(max / targetCount / 100) * 100);
   const ticks: number[] = [];
-  for (let v = 0; v <= max + step; v += step) ticks.push(Math.round(v));
+  for (let v = 0; v <= max + step; v += step) ticks.push(v);
   return ticks;
 }
 
@@ -109,11 +107,12 @@ export function ConjuntiviteChartsView({ filters }: Props) {
   const hasIncidencia = data.byYear.some((r) => r.incidencia100k != null);
   const activeKey = metricAnual === "municipios" ? "Municípios notificantes" : "Casos";
   const activeColor = metricAnual === "municipios" ? "#16a34a" : "#2563eb";
-  // Na página de um município específico, casos e incidência/100k têm escalas parecidas
-  // (poucas dezenas/centenas) → cabem no mesmo eixo, como no gráfico do CVE. Na visão
-  // estadual "Casos" pode chegar a centenas de milhares num ano de epidemia, então
-  // mantém o eixo secundário original para a linha não sumir achatada.
-  const singleAxis = Boolean(filters?.municipio);
+  // Eixo único (igual ao gráfico do CVE) quando a métrica é "Municípios notificantes"
+  // (escala 0–~650, compatível com a incidência/100k) ou quando a página já está filtrada
+  // por um município específico (casos também ficam pequenos nesse caso). "Casos" na visão
+  // estadual pode chegar a centenas de milhares num ano de epidemia, então mantém o eixo
+  // secundário para a linha de incidência não sumir achatada.
+  const singleAxis = metricAnual === "municipios" || Boolean(filters?.municipio);
   const singleAxisMax = Math.max(
     0,
     ...filteredAnual.map((r) => Number(r[activeKey] ?? 0)),
