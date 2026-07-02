@@ -18,6 +18,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Textarea } from "@/components/ui/textarea";
 import { RateMap, type RateMapRow } from "@/components/epidemiology/rate-map";
 import { EndemicChannelChart, EpidemicCharts } from "@/components/notifications/epidemic-charts";
+import { ConjuntiviteChartsView } from "@/components/conjuntivite/conjuntivite-charts-view";
 import { AnalysisChart } from "@/components/analysis-chart";
 import { listarMunicipiosPorGve } from "@/lib/municipios-sp";
 
@@ -908,6 +909,21 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
               topMunicipalities={report.data.indicators.topMunicipalities ?? []}
               topGves={report.data.indicators.topGves ?? []}
             />
+
+            <div className="space-y-4">
+              <SectionIntro
+                title="Série histórica"
+                description="Evolução anual de casos e perfil mensal por ano. Clique em um ano para ocultá-lo da análise."
+              />
+              <ConjuntiviteChartsView
+                filters={{
+                  gve: externalFilters?.gve,
+                  municipio: externalFilters?.municipio,
+                  yearStart: externalFilters?.year ? String(externalFilters.year) : undefined,
+                  yearEnd: externalFilters?.yearEnd ? String(externalFilters.yearEnd) : undefined,
+                }}
+              />
+            </div>
 
             {rates.data && (
               <div className="space-y-4">

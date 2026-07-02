@@ -5,7 +5,6 @@ import { useMemo, useState } from "react";
 import { Activity, Database, ShieldAlert } from "lucide-react";
 import { NotificationsReportView } from "@/components/notifications/notifications-report-view";
 import { CevespQualidadeView } from "@/components/cevesp/cevesp-qualidade-view";
-import { ConjuntiviteChartsView } from "@/components/conjuntivite/conjuntivite-charts-view";
 import { listarGvesSp, listarMunicipiosPorGve } from "@/lib/municipios-sp";
 
 type OuterTab = "situacao" | "qualidade" | "consulta";
@@ -107,12 +106,7 @@ export function ConjuntiviteHubView() {
       </div>
 
       <div className="flex-1">
-        {tab === "situacao" && (
-          <>
-            <ConjuntiviteChartsView filters={{ gve, municipio, yearStart: yearStart || undefined, yearEnd: yearEnd || undefined }} />
-            <NotificationsReportView section="situacao" externalFilters={reportFilters} hideFilters />
-          </>
-        )}
+        {tab === "situacao"  && <NotificationsReportView section="situacao" externalFilters={reportFilters} hideFilters />}
         {tab === "qualidade" && <CevespQualidadeView externalFilters={reportFilters} />}
         {tab === "consulta"  && <NotificationsReportView section="consulta" externalFilters={reportFilters} hideFilters />}
       </div>
