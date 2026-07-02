@@ -100,7 +100,6 @@ export function TracomaChartsView({ filters }: Props) {
     staleTime: 5 * 60 * 1000,
   });
 
-  const refTraconet = useRef<HTMLDivElement>(null);
   const refNtc = useRef<HTMLDivElement>(null);
   const refFormas = useRef<HTMLDivElement>(null);
   const [excludedYears, setExcludedYears] = useState<Set<string>>(new Set());
@@ -208,34 +207,6 @@ export function TracomaChartsView({ filters }: Props) {
           tone={data.positividade != null && data.positividade > 5 ? "amber" : "green"}
         />
       </div>
-
-      {/* ── Chart 1: Série histórica TRACONET + NOTTRACONET ──────────────── */}
-      <Card>
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-sm">Série histórica — Casos individuais (TRACONET)</CardTitle>
-              <CardDescription className="text-xs">Um registro por caso notificado. Todos os anos com dados.</CardDescription>
-            </div>
-            <button onClick={() => exportChartSvg(refTraconet.current, "tracoma-traconet")} className="flex items-center gap-1 rounded border px-2 py-1 text-xs hover:bg-muted">
-              <Download className="h-3 w-3" /> PNG
-            </button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div ref={refTraconet} className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={mainSeries} margin={{ top: 4, right: 16, left: 4, bottom: 4 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="ano" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} width={52} tickFormatter={fmtTick} />
-                <Tooltip formatter={(v) => num(v)} />
-                <Bar dataKey="TRACONET (casos)" fill="#2563eb" radius={[3, 3, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* ── Chart 2: Examinados + Positivos + Positividade ───────────────── */}
       {data.totalExaminados > 0 && (
