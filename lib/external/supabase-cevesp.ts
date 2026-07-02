@@ -1032,11 +1032,11 @@ export async function getCevespHistorico(opts?: {
         p_gve: opts?.gve ?? null, p_municipio: opts?.municipio ?? null,
         p_se_start: null, p_se_end: null
       }),
-      supabase.rpc("cevesp_agrupado", {
-        p_grain: "year", p_metric: "municipios_notificadores", p_dim: null,
+      supabase.rpc("cevesp_aggregate", {
+        p_metric: "municipios_notificadores", p_dimension: "ano",
         p_ano_start: opts?.yearStart ?? null, p_ano_end: opts?.yearEnd ?? null,
-        p_gve: opts?.gve ?? null, p_municipio: opts?.municipio ?? null,
-        p_se_start: null, p_se_end: null
+        p_gve: opts?.gve ?? null, p_drs: null, p_municipio: opts?.municipio ?? null,
+        p_se_start: null, p_se_end: null, p_lim: 50
       }),
     ]);
     const { data, error } = casosResult;
@@ -1057,16 +1057,12 @@ export async function getCevespHistorico(opts?: {
         }
       }
     }
+    // cevesp_aggregate returns { label: year_as_text, valor: count }
     if (!munResult.error && munResult.data && Array.isArray(munResult.data)) {
-      for (const r of munResult.data as AggRow[]) {
-        if (!Number.isFinite(r.ano) || r.ano < 2000) continue;
-        municipiosMap.set(r.ano, Number(r.total));
-      }
-      // SP tem 645 municípios. Se algum valor excede isso, o RPC retornou casos (sem suporte ao metric).
-      // Descarta os dados inválidos para não confundir com total de casos.
-      const maxMunicipiosSP = 645;
-      if (Array.from(municipiosMap.values()).some((v) => v > maxMunicipiosSP)) {
-        municipiosMap.clear();
+      for (const r of munResult.data as Array<{ label: string; valor: number }>) {
+        const ano = Number(r.label);
+        if (!Number.isFinite(ano) || ano < 2000) continue;
+        municipiosMap.set(ano, Number(r.valor));
       }
     }
   } catch { /* fallback */ }
