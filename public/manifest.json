@@ -1,6 +1,6 @@
 {
-  "name": "DvOftalmo IA",
-  "short_name": "DvOftalmo",
+  "name": "Centro de Oftalmologia Sanitária",
+  "short_name": "COS",
   "description": "Agente inteligente de vigilância epidemiológica das conjuntivites — COS/DVSE/CVS SP",
   "start_url": "/dashboard",
   "display": "standalone",

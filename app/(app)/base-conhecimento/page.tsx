@@ -2,7 +2,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { DocumentLibrary } from "@/components/documents/document-library";
 import { UploadPanel } from "@/components/documents/upload-panel";
 
-export const metadata = { title: "Base de Conhecimento — DvOftalmo IA" };
+export const metadata = { title: "Base de Conhecimento — Centro de Oftalmologia Sanitária" };
 
 export default function KnowledgeBasePage() {
   return (

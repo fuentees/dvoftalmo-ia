@@ -1,4 +1,4 @@
-# DvOftalmo IA
+# Centro de Oftalmologia Sanitária
 
 Agente inteligente independente para documentos, treinamentos, trabalho de campo, base de conhecimento e vigilancia epidemiologica.
 

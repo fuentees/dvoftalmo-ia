@@ -19,7 +19,7 @@ async function send(payload: EmailPayload): Promise<void> {
       Authorization: `Bearer ${process.env.RESEND_API_KEY}`
     },
     body: JSON.stringify({
-      from: "DvOftalmo IA <noreply@dvoftalmo.cc>",
+      from: "Centro de Oftalmologia Sanitária <noreply@dvoftalmo.cc>",
       to: payload.to,
       subject: payload.subject,
       html: payload.html
@@ -38,7 +38,7 @@ export async function emailCorrectionReviewed(opts: {
   const color   = opts.action === "approve" ? "#16a34a" : "#dc2626";
   await send({
     to:      process.env.NOTIFY_EMAIL!,
-    subject: `[DvOftalmo] Correção CEVESP ${label} — registro ${opts.recordId}`,
+    subject: `[COS] Correção CEVESP ${label} — registro ${opts.recordId}`,
     html: `
       <div style="font-family:sans-serif;max-width:560px;margin:auto">
         <h2 style="color:${color}">Correção ${label}</h2>
@@ -46,7 +46,7 @@ export async function emailCorrectionReviewed(opts: {
            foi <strong>${label}</strong> por ${opts.reviewerName}.</p>
         <p>Novo valor proposto: <code>${opts.newValue}</code></p>
         <hr/>
-        <p style="font-size:12px;color:#888">DvOftalmo IA · COS/DVSE/CVS</p>
+        <p style="font-size:12px;color:#888">Centro de Oftalmologia Sanitária · COS/DVSE/CVS</p>
       </div>`
   });
 }
@@ -60,7 +60,7 @@ export async function emailCorrectionApplied(opts: {
 }) {
   await send({
     to:      process.env.NOTIFY_EMAIL!,
-    subject: `[DvOftalmo] Correção aplicada — registro ${opts.recordId}`,
+    subject: `[COS] Correção aplicada — registro ${opts.recordId}`,
     html: `
       <div style="font-family:sans-serif;max-width:560px;margin:auto">
         <h2 style="color:#1a6654">Correção aplicada ao CEVESP</h2>
@@ -71,7 +71,7 @@ export async function emailCorrectionApplied(opts: {
           <tr><td style="padding:4px 8px;border:1px solid #ddd"><strong>Depois</strong></td><td style="padding:4px 8px;border:1px solid #ddd;color:#16a34a">${opts.newValue}</td></tr>
         </table>
         <hr/>
-        <p style="font-size:12px;color:#888">DvOftalmo IA · COS/DVSE/CVS</p>
+        <p style="font-size:12px;color:#888">Centro de Oftalmologia Sanitária · COS/DVSE/CVS</p>
       </div>`
   });
 }
@@ -88,7 +88,7 @@ export async function emailEpidAlert(opts: {
   const label = opts.severity === "critical" ? "CRÍTICO" : "ATENÇÃO";
   await send({
     to:      process.env.NOTIFY_EMAIL!,
-    subject: `[DvOftalmo] Alerta epidemiológico ${label} — ${opts.gve} SE ${opts.se}`,
+    subject: `[COS] Alerta epidemiológico ${label} — ${opts.gve} SE ${opts.se}`,
     html: `
       <div style="font-family:sans-serif;max-width:560px;margin:auto">
         <h2 style="color:${color}">Alerta Epidemiológico — ${label}</h2>
@@ -100,7 +100,7 @@ export async function emailEpidAlert(opts: {
           <li>Média 4 SE anteriores: <strong>${opts.casesAvg.toFixed(1)}</strong></li>
         </ul>
         <hr/>
-        <p style="font-size:12px;color:#888">DvOftalmo IA · COS/DVSE/CVS</p>
+        <p style="font-size:12px;color:#888">Centro de Oftalmologia Sanitária · COS/DVSE/CVS</p>
       </div>`
   });
 }

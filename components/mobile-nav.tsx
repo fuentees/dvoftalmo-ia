@@ -67,7 +67,7 @@ export function MobileNav() {
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary">
             <BarChart3 className="h-3.5 w-3.5 text-primary-foreground" />
           </div>
-          <span className="text-sm font-semibold">DvOftalmo IA</span>
+          <span className="min-w-0 truncate text-sm font-semibold">Centro de Oftalmologia Sanitária</span>
         </div>
         <button
           onClick={() => setOpen(true)}
@@ -97,7 +97,7 @@ export function MobileNav() {
               <BarChart3 className="h-4 w-4 text-primary-foreground" />
             </div>
             <div>
-              <p className="text-sm font-semibold leading-tight">DvOftalmo IA</p>
+              <p className="text-sm font-semibold leading-tight">Centro de Oftalmologia Sanitária</p>
               <p className="text-[11px] text-muted-foreground">Vigilância em Saúde · SP</p>
             </div>
           </div>

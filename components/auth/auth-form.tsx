@@ -98,7 +98,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
     <Card className="w-full max-w-md">
       <CardHeader>
         <CardTitle>{title}</CardTitle>
-        <CardDescription>DvOftalmo IA - Vigilância Epidemiológica das Conjuntivites</CardDescription>
+        <CardDescription>Centro de Oftalmologia Sanitária - Vigilância Epidemiológica das Conjuntivites</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>

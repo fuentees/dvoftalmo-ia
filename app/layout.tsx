@@ -3,10 +3,10 @@ import { QueryProvider } from "@/lib/query-client";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "DvOftalmo IA",
+  title: "Centro de Oftalmologia Sanitária",
   description: "Agente inteligente de vigilância epidemiológica para oftalmologia sanitária - COS/DVSE/CVS SP",
   manifest: "/manifest.json",
-  appleWebApp: { capable: true, statusBarStyle: "default", title: "DvOftalmo IA" }
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "Centro de Oftalmologia Sanitária" }
 };
 
 export const viewport: Viewport = {

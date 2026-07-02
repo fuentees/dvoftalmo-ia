@@ -61,7 +61,7 @@ export function AppSidebar() {
           <BarChart3 className="h-4 w-4 text-primary-foreground" />
         </div>
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold leading-tight">DvOftalmo IA</p>
+          <p className="truncate text-sm font-semibold leading-tight">Centro de Oftalmologia Sanitária</p>
           <p className="truncate text-[11px] text-muted-foreground">Vigilância em Saúde · SP</p>
         </div>
       </div>
