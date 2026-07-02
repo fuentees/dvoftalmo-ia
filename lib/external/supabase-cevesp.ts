@@ -989,7 +989,7 @@ function buildCacheUnderstanding(analysis: CevespAnalysisInput) {
 // ── Histórico agregado para dashboard de gráficos ────────────────────────────
 
 export type CevespHistorico = {
-  byYear: Array<{ ano: number; casos: number; incidencia100k: number | null }>;
+  byYear: Array<{ ano: number; casos: number; municipiosNotificadores: number; incidencia100k: number | null }>;
   byGveYear: Array<{ gve: string; ano: number; casos: number }>;
   byYearMonth: Array<{ ano: number; mes: number; casos: number }>;
   totalCasos: number;
@@ -1017,6 +1017,7 @@ export async function getCevespHistorico(opts?: {
   };
 
   const yearMap = new Map<number, number>();
+  const municipiosMap = new Map<number, number>();
   const gveYearMap = new Map<string, Map<number, number>>();
   const yearMonthMap = new Map<string, number>();
 
@@ -1024,12 +1025,21 @@ export async function getCevespHistorico(opts?: {
   let usedRpc = false;
   try {
     const supabase = createAdminClient();
-    const { data, error } = await supabase.rpc("cevesp_agrupado", {
-      p_grain: "month", p_metric: "total_casos", p_dim: null,
-      p_ano_start: opts?.yearStart ?? null, p_ano_end: opts?.yearEnd ?? null,
-      p_gve: opts?.gve ?? null, p_municipio: opts?.municipio ?? null,
-      p_se_start: null, p_se_end: null
-    });
+    const [casosResult, munResult] = await Promise.all([
+      supabase.rpc("cevesp_agrupado", {
+        p_grain: "month", p_metric: "total_casos", p_dim: null,
+        p_ano_start: opts?.yearStart ?? null, p_ano_end: opts?.yearEnd ?? null,
+        p_gve: opts?.gve ?? null, p_municipio: opts?.municipio ?? null,
+        p_se_start: null, p_se_end: null
+      }),
+      supabase.rpc("cevesp_agrupado", {
+        p_grain: "year", p_metric: "municipios_notificadores", p_dim: null,
+        p_ano_start: opts?.yearStart ?? null, p_ano_end: opts?.yearEnd ?? null,
+        p_gve: opts?.gve ?? null, p_municipio: opts?.municipio ?? null,
+        p_se_start: null, p_se_end: null
+      }),
+    ]);
+    const { data, error } = casosResult;
     if (!error && data && Array.isArray(data) && data.length > 0) {
       usedRpc = true;
       for (const r of data as AggRow[]) {
@@ -1045,6 +1055,12 @@ export async function getCevespHistorico(opts?: {
           const key = `${ano}-${mes}`;
           yearMonthMap.set(key, (yearMonthMap.get(key) ?? 0) + casos);
         }
+      }
+    }
+    if (!munResult.error && munResult.data && Array.isArray(munResult.data)) {
+      for (const r of munResult.data as AggRow[]) {
+        if (!Number.isFinite(r.ano) || r.ano < 2000) continue;
+        municipiosMap.set(r.ano, Number(r.total));
       }
     }
   } catch { /* fallback */ }
@@ -1116,9 +1132,10 @@ export async function getCevespHistorico(opts?: {
   const allYears = Array.from(yearMap.keys()).sort((a, b) => a - b);
   const byYear = allYears.map((ano) => {
     const casos = yearMap.get(ano) ?? 0;
+    const municipiosNotificadores = municipiosMap.get(ano) ?? 0;
     const pop = closestPop(ano);
     const incidencia100k = pop && pop > 0 ? Number(((casos / pop) * 100_000).toFixed(2)) : null;
-    return { ano, casos, incidencia100k };
+    return { ano, casos, municipiosNotificadores, incidencia100k };
   });
 
   const gveTotals = Array.from(gveYearMap.entries())

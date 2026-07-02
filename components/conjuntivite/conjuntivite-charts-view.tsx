@@ -50,6 +50,7 @@ export function ConjuntiviteChartsView({ filters }: Props) {
   const refAnual = useRef<HTMLDivElement>(null);
   const refMensal = useRef<HTMLDivElement>(null);
   const [excludedYears, setExcludedYears] = useState<Set<string>>(new Set());
+  const [metricAnual, setMetricAnual] = useState<"casos" | "municipios">("casos");
 
   function toggleYear(year: string) {
     setExcludedYears((prev) => {
@@ -83,13 +84,17 @@ export function ConjuntiviteChartsView({ filters }: Props) {
   );
 
   // ── Série anual ───────────────────────────────────────────────────────────
+  const hasMunicipios = data.byYear.some((r) => r.municipiosNotificadores > 0);
   const anualData = data.byYear.map((r) => ({
     ano: String(r.ano),
     Casos: r.casos,
+    "Municípios notificantes": r.municipiosNotificadores,
     "Incidência/100k": r.incidencia100k,
   }));
   const filteredAnual = anualData.filter((r) => !excludedYears.has(r.ano));
-  const hasIncidencia = data.byYear.some((r) => r.incidencia100k != null);
+  const hasIncidencia = metricAnual === "casos" && data.byYear.some((r) => r.incidencia100k != null);
+  const activeKey = metricAnual === "municipios" ? "Municípios notificantes" : "Casos";
+  const activeColor = metricAnual === "municipios" ? "#16a34a" : "#2563eb";
 
   // ── Série mensal por ano (pivot mes × anos) ───────────────────────────────
   const years = data.anosComDados;
@@ -110,17 +115,35 @@ export function ConjuntiviteChartsView({ filters }: Props) {
 
   return (
     <div className="space-y-6 p-6">
-      {/* ── Chart 1: Casos por ano ────────────────────────────────────────── */}
+      {/* ── Chart 1: Casos / municípios por ano ─────────────────────────── */}
       <Card>
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-sm">Série histórica anual — Conjuntivites CEVESP</CardTitle>
-              <CardDescription className="text-xs">Clique em um ano para ocultá-lo da análise. Total de casos por ano de notificação.</CardDescription>
+              <CardDescription className="text-xs">Clique em um ano para ocultá-lo da análise.</CardDescription>
             </div>
-            <button onClick={() => exportChartSvg(refAnual.current, "cevesp-anual")} className="flex items-center gap-1 rounded border px-2 py-1 text-xs hover:bg-muted">
-              <Download className="h-3 w-3" /> PNG
-            </button>
+            <div className="flex items-center gap-2">
+              {hasMunicipios && (
+                <div className="flex rounded border text-xs overflow-hidden">
+                  <button
+                    onClick={() => setMetricAnual("casos")}
+                    className={`px-2 py-1 transition-colors ${metricAnual === "casos" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
+                  >
+                    Casos
+                  </button>
+                  <button
+                    onClick={() => setMetricAnual("municipios")}
+                    className={`px-2 py-1 transition-colors ${metricAnual === "municipios" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
+                  >
+                    Municípios
+                  </button>
+                </div>
+              )}
+              <button onClick={() => exportChartSvg(refAnual.current, "cevesp-anual")} className="flex items-center gap-1 rounded border px-2 py-1 text-xs hover:bg-muted">
+                <Download className="h-3 w-3" /> PNG
+              </button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -139,7 +162,7 @@ export function ConjuntiviteChartsView({ filters }: Props) {
                   <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} width={44} tickFormatter={(v) => `${Number(v).toFixed(1)}`} domain={[0, "auto"]} />
                   <Tooltip formatter={(v, name) => name === "Incidência/100k" ? `${Number(v).toFixed(1)} /100k` : fmt(v)} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar yAxisId="left" dataKey="Casos" fill="#2563eb" radius={[3, 3, 0, 0]} />
+                  <Bar yAxisId="left" dataKey={activeKey} fill={activeColor} radius={[3, 3, 0, 0]} />
                   <Line yAxisId="right" type="monotone" dataKey="Incidência/100k" stroke="#dc2626" strokeWidth={2} dot={filteredAnual.length <= 15} connectNulls />
                 </ComposedChart>
               ) : (
@@ -153,7 +176,7 @@ export function ConjuntiviteChartsView({ filters }: Props) {
                   <XAxis dataKey="ano" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} width={56} tickFormatter={fmt} />
                   <Tooltip formatter={fmt} />
-                  <Bar dataKey="Casos" fill="#2563eb" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey={activeKey} fill={activeColor} radius={[3, 3, 0, 0]} />
                 </BarChart>
               )}
             </ResponsiveContainer>

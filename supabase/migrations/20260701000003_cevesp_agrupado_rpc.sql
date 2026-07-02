@@ -25,19 +25,23 @@ LANGUAGE sql STABLE SECURITY DEFINER AS $$
       WHEN p_dim = 'uvis'      THEN "UVIS"
       ELSE NULL
     END AS dim_value,
-    SUM(
-      CASE p_metric
-        WHEN 'total_casos'       THEN COALESCE("TotalCaso"::numeric, 0)
-        WHEN 'notificacoes'      THEN 1
-        WHEN 'surtos'            THEN CASE WHEN LOWER(COALESCE("Surto",'')) IN ('1','s','sim','true','x') OR COALESCE("NuSurto"::numeric,0)>0 THEN 1 ELSE 0 END
-        WHEN 'coletas'           THEN COALESCE("NuColetaMaterialBio"::numeric, 0)
-        WHEN 'acoes_educativas'  THEN COALESCE("NuAcaoEducativa"::numeric, 0)
-        WHEN 'treinamentos'      THEN COALESCE("NuTreinamento"::numeric, 0)
-        WHEN 'afastamentos'      THEN CASE WHEN LOWER(COALESCE("AfastamentoProfSintomatico",'')) IN ('1','s','sim','true','x') THEN 1 ELSE 0 END
-        WHEN 'encaminhamentos'   THEN COALESCE("NuEncamimento"::numeric, 0)
-        ELSE COALESCE("TotalCaso"::numeric, 0)
-      END
-    )::bigint AS total
+    CASE
+      WHEN p_metric = 'municipios_notificadores' THEN COUNT(DISTINCT "MunicipioNotificacao")::bigint
+      WHEN p_metric = 'unidades_notificadoras'   THEN COUNT(DISTINCT "Unid_notificacao")::bigint
+      ELSE SUM(
+        CASE p_metric
+          WHEN 'total_casos'       THEN COALESCE("TotalCaso"::numeric, 0)
+          WHEN 'notificacoes'      THEN 1
+          WHEN 'surtos'            THEN CASE WHEN LOWER(COALESCE("Surto",'')) IN ('1','s','sim','true','x') OR COALESCE("NuSurto"::numeric,0)>0 THEN 1 ELSE 0 END
+          WHEN 'coletas'           THEN COALESCE("NuColetaMaterialBio"::numeric, 0)
+          WHEN 'acoes_educativas'  THEN COALESCE("NuAcaoEducativa"::numeric, 0)
+          WHEN 'treinamentos'      THEN COALESCE("NuTreinamento"::numeric, 0)
+          WHEN 'afastamentos'      THEN CASE WHEN LOWER(COALESCE("AfastamentoProfSintomatico",'')) IN ('1','s','sim','true','x') THEN 1 ELSE 0 END
+          WHEN 'encaminhamentos'   THEN COALESCE("NuEncamimento"::numeric, 0)
+          ELSE COALESCE("TotalCaso"::numeric, 0)
+        END
+      )::bigint
+    END AS total
   FROM cevesp_notificacoes
   WHERE COALESCE("Excluido", 0) = 0
     AND "ANO" IS NOT NULL AND "ANO" > 1900
