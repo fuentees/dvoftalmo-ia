@@ -919,8 +919,6 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
                 filters={{
                   gve: externalFilters?.gve,
                   municipio: externalFilters?.municipio,
-                  yearStart: externalFilters?.year ? String(externalFilters.year) : undefined,
-                  yearEnd: externalFilters?.yearEnd ? String(externalFilters.yearEnd) : undefined,
                 }}
               />
             </div>
