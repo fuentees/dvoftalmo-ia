@@ -1062,11 +1062,18 @@ export async function getCevespHistorico(opts?: {
         if (!Number.isFinite(r.ano) || r.ano < 2000) continue;
         municipiosMap.set(r.ano, Number(r.total));
       }
+      // SP tem 645 municípios. Se algum valor excede isso, o RPC retornou casos (sem suporte ao metric).
+      // Descarta os dados inválidos para não confundir com total de casos.
+      const maxMunicipiosSP = 645;
+      if (Array.from(municipiosMap.values()).some((v) => v > maxMunicipiosSP)) {
+        municipiosMap.clear();
+      }
     }
   } catch { /* fallback */ }
 
   if (!usedRpc) {
-    const rows = await fetchCacheRows(analysis, '"ANO","Mes","GVE_NOME","TotalCaso"');
+    const rows = await fetchCacheRows(analysis, '"ANO","Mes","GVE_NOME","TotalCaso","MunicipioNotificacao"');
+    const municByYear = new Map<number, Set<string>>();
     for (const row of rows) {
       const ano = Number(row.ANO);
       const mes = Number(row.Mes ?? 0);
@@ -1076,10 +1083,18 @@ export async function getCevespHistorico(opts?: {
       yearMap.set(ano, (yearMap.get(ano) ?? 0) + casos);
       if (!gveYearMap.has(gve)) gveYearMap.set(gve, new Map());
       gveYearMap.get(gve)!.set(ano, (gveYearMap.get(gve)!.get(ano) ?? 0) + casos);
+      const municipio = String(row.MunicipioNotificacao ?? "").trim().toLowerCase();
+      if (municipio) {
+        if (!municByYear.has(ano)) municByYear.set(ano, new Set());
+        municByYear.get(ano)!.add(municipio);
+      }
       if (mes > 0 && mes <= 12) {
         const key = `${ano}-${mes}`;
         yearMonthMap.set(key, (yearMonthMap.get(key) ?? 0) + casos);
       }
+    }
+    for (const [ano, set] of municByYear) {
+      municipiosMap.set(ano, set.size);
     }
   }
 
