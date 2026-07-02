@@ -121,7 +121,7 @@ export function ConjuntiviteChartsView({ filters }: Props) {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-sm">Série histórica anual — Conjuntivites CEVESP</CardTitle>
-              <CardDescription className="text-xs">Clique em um ano para ocultá-lo da análise. Linha vermelha = coef. de incidência/100 mil hab. (requer tabela IBGE).</CardDescription>
+              <CardDescription className="text-xs">Clique em um ano para ocultá-lo da análise. Linha vermelha = coef. de incidência/100 mil hab. (mesma escala do eixo à esquerda; requer tabela IBGE).</CardDescription>
             </div>
             <div className="flex items-center gap-2">
               {hasMunicipios && (
@@ -154,16 +154,15 @@ export function ConjuntiviteChartsView({ filters }: Props) {
                   data={filteredAnual}
                   onClick={(d) => { if (d?.activeLabel) toggleYear(String(d.activeLabel)); }}
                   style={{ cursor: "pointer" }}
-                  margin={{ top: 4, right: 48, left: 4, bottom: 4 }}
+                  margin={{ top: 4, right: 16, left: 4, bottom: 4 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="ano" tick={{ fontSize: 11 }} />
-                  <YAxis yAxisId="left" tick={{ fontSize: 11 }} width={60} tickFormatter={fmt} />
-                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} width={44} tickFormatter={(v) => `${Number(v).toFixed(1)}`} domain={[0, "auto"]} />
+                  <YAxis tick={{ fontSize: 11 }} width={56} tickFormatter={fmt} />
                   <Tooltip formatter={(v, name) => name === "Incidência/100k" ? `${Number(v).toFixed(1)} /100k` : fmt(v)} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar yAxisId="left" dataKey={activeKey} fill={activeColor} radius={[3, 3, 0, 0]} />
-                  <Line yAxisId="right" type="monotone" dataKey="Incidência/100k" stroke="#dc2626" strokeWidth={2} dot={filteredAnual.length <= 15} connectNulls />
+                  <Bar dataKey={activeKey} fill={activeColor} radius={[3, 3, 0, 0]} />
+                  <Line type="monotone" dataKey="Incidência/100k" stroke="#dc2626" strokeWidth={2} dot={filteredAnual.length <= 15} connectNulls />
                 </ComposedChart>
               ) : (
                 <BarChart
