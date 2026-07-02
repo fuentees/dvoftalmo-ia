@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Bar,
@@ -103,7 +103,15 @@ export function TracomaChartsView({ filters }: Props) {
   const refTraconet = useRef<HTMLDivElement>(null);
   const refNtc = useRef<HTMLDivElement>(null);
   const refFormas = useRef<HTMLDivElement>(null);
-  const refGve = useRef<HTMLDivElement>(null);
+  const [excludedYears, setExcludedYears] = useState<Set<string>>(new Set());
+
+  function toggleYear(year: string) {
+    setExcludedYears((prev) => {
+      const next = new Set(prev);
+      next.has(year) ? next.delete(year) : next.add(year);
+      return next;
+    });
+  }
 
   if (isLoading) {
     return (
@@ -157,19 +165,9 @@ export function TracomaChartsView({ filters }: Props) {
     total: r.tf + r.ti + r.ts + r.tt + r.co,
   })).filter((r) => r.total > 0);
 
-  // Top GVEs — pivot de byGveYear para rows por ano
-  const gveNames = Array.from(new Set(data.byGveYear.map((r) => r.gve)));
-  const gveAnoMap = new Map<number, Record<string, number>>();
-  for (const r of data.byGveYear) {
-    if (!gveAnoMap.has(r.ano)) gveAnoMap.set(r.ano, {});
-    gveAnoMap.get(r.ano)![r.gve] = r.casos;
-  }
-  const gveSeries = Array.from(gveAnoMap.entries())
-    .sort((a, b) => a[0] - b[0])
-    .map(([ano, vals]) => ({ ano: String(ano), ...vals }));
-
   // Média de positividade para linha de referência
-  const posValues = data.byYear.map((r) => r.positividade).filter((v): v is number => v != null);
+  const ntcSeries = mainSeries.filter((r) => !excludedYears.has(r.ano));
+  const posValues = ntcSeries.map((r) => r["Positividade (%)"]).filter((v): v is number => v != null);
   const avgPos = posValues.length ? posValues.reduce((s, v) => s + v, 0) / posValues.length : null;
 
   const fmtTick = (v: unknown) => Number(v).toLocaleString("pt-BR");
@@ -246,8 +244,8 @@ export function TracomaChartsView({ filters }: Props) {
               <div>
                 <CardTitle className="text-sm">Examinados, positivos e positividade — NOTTRACONET</CardTitle>
                 <CardDescription className="text-xs">
-                  Dados consolidados por localidade. Linha vermelha = positividade (%) no eixo direito.
-                  {avgPos != null && ` Média do período: ${pct(avgPos)}.`}
+                  Clique em um ano para ocultá-lo da análise. Linha vermelha = positividade (%) no eixo direito.
+                  {avgPos != null && ` Média do período visível: ${pct(avgPos)}.`}
                 </CardDescription>
               </div>
               <button onClick={() => exportChartSvg(refNtc.current, "tracoma-nottraconet")} className="flex items-center gap-1 rounded border px-2 py-1 text-xs hover:bg-muted">
@@ -258,7 +256,12 @@ export function TracomaChartsView({ filters }: Props) {
           <CardContent>
             <div ref={refNtc} className="h-72">
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={mainSeries} margin={{ top: 4, right: 52, left: 4, bottom: 4 }}>
+                <ComposedChart
+                  data={ntcSeries}
+                  onClick={(d) => { if (d?.activeLabel) toggleYear(String(d.activeLabel)); }}
+                  style={{ cursor: "pointer" }}
+                  margin={{ top: 4, right: 52, left: 4, bottom: 4 }}
+                >
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="ano" tick={{ fontSize: 11 }} />
                   <YAxis yAxisId="left" tick={{ fontSize: 11 }} width={60} tickFormatter={fmtTick} />
@@ -274,10 +277,24 @@ export function TracomaChartsView({ filters }: Props) {
                   {avgPos != null && (
                     <ReferenceLine yAxisId="right" y={avgPos} stroke="#dc2626" strokeDasharray="4 4" label={{ value: `Média ${pct(avgPos)}`, position: "insideTopRight", fontSize: 10, fill: "#dc2626" }} />
                   )}
-                  <Line yAxisId="right" type="monotone" dataKey="Positividade (%)" stroke="#dc2626" strokeWidth={2} dot={mainSeries.length <= 15} connectNulls />
+                  <Line yAxisId="right" type="monotone" dataKey="Positividade (%)" stroke="#dc2626" strokeWidth={2} dot={ntcSeries.length <= 15} connectNulls />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
+            {excludedYears.size > 0 && (
+              <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                <span className="text-xs text-muted-foreground">Anos ocultos:</span>
+                {[...excludedYears].sort().map((year) => (
+                  <button
+                    key={year}
+                    onClick={() => toggleYear(year)}
+                    className="inline-flex items-center gap-1 rounded-full border bg-muted px-2 py-0.5 text-xs hover:bg-primary/10"
+                  >
+                    {year} <span aria-hidden>×</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -314,48 +331,6 @@ export function TracomaChartsView({ filters }: Props) {
                   <Bar dataKey="TT" stackId="a" fill={FORM_COLORS.TT} />
                   <Bar dataKey="CO" stackId="a" fill={FORM_COLORS.CO} radius={[3, 3, 0, 0]} />
                 </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* ── Chart 4: Top GVEs — série histórica ──────────────────────────── */}
-      {gveSeries.length > 1 && gveNames.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-sm">Série histórica por GVE — Top {gveNames.length} (casos TRACONET)</CardTitle>
-                <CardDescription className="text-xs">Cada linha = uma GVE. Ordenadas pelo maior total de casos individuais no período.</CardDescription>
-              </div>
-              <button onClick={() => exportChartSvg(refGve.current, "tracoma-gves")} className="flex items-center gap-1 rounded border px-2 py-1 text-xs hover:bg-muted">
-                <Download className="h-3 w-3" /> PNG
-              </button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div ref={refGve} className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={gveSeries} margin={{ top: 4, right: 16, left: 4, bottom: 4 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="ano" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} width={52} tickFormatter={fmtTick} />
-                  <Tooltip formatter={(v) => num(v)} />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                  {gveNames.map((gve, i) => (
-                    <Line
-                      key={gve}
-                      type="monotone"
-                      dataKey={gve}
-                      stroke={PALETTE[i % PALETTE.length]}
-                      strokeWidth={2}
-                      dot={gveSeries.length <= 12}
-                      activeDot={{ r: 4 }}
-                      connectNulls
-                    />
-                  ))}
-                </LineChart>
               </ResponsiveContainer>
             </div>
           </CardContent>

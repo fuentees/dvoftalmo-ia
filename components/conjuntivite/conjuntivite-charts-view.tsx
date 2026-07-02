@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, LineChart,
@@ -63,6 +63,15 @@ export function ConjuntiviteChartsView({ filters }: Props) {
   const refAnual = useRef<HTMLDivElement>(null);
   const refMensal = useRef<HTMLDivElement>(null);
   const refGve = useRef<HTMLDivElement>(null);
+  const [excludedYears, setExcludedYears] = useState<Set<string>>(new Set());
+
+  function toggleYear(year: string) {
+    setExcludedYears((prev) => {
+      const next = new Set(prev);
+      next.has(year) ? next.delete(year) : next.add(year);
+      return next;
+    });
+  }
 
   if (isLoading) return (
     <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
@@ -93,14 +102,16 @@ export function ConjuntiviteChartsView({ filters }: Props) {
     Casos: r.casos,
     "Incidência/100k": r.incidencia100k,
   }));
+  const filteredAnual = anualData.filter((r) => !excludedYears.has(r.ano));
   const hasIncidencia = data.byYear.some((r) => r.incidencia100k != null);
 
   // ── Série mensal por ano (pivot mes × anos) ───────────────────────────────
   const years = data.anosComDados;
+  const filteredYears = years.filter((y) => !excludedYears.has(String(y)));
   const mensalData = MONTH_LABELS.map((label, idx) => {
     const mes = idx + 1;
     const point: Record<string, unknown> = { mes: label };
-    for (const ano of years) {
+    for (const ano of filteredYears) {
       const found = data.byYearMonth.find((r) => r.ano === ano && r.mes === mes);
       point[String(ano)] = found?.casos ?? 0;
     }
@@ -148,7 +159,7 @@ export function ConjuntiviteChartsView({ filters }: Props) {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-sm">Série histórica anual — Conjuntivites CEVESP</CardTitle>
-              <CardDescription className="text-xs">Total de casos por ano de notificação (cache Supabase).</CardDescription>
+              <CardDescription className="text-xs">Clique em um ano para ocultá-lo da análise. Total de casos por ano de notificação.</CardDescription>
             </div>
             <button onClick={() => exportChartSvg(refAnual.current, "cevesp-anual")} className="flex items-center gap-1 rounded border px-2 py-1 text-xs hover:bg-muted">
               <Download className="h-3 w-3" /> PNG
@@ -159,7 +170,12 @@ export function ConjuntiviteChartsView({ filters }: Props) {
           <div ref={refAnual} className={hasIncidencia ? "h-72" : "h-64"}>
             <ResponsiveContainer width="100%" height="100%">
               {hasIncidencia ? (
-                <ComposedChart data={anualData} margin={{ top: 4, right: 48, left: 4, bottom: 4 }}>
+                <ComposedChart
+                  data={filteredAnual}
+                  onClick={(d) => { if (d?.activeLabel) toggleYear(String(d.activeLabel)); }}
+                  style={{ cursor: "pointer" }}
+                  margin={{ top: 4, right: 48, left: 4, bottom: 4 }}
+                >
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="ano" tick={{ fontSize: 11 }} />
                   <YAxis yAxisId="left" tick={{ fontSize: 11 }} width={60} tickFormatter={fmt} />
@@ -167,10 +183,15 @@ export function ConjuntiviteChartsView({ filters }: Props) {
                   <Tooltip formatter={(v, name) => name === "Incidência/100k" ? `${Number(v).toFixed(1)} /100k` : fmt(v)} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                   <Bar yAxisId="left" dataKey="Casos" fill="#2563eb" radius={[3, 3, 0, 0]} />
-                  <Line yAxisId="right" type="monotone" dataKey="Incidência/100k" stroke="#dc2626" strokeWidth={2} dot={anualData.length <= 15} connectNulls />
+                  <Line yAxisId="right" type="monotone" dataKey="Incidência/100k" stroke="#dc2626" strokeWidth={2} dot={filteredAnual.length <= 15} connectNulls />
                 </ComposedChart>
               ) : (
-                <BarChart data={anualData} margin={{ top: 4, right: 16, left: 4, bottom: 4 }}>
+                <BarChart
+                  data={filteredAnual}
+                  onClick={(d) => { if (d?.activeLabel) toggleYear(String(d.activeLabel)); }}
+                  style={{ cursor: "pointer" }}
+                  margin={{ top: 4, right: 16, left: 4, bottom: 4 }}
+                >
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="ano" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} width={56} tickFormatter={fmt} />
@@ -180,6 +201,20 @@ export function ConjuntiviteChartsView({ filters }: Props) {
               )}
             </ResponsiveContainer>
           </div>
+          {excludedYears.size > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">Anos ocultos:</span>
+              {[...excludedYears].sort().map((year) => (
+                <button
+                  key={year}
+                  onClick={() => toggleYear(year)}
+                  className="inline-flex items-center gap-1 rounded-full border bg-muted px-2 py-0.5 text-xs hover:bg-primary/10"
+                >
+                  {year} <span aria-hidden>×</span>
+                </button>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -206,7 +241,7 @@ export function ConjuntiviteChartsView({ filters }: Props) {
                   <YAxis tick={{ fontSize: 11 }} width={56} tickFormatter={fmt} />
                   <Tooltip formatter={fmt} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  {years.slice(-6).map((ano, i) => (
+                  {filteredYears.slice(-6).map((ano, i) => (
                     <Line
                       key={ano}
                       type="monotone"
