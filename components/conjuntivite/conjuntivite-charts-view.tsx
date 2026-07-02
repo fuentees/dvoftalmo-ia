@@ -109,10 +109,11 @@ export function ConjuntiviteChartsView({ filters }: Props) {
   const hasIncidencia = data.byYear.some((r) => r.incidencia100k != null);
   const activeKey = metricAnual === "municipios" ? "Municípios notificantes" : "Casos";
   const activeColor = metricAnual === "municipios" ? "#16a34a" : "#2563eb";
-  // Municípios e incidência/100k têm escalas parecidas (0–~2400) → cabem no mesmo
-  // eixo, como no gráfico do CVE. Casos pode chegar a centenas de milhares num ano
-  // de epidemia, então precisa de eixo secundário para a linha não sumir achatada.
-  const singleAxis = metricAnual === "municipios";
+  // Na página de um município específico, casos e incidência/100k têm escalas parecidas
+  // (poucas dezenas/centenas) → cabem no mesmo eixo, como no gráfico do CVE. Na visão
+  // estadual "Casos" pode chegar a centenas de milhares num ano de epidemia, então
+  // mantém o eixo secundário original para a linha não sumir achatada.
+  const singleAxis = Boolean(filters?.municipio);
   const singleAxisMax = Math.max(
     0,
     ...filteredAnual.map((r) => Number(r[activeKey] ?? 0)),
@@ -149,6 +150,7 @@ export function ConjuntiviteChartsView({ filters }: Props) {
                 Clique em um ano para ocultá-lo da análise. Linha vermelha = coef. de incidência/100 mil hab.
                 {singleAxis ? " (mesma escala do eixo à esquerda, como no gráfico do CVE)." : " (eixo direito)."} Requer tabela IBGE.
               </CardDescription>
+              {/* eixo único só quando a página já está filtrada por um município específico */}
             </div>
             <div className="flex items-center gap-2">
               {hasMunicipios && (
@@ -178,6 +180,7 @@ export function ConjuntiviteChartsView({ filters }: Props) {
             <ResponsiveContainer width="100%" height="100%">
               {hasIncidencia ? (
                 <ComposedChart
+                  key={singleAxis ? "chart-single-axis" : "chart-dual-axis"}
                   data={filteredAnual}
                   onClick={(d) => { if (d?.activeLabel) toggleYear(String(d.activeLabel)); }}
                   style={{ cursor: "pointer" }}
@@ -185,24 +188,26 @@ export function ConjuntiviteChartsView({ filters }: Props) {
                 >
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="ano" tick={{ fontSize: 11 }} />
-                  {singleAxis ? (
+                  {singleAxis && (
                     <YAxis
+                      yAxisId="single"
                       tick={{ fontSize: 11 }}
                       width={56}
                       tickFormatter={fmt}
                       ticks={singleAxisTicks}
                       domain={[0, singleAxisTicks[singleAxisTicks.length - 1]]}
                     />
-                  ) : (
-                    <>
-                      <YAxis yAxisId="left" tick={{ fontSize: 11 }} width={60} tickFormatter={fmt} />
-                      <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} width={44} tickFormatter={(v) => `${Number(v).toFixed(1)}`} domain={[0, "auto"]} />
-                    </>
+                  )}
+                  {!singleAxis && (
+                    <YAxis yAxisId="left" tick={{ fontSize: 11 }} width={60} tickFormatter={fmt} />
+                  )}
+                  {!singleAxis && (
+                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} width={44} tickFormatter={(v) => `${Number(v).toFixed(1)}`} domain={[0, "auto"]} />
                   )}
                   <Tooltip formatter={(v, name) => name === "Incidência/100k" ? `${Number(v).toFixed(1)} /100k` : fmt(v)} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar yAxisId={singleAxis ? undefined : "left"} dataKey={activeKey} fill={activeColor} radius={[3, 3, 0, 0]} />
-                  <Line yAxisId={singleAxis ? undefined : "right"} type="monotone" dataKey="Incidência/100k" stroke="#dc2626" strokeWidth={2} dot={filteredAnual.length <= 15} connectNulls />
+                  <Bar yAxisId={singleAxis ? "single" : "left"} dataKey={activeKey} fill={activeColor} radius={[3, 3, 0, 0]} />
+                  <Line yAxisId={singleAxis ? "single" : "right"} type="monotone" dataKey="Incidência/100k" stroke="#dc2626" strokeWidth={2} dot={filteredAnual.length <= 15} connectNulls />
                 </ComposedChart>
               ) : (
                 <BarChart
