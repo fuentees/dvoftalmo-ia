@@ -1025,11 +1025,11 @@ export async function getCevespHistorico(opts?: {
   try {
     const supabase = createAdminClient();
     const { data, error } = await supabase.rpc("cevesp_agrupado", {
-      p_grain: "month", p_metric: "total_casos", p_dim: "gve",
+      p_grain: "month", p_metric: "total_casos", p_dim: null,
       p_ano_start: opts?.yearStart ?? null, p_ano_end: opts?.yearEnd ?? null,
       p_gve: opts?.gve ?? null, p_municipio: opts?.municipio ?? null,
       p_se_start: null, p_se_end: null
-    }).limit(10000);
+    });
     if (!error && data && Array.isArray(data) && data.length > 0) {
       usedRpc = true;
       for (const r of data as AggRow[]) {
