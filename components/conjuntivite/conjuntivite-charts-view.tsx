@@ -21,19 +21,6 @@ const MONTH_LABELS = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out
 
 function num(v: unknown) { return Number(v ?? 0).toLocaleString("pt-BR"); }
 
-function KpiCard({ label, value, detail }: { label: string; value: string | number; detail?: string }) {
-  return (
-    <Card>
-      <CardContent className="pt-4 pb-3">
-        <div className="text-xs text-muted-foreground">{label}</div>
-        <div className="mt-1 text-2xl font-semibold tabular-nums">
-          {typeof value === "number" ? num(value) : value}
-        </div>
-        {detail && <div className="mt-1 text-xs text-muted-foreground">{detail}</div>}
-      </CardContent>
-    </Card>
-  );
-}
 
 type Props = {
   filters?: { gve?: string; municipio?: string; yearStart?: string; yearEnd?: string };
@@ -120,27 +107,9 @@ export function ConjuntiviteChartsView({ filters }: Props) {
   const hasMensal = data.byYearMonth.length > 0;
 
   const fmt = (v: unknown) => num(v);
-  const primYear = years[years.length - 1];
-  const secYear = years[years.length - 2];
 
   return (
     <div className="space-y-6 p-6">
-      {/* ── KPIs ─────────────────────────────────────────────────────────── */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard
-          label="Período"
-          value={years.length > 0 ? `${years[0]}–${years[years.length - 1]}` : "—"}
-          detail={`${years.length} ano(s) no cache`}
-        />
-        <KpiCard label="Total de casos" value={data.totalCasos} detail="Soma do campo TotalCaso no cache" />
-        <KpiCard
-          label={`Casos ${primYear ?? "último ano"}`}
-          value={data.byYear.find((r) => r.ano === primYear)?.casos ?? 0}
-          detail={secYear ? `vs ${secYear}: ${num(data.byYear.find((r) => r.ano === secYear)?.casos ?? 0)}` : undefined}
-        />
-        <KpiCard label="GVEs com registro" value={new Set(data.byGveYear.map((r) => r.gve)).size} detail="No período selecionado" />
-      </div>
-
       {/* ── Chart 1: Casos por ano ────────────────────────────────────────── */}
       <Card>
         <CardHeader className="pb-2">
