@@ -21,13 +21,11 @@ const MONTH_LABELS = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out
 
 function num(v: unknown) { return Number(v ?? 0).toLocaleString("pt-BR"); }
 
-// Gera ticks redondos e igualmente espaçados (0, 300, 600, ...), como no gráfico do CVE,
-// em vez de depender do cálculo automático de "nice ticks" do recharts (que pode degenerar
-// com poucos pontos ou valores repetidos). Arredonda o passo para o múltiplo de 100 mais
-// próximo — para o intervalo típico dessa série (0–2400) isso já resulta em passos de 300.
-function niceTicks(max: number, targetCount = 8): number[] {
-  if (!Number.isFinite(max) || max <= 0) return [0, 100];
-  const step = Math.max(100, Math.ceil(max / targetCount / 100) * 100);
+// Gera ticks igualmente espaçados (0, 200, 400, ...), como no gráfico do CVE, em vez de
+// depender do cálculo automático de "nice ticks" do recharts (que pode degenerar com
+// poucos pontos ou valores repetidos).
+function niceTicks(max: number, step = 200): number[] {
+  if (!Number.isFinite(max) || max <= 0) return [0, step];
   const ticks: number[] = [];
   for (let v = 0; v <= max + step; v += step) ticks.push(v);
   return ticks;
