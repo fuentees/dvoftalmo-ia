@@ -7,6 +7,7 @@ import { AlertTriangle, Download, FileText, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { RateMap } from "@/components/epidemiology/rate-map";
+import { TracomaChartsView } from "@/components/tracoma/tracoma-charts-view";
 
 type MuniRow = {
   codigoIbge: string;
@@ -587,6 +588,21 @@ export function TracomaAnaliseView({ externalFilters }: { externalFilters?: Trac
                 tone={muniAcimaMeta > 0 ? "red" : "green"}
               />
             </div>
+          </div>
+
+          <div className="space-y-4">
+            <SectionIntro
+              title="Série histórica"
+              description="Evolução anual de casos, examinados e positividade. Ajuda a contextualizar o recorte atual na tendência de longo prazo."
+            />
+            <TracomaChartsView
+              filters={{
+                gve: gve || undefined,
+                municipio: municipio || undefined,
+                yearStart: yearStart ? String(yearStart) : undefined,
+                yearEnd: yearEnd ? String(yearEnd) : undefined,
+              }}
+            />
           </div>
 
           <DemographicsPanel data={demographics.data} loading={demographics.isLoading} />
