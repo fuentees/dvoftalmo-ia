@@ -21,6 +21,20 @@ const MONTH_LABELS = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out
 
 function num(v: unknown) { return Number(v ?? 0).toLocaleString("pt-BR"); }
 
+// Gera ticks redondos e igualmente espaçados (0, 300, 600, ...), como no gráfico do CVE,
+// em vez de depender do cálculo automático de "nice ticks" do recharts (que pode degenerar
+// com poucos pontos ou valores repetidos).
+function niceTicks(max: number, targetCount = 8): number[] {
+  if (!Number.isFinite(max) || max <= 0) return [0, 1];
+  const rawStep = max / targetCount;
+  const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const residual = rawStep / magnitude;
+  const step = residual > 5 ? 10 * magnitude : residual > 2 ? 5 * magnitude : residual > 1 ? 2 * magnitude : magnitude;
+  const ticks: number[] = [];
+  for (let v = 0; v <= max + step; v += step) ticks.push(Math.round(v));
+  return ticks;
+}
+
 
 type Props = {
   filters?: { gve?: string; municipio?: string; yearStart?: string; yearEnd?: string };
@@ -99,6 +113,12 @@ export function ConjuntiviteChartsView({ filters }: Props) {
   // eixo, como no gráfico do CVE. Casos pode chegar a centenas de milhares num ano
   // de epidemia, então precisa de eixo secundário para a linha não sumir achatada.
   const singleAxis = metricAnual === "municipios";
+  const singleAxisMax = Math.max(
+    0,
+    ...filteredAnual.map((r) => Number(r[activeKey] ?? 0)),
+    ...filteredAnual.map((r) => Number(r["Incidência/100k"] ?? 0))
+  );
+  const singleAxisTicks = niceTicks(singleAxisMax);
 
   // ── Série mensal por ano (pivot mes × anos) ───────────────────────────────
   const years = data.anosComDados;
@@ -166,7 +186,13 @@ export function ConjuntiviteChartsView({ filters }: Props) {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="ano" tick={{ fontSize: 11 }} />
                   {singleAxis ? (
-                    <YAxis tick={{ fontSize: 11 }} width={56} tickFormatter={fmt} tickCount={9} domain={[0, "auto"]} />
+                    <YAxis
+                      tick={{ fontSize: 11 }}
+                      width={56}
+                      tickFormatter={fmt}
+                      ticks={singleAxisTicks}
+                      domain={[0, singleAxisTicks[singleAxisTicks.length - 1]]}
+                    />
                   ) : (
                     <>
                       <YAxis yAxisId="left" tick={{ fontSize: 11 }} width={60} tickFormatter={fmt} />
