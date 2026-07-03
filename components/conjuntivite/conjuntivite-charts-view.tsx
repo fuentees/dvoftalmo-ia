@@ -159,7 +159,7 @@ export function ConjuntiviteChartsView({ filters }: Props) {
                   style={{ cursor: "pointer" }}
                   margin={{ top: 4, right: singleAxis ? 16 : 48, left: 4, bottom: 4 }}
                 >
-                  <CartesianGrid strokeDasharray="3 3" />
+                  <CartesianGrid vertical={false} stroke="#e5e7eb" />
                   <XAxis dataKey="ano" tick={{ fontSize: 11 }} />
                   {singleAxis && (
                     <YAxis
@@ -189,7 +189,7 @@ export function ConjuntiviteChartsView({ filters }: Props) {
                   style={{ cursor: "pointer" }}
                   margin={{ top: 4, right: 16, left: 4, bottom: 4 }}
                 >
-                  <CartesianGrid strokeDasharray="3 3" />
+                  <CartesianGrid vertical={false} stroke="#e5e7eb" />
                   <XAxis dataKey="ano" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} width={56} tickFormatter={fmt} />
                   <Tooltip formatter={fmt} />

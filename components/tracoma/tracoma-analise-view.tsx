@@ -675,7 +675,6 @@ export function TracomaAnaliseView({ externalFilters }: { externalFilters?: Trac
                       { key: "positivos", label: "Positivos", percentKey: "prevalencia", percentDecimals: 2 },
                       { key: "prevalencia", label: "Prevalência", decimals: 2, suffix: "%" },
                       { key: "taxaDeteccao100k", label: "Detecção/100 mil", decimals: 2 },
-                      { key: "coberturaExame", label: "Cobertura", decimals: 2, suffix: "%" },
                       { key: "populacao", label: rates.data!.isPeriod ? `Pop. IBGE (média ${rates.data!.periodStart}–${rates.data!.periodEnd})` : `Pop. IBGE${rates.data!.populationYear ? ` ${rates.data!.populationYear}` : ""}` }
                     ]
                   : [
@@ -684,7 +683,6 @@ export function TracomaAnaliseView({ externalFilters }: { externalFilters?: Trac
                       { key: "positivos", label: "Positivos", percentKey: "prevalencia", percentDecimals: 2 },
                       { key: "prevalencia", label: "Prevalência", decimals: 2, suffix: "%" },
                       { key: "taxaDeteccao100k", label: "Detecção/100 mil", decimals: 2 },
-                      { key: "coberturaExame", label: "Cobertura", decimals: 2, suffix: "%" },
                       { key: "populacao", label: rates.data!.isPeriod ? `Pop. IBGE (média ${rates.data!.periodStart}–${rates.data!.periodEnd})` : `Pop. IBGE${rates.data!.populationYear ? ` ${rates.data!.populationYear}` : ""}` }
                     ]
               }
