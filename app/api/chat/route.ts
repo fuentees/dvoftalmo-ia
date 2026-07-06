@@ -7,6 +7,7 @@ import { runCevespAnalysis } from "@/services/cevesp-analytics";
 import { runTracomaContextQuery } from "@/services/tracoma-analytics";
 import { runSinanTracomaContextQuery } from "@/services/sinan-tracoma";
 import { runCosAgent } from "@/services/cos-agent";
+import { runEndemicChannel } from "@/services/cevesp-endemic";
 import type { AiSource } from "@/lib/types";
 
 export type ChartData = {
@@ -192,11 +193,35 @@ export async function POST(request: NextRequest) {
   await Promise.allSettled([
     (async () => {
       if (shouldQueryCevesp(body.agent, body.message)) {
-        const result = await runCevespAnalysis(body.message);
+        const [result, endemicPts] = await Promise.all([
+          runCevespAnalysis(body.message),
+          body.agent === "epidemiologico" || body.agent === "cos"
+            ? runEndemicChannel().catch(() => null)
+            : Promise.resolve(null)
+        ]);
         const rows = result.rows?.slice(0, 60) ?? [];
         const cols = result.columns ?? Object.keys(rows[0] ?? {});
         cevespContext = formatCevespContext(result);
         cevespChart = extractChartData(rows, cols, result.metricLabel ?? "Dados", result.timeLabel ?? "");
+
+        // Append epidemic zone summary for agents that need it
+        if (endemicPts && endemicPts.length > 0) {
+          const withData = endemicPts.filter((p) => p.currentYear !== null);
+          if (withData.length > 0) {
+            const lastSE = Math.max(...withData.map((p) => p.se));
+            const pt = endemicPts.find((p) => p.se === lastSE)!;
+            const cur = pt.currentYear!;
+            const zona = cur > pt.q3 ? "EPIDEMIA" : cur > pt.q1 ? "ALERTA" : "SUCESSO";
+            const weeksAbove = withData.filter((p) => p.currentYear! > p.q3).length;
+            cevespContext += `\n\nCANAL ENDEMICO — SE ${lastSE} (ano atual):
+Zona: ${zona}
+Casos na SE: ${cur}
+Q1 historico (limite sucesso): ${pt.q1}
+Mediana historica (P50): ${pt.median}
+Q3 historico (limite alerta): ${pt.q3}
+Semanas acima do Q3 no ano: ${weeksAbove}`;
+          }
+        }
       }
     })(),
     (async () => {

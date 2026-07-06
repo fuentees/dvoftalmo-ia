@@ -173,15 +173,26 @@ export function CanalEndemicoView({ filters }: Props) {
               {kpis.acima} {kpis.acima === 1 ? "semana acima" : "semanas acima"} do Q3 no ano atual
             </div>
           )}
-          <Button
-            size="sm"
-            variant="outline"
-            className="ml-auto h-8 gap-1.5 text-xs"
-            onClick={() => { window.location.href = `/api/cevesp/relatorio${qs ? `?${qs}` : ""}`; }}
-          >
-            <Download className="h-3.5 w-3.5" />
-            Exportar relatório CSV
-          </Button>
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 gap-1.5 text-xs"
+              onClick={() => { window.location.href = `/api/cevesp/canal-endemico/export${qs ? `?${qs}` : ""}`; }}
+            >
+              <Download className="h-3.5 w-3.5" />
+              Exportar XLSX
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 gap-1.5 text-xs"
+              onClick={() => { window.location.href = `/api/cevesp/relatorio${qs ? `?${qs}` : ""}`; }}
+            >
+              <Download className="h-3.5 w-3.5" />
+              Exportar CSV
+            </Button>
+          </div>
         </div>
       )}
 

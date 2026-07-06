@@ -12,6 +12,16 @@ import {
   WidthType
 } from "docx";
 
+export interface CanalEndemicoInput {
+  lastSE: number;
+  zona: "sucesso" | "alerta" | "epidemia";
+  currentCases: number;
+  q1: number;
+  median: number;
+  q3: number;
+  weeksAboveQ3: number;
+}
+
 export interface BulletinInput {
   se: number;
   year: number;
@@ -34,6 +44,7 @@ export interface BulletinInput {
   alerts: Array<{ severity: string; title: string; description: string }>;
   interpretation: string[];
   recommendations: string[];
+  canalEndemico?: CanalEndemicoInput;
 }
 
 const HEADER_FILL = "d1faf5";
@@ -173,8 +184,35 @@ export async function generateBulletinDocx(data: BulletinInput): Promise<Buffer>
           }),
           spacer(),
 
-          // ── 2. Distribuicao demografica ────────────────────────
-          sectionHeading("2. DISTRIBUICAO POR SEXO E FAIXA ETARIA"),
+          // ── 2. Canal endemico (se disponivel) ─────────────────
+          ...(data.canalEndemico
+            ? [
+                sectionHeading("2. CANAL ENDEMICO — SITUACAO DE ALERTA"),
+                new Table({
+                  width: { size: 100, type: WidthType.PERCENTAGE },
+                  rows: [
+                    new TableRow({
+                      children: [headerCell("Parametro"), headerCell("Valor"), headerCell("Parametro"), headerCell("Valor")]
+                    }),
+                    kpiRow("SE de referencia", data.canalEndemico.lastSE, "Zona atual", data.canalEndemico.zona.toUpperCase()),
+                    kpiRow("Casos na SE", data.canalEndemico.currentCases, "Mediana historica (P50)", data.canalEndemico.median),
+                    kpiRow("Limite sucesso (P25)", data.canalEndemico.q1, "Limite alerta (P75)", data.canalEndemico.q3),
+                    kpiRow("Semanas acima do P75 no ano", data.canalEndemico.weeksAboveQ3, "", ""),
+                  ]
+                }),
+                bodyText(
+                  data.canalEndemico.zona === "epidemia"
+                    ? `ATENCAO: a SE ${data.canalEndemico.lastSE} ultrapassou o limite superior do canal endemico (Q3=${data.canalEndemico.q3}), configurando zona epidemica. Acionar protocolos de investigacao e controle.`
+                    : data.canalEndemico.zona === "alerta"
+                    ? `A SE ${data.canalEndemico.lastSE} encontra-se na zona de alerta (entre P25=${data.canalEndemico.q1} e P75=${data.canalEndemico.q3}). Intensificar monitoramento e preparar medidas preventivas.`
+                    : `A SE ${data.canalEndemico.lastSE} encontra-se na zona de sucesso (abaixo de P25=${data.canalEndemico.q1}). Situacao dentro do esperado historicamente.`
+                ),
+                spacer()
+              ]
+            : []),
+
+          // ── 3. Distribuicao demografica ────────────────────────
+          sectionHeading("3. DISTRIBUICAO POR SEXO E FAIXA ETARIA"),
           new Table({
             width: { size: 100, type: WidthType.PERCENTAGE },
             rows: [
@@ -205,8 +243,8 @@ export async function generateBulletinDocx(data: BulletinInput): Promise<Buffer>
           }),
           spacer(),
 
-          // ── 3. Municipios ──────────────────────────────────────
-          sectionHeading("3. MUNICIPIOS COM MAIOR NUMERO DE CASOS"),
+          // ── 4. Municipios ──────────────────────────────────────
+          sectionHeading("4. MUNICIPIOS COM MAIOR NUMERO DE CASOS"),
           new Table({
             width: { size: 100, type: WidthType.PERCENTAGE },
             rows: [
@@ -220,8 +258,8 @@ export async function generateBulletinDocx(data: BulletinInput): Promise<Buffer>
           }),
           spacer(),
 
-          // ── 4. GVEs ────────────────────────────────────────────
-          sectionHeading("4. GVEs COM MAIOR NUMERO DE CASOS"),
+          // ── 5. GVEs ────────────────────────────────────────────
+          sectionHeading("5. GVEs COM MAIOR NUMERO DE CASOS"),
           new Table({
             width: { size: 100, type: WidthType.PERCENTAGE },
             rows: [
@@ -235,8 +273,8 @@ export async function generateBulletinDocx(data: BulletinInput): Promise<Buffer>
           }),
           spacer(),
 
-          // ── 5. Alertas ─────────────────────────────────────────
-          sectionHeading("5. ALERTAS EPIDEMIOLOGICOS"),
+          // ── 6. Alertas ─────────────────────────────────────────
+          sectionHeading("6. ALERTAS EPIDEMIOLOGICOS"),
           new Table({
             width: { size: 100, type: WidthType.PERCENTAGE },
             rows: [
@@ -248,13 +286,13 @@ export async function generateBulletinDocx(data: BulletinInput): Promise<Buffer>
           }),
           spacer(),
 
-          // ── 6. Situacao epidemiologica ─────────────────────────
-          sectionHeading("6. SITUACAO EPIDEMIOLOGICA"),
+          // ── 7. Situacao epidemiologica ─────────────────────────
+          sectionHeading("7. SITUACAO EPIDEMIOLOGICA"),
           ...data.interpretation.map(bodyText),
           spacer(),
 
-          // ── 7. Recomendacoes ───────────────────────────────────
-          sectionHeading("7. RECOMENDACOES"),
+          // ── 8. Recomendacoes ───────────────────────────────────
+          sectionHeading("8. RECOMENDACOES"),
           ...data.recommendations.map((text, i) => bodyText(`${i + 1}. ${text}`)),
           spacer(),
 
