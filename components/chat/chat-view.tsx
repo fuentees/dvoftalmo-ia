@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Check, Download, FileUp, List, Pencil, Search, Send, Trash2, X } from "lucide-react";
+import { Bot, Check, Download, FileUp, List, Mic, MicOff, Pencil, Search, Send, Trash2, Volume2, VolumeX, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell,
@@ -147,6 +147,28 @@ const agents: Array<{ value: AgentKind; label: string }> = [
   { value: "cos", label: "Agente COS" }
 ];
 
+// ── Voice helpers ─────────────────────────────────────────────────────────────
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnySpeechRecognition = any;
+declare global {
+  interface Window {
+    SpeechRecognition?: AnySpeechRecognition;
+    webkitSpeechRecognition?: AnySpeechRecognition;
+  }
+}
+
+function stripMarkdownForSpeech(text: string) {
+  return text
+    .replace(/#{1,6}\s+/gm, "")
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/\*(.*?)\*/g, "$1")
+    .replace(/`{1,3}[^`]*`{1,3}/g, "")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/---+/g, "")
+    .replace(/\|/g, "")
+    .trim();
+}
+
 export function ChatView() {
   const queryClient = useQueryClient();
   const [conversationId, setConversationId] = useState<string | undefined>();
@@ -156,6 +178,9 @@ export function ChatView() {
   const [localMessages, setLocalMessages] = useState<Message[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
+  const [isListening, setIsListening] = useState(false);
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
+  const recognitionRef = useRef<AnySpeechRecognition>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -271,6 +296,60 @@ export function ChatView() {
       setLocalMessages((items) => [...items, notice]);
     }
   });
+
+  // Cleanup speech on unmount
+  useEffect(() => {
+    return () => {
+      window.speechSynthesis?.cancel();
+      recognitionRef.current?.stop();
+    };
+  }, []);
+
+  function toggleListen() {
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      return;
+    }
+    const SR = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+    if (!SR) {
+      alert("Reconhecimento de voz não disponível. Use Chrome ou Edge.");
+      return;
+    }
+    const recognition = new SR();
+    recognition.lang = "pt-BR";
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setMessage((prev) => prev ? `${prev} ${transcript}` : transcript);
+    };
+    recognition.onend  = () => setIsListening(false);
+    recognition.onerror = () => setIsListening(false);
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsListening(true);
+  }
+
+  function speakMessage(id: string, content: string) {
+    if (speakingId === id) {
+      window.speechSynthesis.cancel();
+      setSpeakingId(null);
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const plain = stripMarkdownForSpeech(content);
+    const utterance = new SpeechSynthesisUtterance(plain);
+    utterance.lang = "pt-BR";
+    utterance.rate = 1.0;
+    const ptVoice = window.speechSynthesis.getVoices().find((v) => v.lang.startsWith("pt"));
+    if (ptVoice) utterance.voice = ptVoice;
+    utterance.onend   = () => setSpeakingId(null);
+    utterance.onerror = () => setSpeakingId(null);
+    setSpeakingId(id);
+    window.speechSynthesis.speak(utterance);
+  }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
     if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
@@ -589,6 +668,19 @@ export function ChatView() {
                 {item.role === "assistant" && item.chartData && (
                   <InlineChart chartData={item.chartData} />
                 )}
+                {item.role === "assistant" && item.content && !isSending && (
+                  <div className="mt-2 flex justify-end">
+                    <button
+                      onClick={() => speakMessage(item.id, item.content)}
+                      title={speakingId === item.id ? "Parar leitura" : "Ouvir resposta"}
+                      className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                    >
+                      {speakingId === item.id
+                        ? <><VolumeX className="h-3 w-3" /> Parar</>
+                        : <><Volume2 className="h-3 w-3" /> Ouvir</>}
+                    </button>
+                  </div>
+                )}
                 {item.sources && item.sources.length > 0 && (
                   <div className="mt-3 border-t pt-3 text-xs text-muted-foreground">
                     Fontes: {item.sources.map((s) => s.title).join(", ")}
@@ -640,6 +732,17 @@ export function ChatView() {
               ) : (
                 <FileUp className="h-4 w-4" />
               )}
+            </Button>
+            <Button
+              variant={isListening ? "destructive" : "outline"}
+              size="icon"
+              type="button"
+              title={isListening ? "Parar gravação" : "Falar mensagem (pt-BR)"}
+              onClick={toggleListen}
+            >
+              {isListening
+                ? <MicOff className="h-4 w-4 animate-pulse" />
+                : <Mic className="h-4 w-4" />}
             </Button>
             <Textarea
               value={message}
