@@ -110,26 +110,22 @@ export function CevespSyncCard() {
   async function handleExport(mode: "year" | "full") {
     setExporting(true);
     setMsg(null);
+    const url = mode === "full"
+      ? "/api/admin/cevesp-export?full=true"
+      : `/api/admin/cevesp-export?year=${exportYear}`;
     try {
-      const url = mode === "full"
-        ? "/api/admin/cevesp-export?full=true"
-        : `/api/admin/cevesp-export?year=${exportYear}`;
-      const response = await fetch(url);
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({})) as { error?: string };
+      // Probe the response status to surface auth/connection errors before
+      // handing the download to the browser. The body is discarded — the real
+      // download runs via window.location.href (no JS memory buffering).
+      const ctrl = new AbortController();
+      const probe = await fetch(url, { signal: ctrl.signal });
+      if (!probe.ok) {
+        const err = await probe.json().catch(() => ({})) as { error?: string };
         throw new Error(err.error ?? "Erro ao exportar.");
       }
-      const count = response.headers.get("X-Row-Count") ?? "?";
-      const blob = await response.blob();
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = mode === "full" ? "cevesp-export-completo.json" : `cevesp-export-${exportYear}.json`;
-      link.click();
-      URL.revokeObjectURL(link.href);
-      setMsg({
-        type: "success",
-        text: `${Number(count).toLocaleString("pt-BR")} registros exportados. Leve o arquivo para casa e use "Importar".`
-      });
+      ctrl.abort(); // close probe body; fetch already resolved, so no AbortError thrown
+      window.location.href = url;
+      setMsg({ type: "success", text: `Download iniciado. Leve o arquivo para casa e use "Importar".` });
     } catch (error) {
       setMsg({ type: "error", text: (error as Error).message });
     } finally {
@@ -287,7 +283,7 @@ export function CevespSyncCard() {
             </Button>
             <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => handleExport("full")} disabled={exporting || importing}>
               <Download className="mr-1.5 h-3.5 w-3.5" />
-              Exportar todos os anos
+              Todos os anos
             </Button>
           </div>
           <p className="text-[11px] text-muted-foreground">
@@ -340,7 +336,7 @@ export function CevespSyncCard() {
               value={downloadYear}
               onChange={e => setDownloadYear(e.target.value)}
               disabled={downloading || importing || exporting}
-              className="h-8 rounded-md border bg-background px-2 text-xs"
+              className="h-8 min-w-0 rounded-md border bg-background px-2 text-xs"
             >
               <option value="all">Todos os anos</option>
               {(status?.years ?? []).map(y => (

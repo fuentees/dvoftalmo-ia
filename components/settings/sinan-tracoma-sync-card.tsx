@@ -262,9 +262,9 @@ export function SinanTracomaSyncCard() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <select className="h-8 rounded-md border bg-background px-2 text-xs" value={bank} onChange={event => setBank(event.target.value as Bank)}>
-            <option value="traconet">TRACONET - Casos individuais (TF/TT/sexo/idade)</option>
-            <option value="nottraconet">NOTTRACONET - Consolidado (nº examinados/positivos)</option>
+          <select className="h-8 min-w-0 flex-1 rounded-md border bg-background px-2 text-xs" value={bank} onChange={event => setBank(event.target.value as Bank)}>
+            <option value="traconet">TRACONET — casos individuais</option>
+            <option value="nottraconet">NOTTRACONET — consolidado</option>
           </select>
           <input
             ref={fileRef}

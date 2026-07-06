@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { canManageKnowledgeBase } from "@/lib/permissions";
+import { isAuthDisabledForDev } from "@/lib/supabase/auth";
 import type { UserRole } from "@/lib/types";
 
 const roles: UserRole[] = ["admin", "coordenador", "supervisor", "usuario"];
@@ -10,6 +11,8 @@ function asUserRole(value: unknown): UserRole | undefined {
 }
 
 export async function requireCevespSyncPermission(supabase: SupabaseClient, userId: string) {
+  if (isAuthDisabledForDev()) return null;
+
   const { data, error } = await supabase
     .from("profiles")
     .select("role")
