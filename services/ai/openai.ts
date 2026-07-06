@@ -21,3 +21,14 @@ export async function createEmbedding(input: string) {
 
   return response.data[0].embedding;
 }
+
+/** Batch-embed multiple texts in a single API call (max ~2048 per request). */
+export async function createEmbeddingBatch(inputs: string[]): Promise<number[][]> {
+  if (inputs.length === 0) return [];
+  const response = await getOpenAI().embeddings.create({
+    model: embeddingModel,
+    input: inputs
+  });
+  // OpenAI preserves input order in response.data
+  return response.data.map((d) => d.embedding);
+}

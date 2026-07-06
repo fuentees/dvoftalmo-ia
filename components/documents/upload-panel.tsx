@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle, Loader2, UploadCloud } from "lucide-react";
+import { Clock, Loader2, UploadCloud } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -10,17 +10,15 @@ import { Label } from "@/components/ui/label";
 import { categoryLabels, type DocumentCategory } from "@/lib/types";
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
-const STEPS = ["Enviando arquivo...", "Extraindo texto...", "Fragmentando conteúdo...", "Gerando embeddings..."];
 
 export function UploadPanel() {
   const queryClient = useQueryClient();
-  const [file, setFile] = useState<File | null>(null);
-  const [title, setTitle] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [file, setFile]         = useState<File | null>(null);
+  const [title, setTitle]       = useState("");
   const [category, setCategory] = useState<DocumentCategory>("outros");
-  const [tags, setTags] = useState("");
+  const [tags, setTags]         = useState("");
   const [clientError, setClientError] = useState<string | null>(null);
-  const [uploadStep, setUploadStep] = useState(0);
-  const stepTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const upload = useMutation({
     mutationFn: async () => {
@@ -32,10 +30,10 @@ export function UploadPanel() {
       data.append("tags", tags);
       const response = await fetch("/api/documents/upload", { method: "POST", body: data });
       if (!response.ok) {
-        const body = await response.json().catch(() => ({ error: "Erro desconhecido" }));
-        throw new Error(body.error ?? "Falha no upload.");
+        const body = await response.json().catch(() => ({ error: "Erro desconhecido" })) as Record<string, unknown>;
+        throw new Error(String(body.error ?? "Falha no upload."));
       }
-      return response.json() as Promise<{ id: string; chunks: number }>;
+      return response.json() as Promise<{ id: string; status: string }>;
     },
     onSuccess: () => {
       setFile(null);
@@ -43,24 +41,10 @@ export function UploadPanel() {
       setTags("");
       setCategory("outros");
       setClientError(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
       queryClient.invalidateQueries({ queryKey: ["documents"] });
     }
   });
-
-  useEffect(() => {
-    if (upload.isPending) {
-      setUploadStep(0);
-      const delays = [1500, 4000, 7000];
-      stepTimers.current = delays.map((ms, index) => setTimeout(() => setUploadStep(index + 1), ms));
-    } else {
-      stepTimers.current.forEach(clearTimeout);
-      stepTimers.current = [];
-      setUploadStep(0);
-    }
-    return () => {
-      stepTimers.current.forEach(clearTimeout);
-    };
-  }, [upload.isPending]);
 
   function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const selected = event.target.files?.[0] ?? null;
@@ -75,10 +59,7 @@ export function UploadPanel() {
 
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
-    if (!file) {
-      setClientError("Selecione um arquivo.");
-      return;
-    }
+    if (!file) { setClientError("Selecione um arquivo."); return; }
     setClientError(null);
     upload.mutate();
   }
@@ -90,7 +71,7 @@ export function UploadPanel() {
       <CardHeader>
         <CardTitle>Upload para base de conhecimento</CardTitle>
         <CardDescription>
-          PDF, DOCX, XLSX, CSV e TXT - até 50 MB. O conteúdo será indexado para consulta semântica no Chat.
+          PDF, DOCX, XLSX, CSV e TXT · até 50 MB. O arquivo é enviado imediatamente; a indexação semântica acontece em segundo plano.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -99,7 +80,7 @@ export function UploadPanel() {
             <Label>Título</Label>
             <Input
               value={title}
-              onChange={event => setTitle(event.target.value)}
+              onChange={(event) => setTitle(event.target.value)}
               placeholder="Manual, ofício, relatório..."
             />
           </div>
@@ -108,7 +89,7 @@ export function UploadPanel() {
             <select
               className="h-10 w-full rounded-md border bg-background px-3 text-sm"
               value={category}
-              onChange={event => setCategory(event.target.value as DocumentCategory)}
+              onChange={(event) => setCategory(event.target.value as DocumentCategory)}
             >
               {Object.entries(categoryLabels).map(([value, label]) => (
                 <option key={value} value={value}>{label}</option>
@@ -119,39 +100,31 @@ export function UploadPanel() {
             <Label>Tags</Label>
             <Input
               value={tags}
-              onChange={event => setTags(event.target.value)}
+              onChange={(event) => setTags(event.target.value)}
               placeholder="tracoma, campo, município (separar por vírgula)"
             />
           </div>
           <div className="space-y-1">
             <Label>Arquivo</Label>
-            <Input type="file" onChange={handleFileChange} />
+            <Input ref={fileInputRef} type="file" onChange={handleFileChange} />
             {file && (
               <p className="text-xs text-muted-foreground">
-                {file.name} - {(file.size / 1024).toFixed(0)} KB
+                {file.name} · {(file.size / 1024).toFixed(0)} KB
               </p>
             )}
           </div>
 
           <div className="flex items-center gap-4 md:col-span-2">
             <Button type="submit" disabled={upload.isPending}>
-              {upload.isPending ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  {STEPS[uploadStep]}
-                </>
-              ) : (
-                <>
-                  <UploadCloud className="h-4 w-4" />
-                  Enviar e indexar
-                </>
-              )}
+              {upload.isPending
+                ? <><Loader2 className="h-4 w-4 animate-spin" /> Enviando...</>
+                : <><UploadCloud className="h-4 w-4" /> Enviar e indexar</>}
             </Button>
 
-            {upload.isSuccess && upload.data && (
-              <span className="flex items-center gap-1 text-sm text-green-700">
-                <CheckCircle className="h-4 w-4" />
-                {upload.data.chunks} trechos indexados com sucesso.
+            {upload.isSuccess && (
+              <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Clock className="h-4 w-4 text-blue-500" />
+                Arquivo enviado. Indexação em andamento — acompanhe na lista abaixo.
               </span>
             )}
           </div>

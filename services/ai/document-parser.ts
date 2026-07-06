@@ -8,69 +8,108 @@ const textMimeTypes = new Set([
   "text/markdown"
 ]);
 
-export async function extractTextFromFile(file: File): Promise<string> {
-  // Plain text types
-  if (textMimeTypes.has(file.type) || file.name.endsWith(".csv") || file.name.endsWith(".txt") || file.name.endsWith(".md")) {
-    return file.text();
+/** Extract plain text from a Buffer. Use in background contexts (no File/Request available). */
+export async function extractTextFromBuffer(
+  buffer: Buffer,
+  mimeType: string,
+  fileName: string
+): Promise<string> {
+  const isText = textMimeTypes.has(mimeType) ||
+    /\.(csv|txt|md)$/i.test(fileName);
+  if (isText) return buffer.toString("utf-8");
+
+  if (/\.(xlsx|xls)$/i.test(fileName)) {
+    const rows = (await readXlsxFile(buffer as never) as unknown) as Array<Array<unknown>>;
+    return `Planilha: ${fileName}\n${rows.map((row) => row.join("\t")).join("\n")}`;
   }
 
-  // Excel
-  if (file.name.endsWith(".xlsx") || file.name.endsWith(".xls")) {
-    const buffer = await file.arrayBuffer();
-    const rows = (await readXlsxFile(Buffer.from(buffer) as never) as unknown) as Array<Array<unknown>>;
-    return `Planilha: ${file.name}\n${rows.map((row) => row.join("\t")).join("\n")}`;
-  }
-
-  // PDF — uses pdf-parse (Node.js only, kept out of webpack via serverExternalPackages)
-  if (file.type === "application/pdf" || file.name.endsWith(".pdf")) {
+  if (mimeType === "application/pdf" || /\.pdf$/i.test(fileName)) {
     try {
       const pdfParse = (await import("pdf-parse")).default;
-      const buffer = Buffer.from(await file.arrayBuffer());
       const result = await pdfParse(buffer);
-      return result.text.trim() || `[PDF sem texto extraível: ${file.name}]`;
+      return result.text.trim() || `[PDF sem texto extraível: ${fileName}]`;
     } catch {
-      return `[Erro ao extrair texto do PDF: ${file.name}. Verifique se o arquivo não está protegido por senha.]`;
+      return `[Erro ao extrair texto do PDF: ${fileName}. Verifique se o arquivo não está protegido.]`;
     }
   }
 
-  // DOCX — uses mammoth (Node.js only)
   if (
-    file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-    file.name.endsWith(".docx")
+    mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    /\.docx$/i.test(fileName)
   ) {
     try {
       const mammoth = await import("mammoth");
-      const buffer = Buffer.from(await file.arrayBuffer());
       const result = await mammoth.extractRawText({ buffer });
-      return result.value.trim() || `[DOCX sem texto extraível: ${file.name}]`;
+      return result.value.trim() || `[DOCX sem texto extraível: ${fileName}]`;
     } catch {
-      return `[Erro ao extrair texto do DOCX: ${file.name}.]`;
+      return `[Erro ao extrair texto do DOCX: ${fileName}.]`;
     }
   }
 
-  // DOC (legacy Word) — not supported by mammoth without conversion
-  if (file.name.endsWith(".doc")) {
-    return `[Formato .doc legado não suportado. Converta para .docx e envie novamente: ${file.name}]`;
+  if (/\.doc$/i.test(fileName)) {
+    return `[Formato .doc legado não suportado. Converta para .docx: ${fileName}]`;
   }
 
-  // Images
-  if (file.type.startsWith("image/")) {
-    return `[Imagem enviada: ${file.name}. Para extrair texto de imagens, ative OCR na configuração do sistema.]`;
-  }
-
-  return `[Formato não suportado para extração de texto: ${file.name} (${file.type || "tipo desconhecido"})]`;
+  return `[Formato não suportado: ${fileName} (${mimeType || "tipo desconhecido"})]`;
 }
 
-export function chunkText(text: string, size = 1400, overlap = 180): string[] {
-  const normalized = text.replace(/\s+/g, " ").trim();
-  if (!normalized) return [];
-  const chunks: string[] = [];
-  let start = 0;
+/** Legacy wrapper for code that already has a File object. */
+export async function extractTextFromFile(file: File): Promise<string> {
+  const buffer = Buffer.from(await file.arrayBuffer());
+  return extractTextFromBuffer(buffer, file.type, file.name);
+}
 
-  while (start < normalized.length) {
-    chunks.push(normalized.slice(start, start + size));
-    start += size - overlap;
+/**
+ * Semantic paragraph-aware chunker.
+ * Splits on double-newlines and markdown heading boundaries, then merges
+ * short paragraphs up to maxChars. The last paragraph of each chunk is
+ * carried forward as overlap context for the next chunk.
+ */
+export function chunkText(text: string, maxChars = 1400): string[] {
+  // Split on paragraph boundaries (2+ newlines) and before markdown headings
+  const paragraphs = text
+    .split(/\n{2,}|(?=\n#{1,6}\s)/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  if (!paragraphs.length) return [];
+
+  const SEP = "\n\n";
+  const SEP_LEN = SEP.length;
+  const chunks: string[] = [];
+  let buf: string[] = [];
+  let bufLen = 0;
+
+  for (const para of paragraphs) {
+    const paraLen = para.length;
+
+    // Paragraph exceeds max on its own — flush buffer then hard-split the paragraph
+    if (paraLen > maxChars) {
+      if (buf.length) {
+        chunks.push(buf.join(SEP));
+        buf = [];
+        bufLen = 0;
+      }
+      for (let i = 0; i < paraLen; i += maxChars - 100) {
+        chunks.push(para.slice(i, Math.min(i + maxChars, paraLen)));
+      }
+      continue;
+    }
+
+    const addLen = buf.length > 0 ? SEP_LEN + paraLen : paraLen;
+
+    if (bufLen + addLen > maxChars && buf.length > 0) {
+      // Flush and keep last paragraph as overlap context
+      chunks.push(buf.join(SEP));
+      const overlap = buf[buf.length - 1];
+      buf = [overlap, para];
+      bufLen = overlap.length + SEP_LEN + paraLen;
+    } else {
+      buf.push(para);
+      bufLen += addLen;
+    }
   }
 
+  if (buf.length) chunks.push(buf.join(SEP));
   return chunks.filter(Boolean);
 }
