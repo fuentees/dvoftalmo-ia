@@ -7,6 +7,7 @@ import { NotificationsReportView } from "@/components/notifications/notification
 import { CevespQualidadeView } from "@/components/cevesp/cevesp-qualidade-view";
 import { CanalEndemicoView } from "@/components/conjuntivite/canal-endemico-view";
 import { listarGvesSp, listarMunicipiosPorGve } from "@/lib/municipios-sp";
+import { EpidemicZoneBanner } from "@/components/conjuntivite/epidemic-zone-banner";
 
 type OuterTab = "situacao" | "qualidade" | "consulta" | "canal";
 
@@ -43,6 +44,7 @@ export function ConjuntiviteHubView() {
 
   return (
     <div className="flex flex-col">
+      <EpidemicZoneBanner gve={gve || undefined} municipio={municipio || undefined} />
       <div className="sticky top-0 z-30 flex items-center gap-3 border-b bg-background/95 px-6 py-2 backdrop-blur-sm">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
           Conjuntivite · CEVESP

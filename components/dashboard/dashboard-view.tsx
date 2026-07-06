@@ -12,7 +12,8 @@ import {
   Map,
   RefreshCw,
   ShieldAlert,
-  Stethoscope
+  Stethoscope,
+  TrendingUp
 } from "lucide-react";
 import Link from "next/link";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis } from "recharts";
@@ -22,6 +23,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { AlertsPanel } from "@/components/dashboard/alerts-panel";
 import type { CevespKpis } from "@/services/cevesp-kpis";
 import type { CevespHistorico } from "@/lib/external/supabase-cevesp";
+import type { EndemicChannelPoint } from "@/services/cevesp-endemic";
 
 interface SinanSnapshot {
   totalTraconet?: number;
@@ -151,6 +153,48 @@ function KpiCard({
         {delta !== undefined && <DeltaBadge delta={delta} />}
       </CardContent>
     </Card>
+  );
+}
+
+function CanalZoneStrip({ data, loading }: { data?: EndemicChannelPoint[]; loading: boolean }) {
+  if (loading) {
+    return (
+      <div className="flex h-10 items-center gap-2 rounded-lg border bg-muted/30 px-4 text-xs text-muted-foreground animate-pulse">
+        <TrendingUp className="h-3.5 w-3.5" />
+        Carregando canal endêmico…
+      </div>
+    );
+  }
+  if (!data?.length) return null;
+
+  const withData = data.filter((d) => d.currentYear !== null);
+  if (!withData.length) return null;
+
+  const lastSE = Math.max(...withData.map((d) => d.se));
+  const pt = data.find((d) => d.se === lastSE);
+  if (!pt || pt.currentYear === null) return null;
+
+  const cur = pt.currentYear;
+  const isEpidemia = cur > pt.q3;
+  const isAlerta = !isEpidemia && cur > pt.q1;
+  const zona = isEpidemia ? "Epidemia" : isAlerta ? "Alerta" : "Sucesso";
+  const bg  = isEpidemia ? "border-red-200 bg-red-50 text-red-800"
+            : isAlerta   ? "border-amber-200 bg-amber-50 text-amber-800"
+            :              "border-teal-200 bg-teal-50 text-teal-800";
+  const badgeCls = isEpidemia ? "bg-red-100 text-red-700"
+                 : isAlerta   ? "bg-amber-100 text-amber-700"
+                 :              "bg-teal-100 text-teal-700";
+
+  return (
+    <Link href="/conjuntivite?tab=canal" className={`flex items-center gap-3 rounded-lg border px-4 py-2.5 text-sm transition-opacity hover:opacity-80 ${bg}`}>
+      <TrendingUp className="h-4 w-4 shrink-0" />
+      <span className="flex-1 font-medium">Canal Endêmico · SE {lastSE}</span>
+      <span className={`rounded px-2 py-0.5 text-xs font-semibold ${badgeCls}`}>{zona}</span>
+      <span className="text-xs opacity-75">
+        {cur.toLocaleString("pt-BR")} casos · Q1={pt.q1.toLocaleString("pt-BR")} Q3={pt.q3.toLocaleString("pt-BR")}
+      </span>
+      <ArrowRight className="h-3.5 w-3.5 shrink-0 opacity-60" />
+    </Link>
   );
 }
 
@@ -367,6 +411,17 @@ export function DashboardView() {
     staleTime: 10 * 60 * 1000
   });
 
+  const canal = useQuery<EndemicChannelPoint[]>({
+    queryKey: ["canal-endemico-dashboard"],
+    queryFn: async () => {
+      const res = await fetch("/api/cevesp/canal-endemico");
+      if (!res.ok) return [];
+      return res.json();
+    },
+    retry: false,
+    staleTime: 15 * 60 * 1000
+  });
+
   const cevespState = cevespRisk(kpis.data);
   const tracomaState = tracomaRisk(sinan.data);
   const consolidatedByYear = sinan.data?.consolidatedMetricsByYear ?? [];
@@ -478,6 +533,8 @@ export function DashboardView() {
             tone="amber"
           />
         </div>
+
+        <CanalZoneStrip data={canal.data} loading={canal.isFetching && !canal.data} />
 
         <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
           <Card>

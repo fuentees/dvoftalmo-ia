@@ -69,6 +69,8 @@ type Props = {
 };
 
 export function CanalEndemicoView({ filters }: Props) {
+  const currentYear = new Date().getFullYear();
+
   const qs = useMemo(() => {
     const p = new URLSearchParams();
     if (filters?.gve)       p.set("gve", filters.gve);
@@ -87,6 +89,25 @@ export function CanalEndemicoView({ filters }: Props) {
     staleTime: 10 * 60 * 1000,
   });
 
+  const prevYearQs = useMemo(() => {
+    const p = new URLSearchParams();
+    if (filters?.gve)       p.set("gve", filters.gve);
+    if (filters?.municipio) p.set("municipality", filters.municipio);
+    p.set("year", String(currentYear - 1));
+    return p.toString();
+  }, [filters, currentYear]);
+
+  const { data: prevData } = useQuery<EndemicChannelPoint[]>({
+    queryKey: ["canal-endemico-prev", prevYearQs],
+    queryFn: async () => {
+      const res = await fetch(`/api/cevesp/canal-endemico?${prevYearQs}`);
+      const json = await res.json();
+      if (!res.ok) return [];
+      return json as EndemicChannelPoint[];
+    },
+    staleTime: 30 * 60 * 1000,
+  });
+
   // ── Derive chart data + projection ─────────────────────────────────────────
   const { chartData, lastSE, currentZona, projStart } = useMemo(() => {
     if (!data) return { chartData: [], lastSE: null, currentZona: null, projStart: null };
@@ -100,6 +121,9 @@ export function CanalEndemicoView({ filters }: Props) {
           ? "alerta" : "sucesso"
       : null : null;
 
+    // Previous year lookup by SE
+    const prevMap = new Map((prevData ?? []).map((p) => [p.se, p.currentYear]));
+
     // Linear regression on last 6 observed SEs
     const recent = withData.slice(-6);
     const reg = linearRegression(recent.map((d) => ({ x: d.se, y: d.currentYear! })));
@@ -111,18 +135,20 @@ export function CanalEndemicoView({ filters }: Props) {
         reg && projStart && d.se > projStart && d.se <= projStart + 4
           ? Math.max(0, Math.round(reg.slope * d.se + reg.intercept))
           : undefined;
+      const anoAnterior = prevMap.has(d.se) ? prevMap.get(d.se) ?? undefined : undefined;
       return {
-        se:           d.se,
-        "Sucesso (Q1)":   d.q1,
-        "Alerta (Q1-Q3)": alertBand,
-        "Mediana":        d.median,
-        "Atual":          d.currentYear ?? undefined,
-        "Projeção":       projecao,
+        se:                 d.se,
+        "Sucesso (Q1)":     d.q1,
+        "Alerta (Q1-Q3)":   alertBand,
+        "Mediana":          d.median,
+        "Atual":            d.currentYear ?? undefined,
+        "Ano anterior":     anoAnterior,
+        "Projeção":         projecao,
       };
     });
 
     return { chartData, lastSE, currentZona, projStart };
-  }, [data]);
+  }, [data, prevData]);
 
   // ── KPIs ───────────────────────────────────────────────────────────────────
   const kpis = useMemo(() => {
@@ -206,7 +232,7 @@ export function CanalEndemicoView({ filters }: Props) {
                 Canal Endêmico — Conjuntivites CEVESP
               </CardTitle>
               <CardDescription className="text-xs">
-                Zonas calculadas com base nos últimos 5 anos (P25–P75 por SE). Linha azul = ano atual. Azul tracejado = projeção de tendência (regressão linear, próximas 4 SE).
+                Zonas calculadas com base nos últimos 5 anos (P25–P75 por SE). Azul sólido = {currentYear}. Cinza tracejado = {currentYear - 1}. Azul claro = projeção (regressão linear, próximas 4 SE).
               </CardDescription>
             </div>
             {projStart && (
@@ -275,6 +301,18 @@ export function CanalEndemicoView({ filters }: Props) {
                 dataKey="Atual"
                 stroke="#2563eb"
                 strokeWidth={2.5}
+                dot={false}
+                legendType="line"
+                connectNulls
+              />
+
+              {/* Ano anterior */}
+              <Line
+                type="monotone"
+                dataKey="Ano anterior"
+                stroke="#64748b"
+                strokeWidth={1.5}
+                strokeDasharray="3 2"
                 dot={false}
                 legendType="line"
                 connectNulls

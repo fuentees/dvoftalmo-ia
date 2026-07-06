@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Check, Download, FileUp, List, Mic, MicOff, Pencil, Search, Send, Trash2, Volume2, VolumeX, X } from "lucide-react";
+import { Bot, Check, ChevronDown, Download, FileUp, List, Mic, MicOff, Pencil, Search, Send, Star, Trash2, Volume2, VolumeX, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell,
@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { agentLabels, type AgentKind } from "@/lib/types";
 import type { ChartData } from "@/app/api/chat/route";
+import { MODEL_CATALOG } from "@/lib/ai-models";
 
 // Simple Markdown renderer — handles the most common AI output patterns
 function MarkdownText({ content }: { content: string }) {
@@ -121,6 +122,7 @@ interface Conversation {
   title: string;
   agent: AgentKind;
   updated_at: string;
+  is_favorite: boolean;
 }
 
 const SUGGESTIONS: Record<AgentKind, string[]> = {
@@ -180,6 +182,9 @@ export function ChatView() {
   const [editingTitle, setEditingTitle] = useState("");
   const [isListening, setIsListening] = useState(false);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = useState<string>("");
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const modelPickerRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<AnySpeechRecognition>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -190,6 +195,48 @@ export function ChatView() {
       const response = await fetch(`/api/chat?search=${encodeURIComponent(search)}`);
       if (!response.ok) return [];
       return response.json();
+    }
+  });
+
+  // Load user's preferred model on mount
+  const profileQuery = useQuery<{ selected_model: string | null }>({
+    queryKey: ["user-profile"],
+    queryFn: async () => {
+      const res = await fetch("/api/user/profile");
+      if (!res.ok) return { selected_model: null };
+      return res.json();
+    },
+    staleTime: Infinity,
+    gcTime: Infinity
+  });
+
+  useEffect(() => {
+    if (profileQuery.data?.selected_model) {
+      setSelectedModel(profileQuery.data.selected_model);
+    }
+  }, [profileQuery.data]);
+
+  const saveModel = useMutation({
+    mutationFn: async (model: string) => {
+      await fetch("/api/user/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ selected_model: model || null })
+      });
+    }
+  });
+
+  const toggleFavorite = useMutation({
+    mutationFn: async ({ id, is_favorite }: { id: string; is_favorite: boolean }) => {
+      const response = await fetch("/api/chat", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId: id, is_favorite })
+      });
+      if (!response.ok) throw new Error("Erro ao favoritar.");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
     }
   });
 
@@ -240,6 +287,7 @@ export function ChatView() {
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
       if (exportRef.current && !exportRef.current.contains(e.target as Node)) setExportOpen(false);
+      if (modelPickerRef.current && !modelPickerRef.current.contains(e.target as Node)) setModelPickerOpen(false);
     }
     document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
@@ -535,6 +583,13 @@ export function ChatView() {
                     <span className="text-[10px] text-muted-foreground">{agentLabels[conv.agent] ?? conv.agent}</span>
                   </button>
                   <button
+                    title={conv.is_favorite ? "Remover favorito" : "Favoritar"}
+                    className={`shrink-0 ${conv.is_favorite ? "text-amber-500" : "hidden text-muted-foreground group-hover:block"} hover:text-amber-500`}
+                    onClick={() => toggleFavorite.mutate({ id: conv.id, is_favorite: !conv.is_favorite })}
+                  >
+                    <Star className={`h-3 w-3 ${conv.is_favorite ? "fill-amber-500" : ""}`} />
+                  </button>
+                  <button
                     className="hidden text-muted-foreground hover:text-foreground group-hover:block"
                     onClick={() => { setEditingId(conv.id); setEditingTitle(conv.title); }}
                   >
@@ -597,6 +652,68 @@ export function ChatView() {
                 )}
               </div>
             )}
+            {/* Model picker */}
+            <div ref={modelPickerRef} className="relative">
+              <button
+                onClick={() => setModelPickerOpen((o) => !o)}
+                title="Modelo de IA"
+                className="flex h-9 items-center gap-1.5 rounded-md border bg-background px-3 text-sm hover:bg-muted max-w-[160px]"
+              >
+                <span className="truncate">
+                  {selectedModel
+                    ? (MODEL_CATALOG.find((m) => m.id === selectedModel)?.label ?? selectedModel)
+                    : "Modelo padrão"}
+                </span>
+                <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+              </button>
+              {modelPickerOpen && (
+                <div className="absolute right-0 top-full mt-1 z-20 w-64 rounded-md border bg-popover shadow-md overflow-hidden">
+                  <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground border-b">
+                    Modelo de IA
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSelectedModel("");
+                      saveModel.mutate("");
+                      setModelPickerOpen(false);
+                    }}
+                    className={`w-full px-3 py-2 text-left text-sm hover:bg-muted flex items-center justify-between ${!selectedModel ? "text-primary font-medium" : ""}`}
+                  >
+                    <span>Modelo padrão (admin)</span>
+                    {!selectedModel && <Check className="h-3 w-3" />}
+                  </button>
+                  {["openai", "anthropic", "gemini"].map((provider) => {
+                    const models = MODEL_CATALOG.filter((m) => m.provider === provider);
+                    const providerLabels: Record<string, string> = { openai: "OpenAI", anthropic: "Anthropic", gemini: "Google" };
+                    return (
+                      <div key={provider}>
+                        <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground bg-muted/50 border-t">
+                          {providerLabels[provider]}
+                        </div>
+                        {models.map((m) => (
+                          <button
+                            key={m.id}
+                            onClick={() => {
+                              setSelectedModel(m.id);
+                              saveModel.mutate(m.id);
+                              setModelPickerOpen(false);
+                            }}
+                            className={`w-full px-3 py-2 text-left text-sm hover:bg-muted flex items-center justify-between gap-2 ${selectedModel === m.id ? "text-primary font-medium" : ""}`}
+                          >
+                            <span className="flex flex-col">
+                              <span>{m.label}</span>
+                              <span className="text-[11px] text-muted-foreground">{m.description}</span>
+                            </span>
+                            {selectedModel === m.id && <Check className="h-3 w-3 shrink-0" />}
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
             <select
               className="h-9 rounded-md border bg-background px-3 text-sm"
               value={agent}

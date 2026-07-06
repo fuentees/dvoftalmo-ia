@@ -586,7 +586,8 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
   }
 
   function printPdf() {
-    window.print();
+    const qs = buildQueryParams();
+    window.open(`/api/cevesp/boletim?format=pdf${qs ? `&${qs}` : ""}`, "_blank");
   }
 
   function downloadSituacaoCsv() {

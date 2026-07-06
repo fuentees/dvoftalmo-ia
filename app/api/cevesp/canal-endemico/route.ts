@@ -8,11 +8,13 @@ export async function GET(request: NextRequest) {
   const user = await getCurrentUser(supabase);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const gve = request.nextUrl.searchParams.get("gve") ?? undefined;
+  const gve          = request.nextUrl.searchParams.get("gve")          ?? undefined;
   const municipality = request.nextUrl.searchParams.get("municipality") ?? undefined;
+  const yearParam    = request.nextUrl.searchParams.get("year");
+  const year         = yearParam ? Number(yearParam) : undefined;
 
   try {
-    const data = await runEndemicChannel({ gve, municipality });
+    const data = await runEndemicChannel({ gve, municipality, year });
     return NextResponse.json(data);
   } catch (error) {
     return NextResponse.json(

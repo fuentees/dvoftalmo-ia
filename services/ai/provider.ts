@@ -37,8 +37,9 @@ function configFromEnv(): AIConfig {
   return { provider, model, apiKey };
 }
 
-export async function getAIConfig(): Promise<AIConfig> {
-  if (cachedConfig && Date.now() < cacheExpiry) return cachedConfig;
+export async function getAIConfig(userModel?: string | null): Promise<AIConfig> {
+  // userModel is per-user preference; resolve base config first, then override model
+  if (!userModel && cachedConfig && Date.now() < cacheExpiry) return cachedConfig;
 
   try {
     const supabase = createAdminClient();
@@ -68,10 +69,16 @@ export async function getAIConfig(): Promise<AIConfig> {
 
     cachedConfig = { provider, model, apiKey };
     cacheExpiry = Date.now() + 60_000;
+
+    if (userModel) {
+      // User prefers a specific model; keep same provider/apiKey, just swap model
+      return { provider, model: userModel, apiKey };
+    }
     return cachedConfig;
   } catch {
-    // Supabase unreachable — fall back to env vars without caching
-    return configFromEnv();
+    const base = configFromEnv();
+    if (userModel) return { ...base, model: userModel };
+    return base;
   }
 }
 
@@ -82,9 +89,9 @@ export function invalidateConfigCache() {
 
 export async function generateCompletion(
   messages: ChatMessage[],
-  options: { temperature?: number; jsonMode?: boolean } = {}
+  options: { temperature?: number; jsonMode?: boolean; userModel?: string | null } = {}
 ): Promise<string> {
-  const config = await getAIConfig();
+  const config = await getAIConfig(options.userModel);
   const { temperature = 0.3 } = options;
 
   if (config.provider === "openai") {
@@ -138,9 +145,9 @@ export async function generateCompletion(
 
 export async function* streamCompletion(
   messages: ChatMessage[],
-  options: { temperature?: number } = {}
+  options: { temperature?: number; userModel?: string | null } = {}
 ): AsyncGenerator<string> {
-  const config = await getAIConfig();
+  const config = await getAIConfig(options.userModel);
   const { temperature = 0.3 } = options;
 
   if (config.provider === "openai") {

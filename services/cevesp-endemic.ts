@@ -76,9 +76,10 @@ function buildChannel(
 async function runEndemicChannelFromCache(options: {
   gve?: string;
   municipality?: string;
+  year?: number;
 } = {}) {
   const supabase = createAdminClient();
-  const currentYear = new Date().getFullYear();
+  const currentYear = options.year ?? new Date().getFullYear();
   const startYear = currentYear - 5;
 
   const histMap = new Map<string, number>();
@@ -158,6 +159,7 @@ async function runEndemicChannelFromCache(options: {
 export async function runEndemicChannel(options: {
   gve?: string;
   municipality?: string;
+  year?: number;
 } = {}): Promise<EndemicChannelPoint[]> {
   let table: string;
   let connection: Awaited<ReturnType<typeof createNotificationConnection>>;
@@ -186,6 +188,7 @@ export async function runEndemicChannel(options: {
 
     const extraWhere = filterParts.length ? `and ${filterParts.join(" and ")}` : "";
 
+    const refYear = options.year ?? new Date().getFullYear();
     const [histRows] = await connection.query(
       `select
         coalesce(SemEpidemio, week(DtNotificacao, 3)) as se,
@@ -193,11 +196,11 @@ export async function runEndemicChannel(options: {
         sum(coalesce(TotalCaso, 0)) as cases
       from ${table}
       where DtNotificacao is not null
-        and year(DtNotificacao) between year(date_sub(curdate(), interval 5 year)) and year(date_sub(curdate(), interval 1 year))
+        and year(DtNotificacao) between ? and ?
         ${extraWhere}
       group by se, yr
       order by yr, se`,
-      params
+      [refYear - 5, refYear - 1, ...params]
     );
 
     const [currRows] = await connection.query(
@@ -206,11 +209,11 @@ export async function runEndemicChannel(options: {
         sum(coalesce(TotalCaso, 0)) as cases
       from ${table}
       where DtNotificacao is not null
-        and year(DtNotificacao) = year(curdate())
+        and year(DtNotificacao) = ?
         ${extraWhere}
       group by se
       order by se`,
-      params
+      [refYear, ...params]
     );
 
     return buildChannel(histRows as Array<Record<string, unknown>>, currRows as Array<Record<string, unknown>>);

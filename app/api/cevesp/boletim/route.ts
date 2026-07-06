@@ -5,7 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { readNotificationRows } from "@/lib/external/notification-db";
 import { summarizeNotificationRows, summarizeFromRpc, type RpcRelatorioData } from "@/services/notification-report";
 import { runEndemicChannel } from "@/services/cevesp-endemic";
-import { generateBulletinDocx, type CanalEndemicoInput } from "@/services/bulletin";
+import { generateBulletinDocx, generateBulletinPdf, type CanalEndemicoInput } from "@/services/bulletin";
 
 function dateToSe(date: Date): number {
   const startOfYear = new Date(date.getFullYear(), 0, 1);
@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
   const municipio = request.nextUrl.searchParams.get("municipio")   ?? undefined;
   const seInicio = request.nextUrl.searchParams.get("seInicio")     ? Number(request.nextUrl.searchParams.get("seInicio")) : undefined;
   const seFim    = request.nextUrl.searchParams.get("seFim")        ? Number(request.nextUrl.searchParams.get("seFim"))   : undefined;
+  const format   = request.nextUrl.searchParams.get("format") ?? "docx";
 
   try {
     const now = new Date();
@@ -88,7 +89,7 @@ export async function GET(request: NextRequest) {
       : now.toLocaleDateString("pt-BR");
     const period = `1 Jan ${targetYear} a ${endLabel}`;
 
-    const bulletinBuffer = await generateBulletinDocx({
+    const bulletinInput = {
       se,
       year: targetYear,
       period,
@@ -101,16 +102,27 @@ export async function GET(request: NextRequest) {
       interpretation: report.interpretation,
       recommendations: report.bulletinSections.recomendacoes,
       canalEndemico
-    });
+    };
 
     const gveSuffix = gve ? `_${gve.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 30)}` : "";
     const seSuffix = seInicio || seFim ? `_SE${seInicio ?? 1}-${seFim ?? 53}` : "";
-    const filename = `Boletim_Conjuntivite_SE${String(se).padStart(2, "0")}_${targetYear}${gveSuffix}${seSuffix}.docx`;
+    const baseName = `Boletim_Conjuntivite_SE${String(se).padStart(2, "0")}_${targetYear}${gveSuffix}${seSuffix}`;
 
+    if (format === "pdf") {
+      const pdfBytes = await generateBulletinPdf(bulletinInput);
+      return new NextResponse(Buffer.from(pdfBytes), {
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `attachment; filename="${baseName}.pdf"`
+        }
+      });
+    }
+
+    const bulletinBuffer = await generateBulletinDocx(bulletinInput);
     return new NextResponse(new Uint8Array(bulletinBuffer), {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "Content-Disposition": `attachment; filename="${filename}"`
+        "Content-Disposition": `attachment; filename="${baseName}.docx"`
       }
     });
   } catch (error) {

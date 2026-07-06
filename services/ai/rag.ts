@@ -44,6 +44,7 @@ type RagInput = {
   cevespContext?: string;
   tracomaContext?: string;
   dataContext?: string;
+  userModel?: string | null;
 };
 
 function buildRagMessages(context: RagContext, ragFailed: boolean, input: RagInput) {
@@ -123,7 +124,7 @@ export async function* streamRagAnswer(input: RagInput): AsyncGenerator<
   yield { type: "sources", sources: context.sources };
 
   const messages = buildRagMessages(context, ragFailed, input);
-  for await (const chunk of streamCompletion(messages, { temperature: 0.2 })) {
+  for await (const chunk of streamCompletion(messages, { temperature: 0.2, userModel: input.userModel })) {
     yield { type: "chunk", text: chunk };
   }
 }

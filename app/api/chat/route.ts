@@ -120,9 +120,10 @@ export async function GET(request: NextRequest) {
   const search = request.nextUrl.searchParams.get("search") ?? "";
   let query = supabase
     .from("conversations")
-    .select("id,title,agent,updated_at")
+    .select("id,title,agent,updated_at,is_favorite")
     .eq("user_id", user.id)
     .eq("archived", false)
+    .order("is_favorite", { ascending: false })
     .order("updated_at", { ascending: false });
 
   if (search) query = query.ilike("title", `%${search}%`);
@@ -138,6 +139,14 @@ export async function POST(request: NextRequest) {
 
   const body = chatSchema.parse(await request.json());
   let conversationId = body.conversationId;
+
+  // Resolve user's preferred model (non-blocking; falls back to global config on error)
+  const { data: profileRow } = await supabase
+    .from("profiles")
+    .select("selected_model")
+    .eq("id", user.id)
+    .single();
+  const userModel: string | null = profileRow?.selected_model ?? null;
 
   if (!conversationId) {
     const { data, error } = await supabase
@@ -260,7 +269,8 @@ Semanas acima do Q3 no ano: ${weeksAbove}`;
     conversationMessages: (previous ?? []).filter((item: { role: string }) => item.role !== "system"),
     cevespContext,
     tracomaContext,
-    dataContext
+    dataContext,
+    userModel
   };
 
   const readableStream = new ReadableStream({
@@ -320,10 +330,22 @@ export async function PATCH(request: NextRequest) {
   const user = await getCurrentUser(supabase);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = await request.json();
+  const body = await request.json() as {
+    conversationId: string;
+    title?: string;
+    is_favorite?: boolean;
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const patch: Record<string, any> = {};
+  if (body.title !== undefined)      patch.title       = body.title;
+  if (body.is_favorite !== undefined) patch.is_favorite = body.is_favorite;
+  if (Object.keys(patch).length === 0)
+    return NextResponse.json({ error: "Nenhum campo para atualizar." }, { status: 400 });
+
   const { error } = await supabase
     .from("conversations")
-    .update({ title: body.title })
+    .update(patch)
     .eq("id", body.conversationId)
     .eq("user_id", user.id);
 
