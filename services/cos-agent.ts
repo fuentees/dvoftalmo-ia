@@ -273,7 +273,7 @@ interface ToolResult {
   sources?: AiSource[];
 }
 
-async function executeTool(
+export async function executeTool(
   name: string,
   args: Record<string, unknown>,
   userId: string

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Check, ChevronDown, Download, FileUp, List, Mic, MicOff, Pencil, Search, Send, Star, Trash2, Volume2, VolumeX, X } from "lucide-react";
+import { Bot, Check, ChevronDown, Database, Download, FileUp, List, Loader2, Mic, MicOff, Pencil, Search, Send, Star, Trash2, Volume2, VolumeX, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell,
@@ -115,6 +115,7 @@ interface Message {
   content: string;
   sources?: Array<{ title: string; score: number }>;
   chartData?: ChartData;
+  toolCalls?: Array<{ name: string; label: string; done: boolean }>;
 }
 
 interface Conversation {
@@ -448,6 +449,30 @@ export function ChatView() {
                 setLocalMessages((prev) =>
                   prev.map((m) => m.id === assistantMsgId ? { ...m, content: m.content + String(event.v) } : m)
                 );
+              } else if (event.t === "tool_call") {
+                const toolName  = String(event.name);
+                const toolLabel = String(event.label ?? toolName);
+                setLocalMessages((prev) =>
+                  prev.map((m) => {
+                    if (m.id !== assistantMsgId) return m;
+                    const existing = m.toolCalls ?? [];
+                    if (existing.some((tc) => tc.name === toolName)) return m;
+                    return { ...m, toolCalls: [...existing, { name: toolName, label: toolLabel, done: false }] };
+                  })
+                );
+              } else if (event.t === "tool_done") {
+                const toolName = String(event.name);
+                setLocalMessages((prev) =>
+                  prev.map((m) => {
+                    if (m.id !== assistantMsgId) return m;
+                    return {
+                      ...m,
+                      toolCalls: (m.toolCalls ?? []).map((tc) =>
+                        tc.name === toolName ? { ...tc, done: true } : tc
+                      ),
+                    };
+                  })
+                );
               } else if (event.t === "done") {
                 setConversationId(event.conversationId as string);
                 setLocalMessages((prev) =>
@@ -770,17 +795,42 @@ export function ChatView() {
                 }
               >
                 {item.role === "assistant"
-                  ? item.content === "" && isSending
-                    ? <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <span>Pensando</span>
-                        <span className="flex gap-0.5">
-                          {[0, 150, 300].map((d) => (
-                            <span key={d} className="inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground animate-bounce"
-                              style={{ animationDelay: `${d}ms` }} />
+                  ? <>
+                      {/* Tool call indicators */}
+                      {item.toolCalls && item.toolCalls.length > 0 && (
+                        <div className="mb-2 flex flex-wrap gap-1.5">
+                          {item.toolCalls.map((tc) => (
+                            <span
+                              key={tc.name}
+                              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                                tc.done
+                                  ? "border-teal-200 bg-teal-50 text-teal-700"
+                                  : "border-blue-200 bg-blue-50 text-blue-700"
+                              }`}
+                            >
+                              {tc.done
+                                ? <Check className="h-2.5 w-2.5" />
+                                : <Loader2 className="h-2.5 w-2.5 animate-spin" />}
+                              {tc.done ? tc.label.replace("…", "") : tc.label}
+                            </span>
                           ))}
-                        </span>
-                      </div>
-                    : <MarkdownText content={item.content} />
+                        </div>
+                      )}
+                      {item.content === "" && isSending && (!item.toolCalls || item.toolCalls.every((tc) => tc.done))
+                        ? <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Database className="h-3.5 w-3.5 animate-pulse" />
+                            <span>Analisando</span>
+                            <span className="flex gap-0.5">
+                              {[0, 150, 300].map((d) => (
+                                <span key={d} className="inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground animate-bounce"
+                                  style={{ animationDelay: `${d}ms` }} />
+                              ))}
+                            </span>
+                          </div>
+                        : item.content === "" && isSending
+                          ? null
+                          : <MarkdownText content={item.content} />}
+                    </>
                   : <div className="whitespace-pre-wrap text-sm leading-6">{item.content}</div>}
                 {item.role === "assistant" && item.chartData && (
                   <InlineChart chartData={item.chartData} />

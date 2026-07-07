@@ -54,11 +54,12 @@ function CanalTooltip({ active, payload, label }: { active?: boolean; payload?: 
   return (
     <div className="rounded-lg border bg-background px-3 py-2 text-xs shadow-md">
       <p className="mb-1 font-semibold">SE {label}</p>
-      {byName["Atual"] != null     && <p className="text-blue-600">Atual: {Number(byName["Atual"]).toLocaleString("pt-BR")}</p>}
-      {byName["Projeção"] != null  && <p className="text-blue-400">Projeção: {Number(byName["Projeção"]).toLocaleString("pt-BR")}</p>}
-      {byName["Mediana"] != null   && <p className="text-gray-500">Mediana hist.: {Number(byName["Mediana"]).toLocaleString("pt-BR")}</p>}
+      {byName["Atual"] != null        && <p className="text-blue-600">Atual: {Number(byName["Atual"]).toLocaleString("pt-BR")}</p>}
+      {byName["Projeção"] != null     && <p className="text-blue-400">Projeção: {Number(byName["Projeção"]).toLocaleString("pt-BR")}</p>}
+      {byName["Mediana"] != null      && <p className="text-gray-500">Mediana hist.: {Number(byName["Mediana"]).toLocaleString("pt-BR")}</p>}
       <p className="text-green-700">Q1 (limite sucesso): {q1.toLocaleString("pt-BR")}</p>
       <p className="text-amber-700">Q3 (limite alerta): {q3.toLocaleString("pt-BR")}</p>
+      {byName["Farrington"] != null   && <p className="text-red-700 font-medium">Limiar Farrington: {Number(byName["Farrington"]).toLocaleString("pt-BR")}</p>}
     </div>
   );
 }
@@ -144,6 +145,7 @@ export function CanalEndemicoView({ filters }: Props) {
         "Atual":            d.currentYear ?? undefined,
         "Ano anterior":     anoAnterior,
         "Projeção":         projecao,
+        "Farrington":       d.farrington ?? undefined,
       };
     });
 
@@ -232,7 +234,7 @@ export function CanalEndemicoView({ filters }: Props) {
                 Canal Endêmico — Conjuntivites CEVESP
               </CardTitle>
               <CardDescription className="text-xs">
-                Zonas calculadas com base nos últimos 5 anos (P25–P75 por SE). Azul sólido = {currentYear}. Cinza tracejado = {currentYear - 1}. Azul claro = projeção (regressão linear, próximas 4 SE).
+                Zonas calculadas com base nos últimos 5 anos (P25–P75 por SE). Azul sólido = {currentYear}. Cinza tracejado = {currentYear - 1}. Azul claro = projeção. Linha vermelha = limiar Farrington (EARS C2).
               </CardDescription>
             </div>
             {projStart && (
@@ -330,6 +332,18 @@ export function CanalEndemicoView({ filters }: Props) {
                 connectNulls
               />
 
+              {/* Limiar epidêmico Farrington (EARS C2 simplificado) */}
+              <Line
+                type="monotone"
+                dataKey="Farrington"
+                stroke="#dc2626"
+                strokeWidth={1.5}
+                strokeDasharray="4 2"
+                dot={false}
+                legendType="line"
+                connectNulls
+              />
+
               {/* Linha da SE atual */}
               {lastSE && (
                 <ReferenceLine
@@ -345,11 +359,12 @@ export function CanalEndemicoView({ filters }: Props) {
       </Card>
 
       {/* ── Legenda das zonas ────────────────────────────────────────────── */}
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {[
           { color: "bg-green-200 border-green-400", label: "Zona de Sucesso", desc: "Casos abaixo do Q1 histórico — transmissão baixa ou esperada." },
           { color: "bg-amber-200 border-amber-400", label: "Zona de Alerta",  desc: "Casos entre Q1 e Q3 — tendência de aumento, monitorar GVEs." },
           { color: "bg-red-200   border-red-400",   label: "Zona Epidêmica",  desc: "Casos acima do Q3 — epidemia confirmada, acionar protocolos." },
+          { color: "bg-rose-100  border-rose-500",  label: "Limiar Farrington", desc: "Limiar estatístico EARS C2 (μ + 2,576·√(φ·μ)). Acima: sinal epidêmico robusto independente de sazonalidade." },
         ].map(({ color, label, desc }) => (
           <div key={label} className={`rounded-lg border-l-4 bg-opacity-40 px-4 py-3 text-xs ${color}`}>
             <p className="font-semibold">{label}</p>

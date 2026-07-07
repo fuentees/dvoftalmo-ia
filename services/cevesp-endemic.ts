@@ -17,6 +17,24 @@ export interface EndemicChannelPoint {
   max: number;
   currentYear: number | null;
   band: number;
+  /** EARS C2 / simplified-Farrington epidemic threshold (μ + z·√(φ·μ), z≈2.576). */
+  farrington: number;
+}
+
+/**
+ * Simplified EARS C2 / Farrington epidemic threshold.
+ * Uses values from a ±windowSe week window across historical years.
+ * Returns μ + z·√(φ·μ) where φ = max(1, σ²/μ) (quasi-Poisson overdispersion).
+ * z = 2.576 → one-sided 99.5% CI (standard Farrington).
+ */
+function farringtonThreshold(values: number[], z = 2.576): number {
+  if (values.length < 3) return Infinity;
+  const n  = values.length;
+  const mu = values.reduce((s, v) => s + v, 0) / n;
+  if (mu <= 0) return 0;
+  const variance = values.reduce((s, v) => s + (v - mu) ** 2, 0) / (n - 1);
+  const phi = Math.max(1, variance / mu); // overdispersion factor
+  return Number((mu + z * Math.sqrt(phi * mu)).toFixed(1));
 }
 
 function percentile(sorted: number[], p: number): number {
@@ -32,6 +50,7 @@ function buildChannel(
   hist: Array<Record<string, unknown>>,
   curr: Array<Record<string, unknown>>
 ) {
+  // seMap: se → [cases per year]
   const seMap = new Map<number, number[]>();
   for (const row of hist) {
     const se = Number(row.se ?? 0);
@@ -58,6 +77,17 @@ function buildChannel(
     const values = (seMap.get(se) ?? []).sort((a, b) => a - b);
     const q1 = percentile(values, 25);
     const q3 = percentile(values, 75);
+
+    // Farrington window: ±2 SEs around this SE across all historical years
+    const windowValues: number[] = [];
+    for (let delta = -2; delta <= 2; delta++) {
+      const neighbor = se + delta;
+      if (neighbor >= 1 && neighbor <= 53) {
+        windowValues.push(...(seMap.get(neighbor) ?? []));
+      }
+    }
+    const fThreshold = farringtonThreshold(windowValues);
+
     result.push({
       se,
       min: values.length > 0 ? values[0] : 0,
@@ -66,7 +96,8 @@ function buildChannel(
       q3: Number(q3.toFixed(1)),
       max: values.length > 0 ? values[values.length - 1] : 0,
       currentYear: currMap.has(se) ? currMap.get(se)! : null,
-      band: Number(Math.max(0, q3 - q1).toFixed(1))
+      band: Number(Math.max(0, q3 - q1).toFixed(1)),
+      farrington: Number.isFinite(fThreshold) ? fThreshold : q3,
     });
   }
 

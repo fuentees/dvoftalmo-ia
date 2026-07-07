@@ -6,9 +6,10 @@ import { streamRagAnswer } from "@/services/ai/rag";
 import { runCevespAnalysis } from "@/services/cevesp-analytics";
 import { runTracomaContextQuery } from "@/services/tracoma-analytics";
 import { runSinanTracomaContextQuery } from "@/services/sinan-tracoma";
-import { runCosAgent } from "@/services/cos-agent";
+import { streamWithTools, toolLabel } from "@/services/ai/stream-tools";
 import { runEndemicChannel } from "@/services/cevesp-endemic";
 import type { AiSource } from "@/lib/types";
+import type { ModelMessage } from "ai";
 
 export type ChartData = {
   chartType: "bar" | "area" | "pie";
@@ -173,24 +174,69 @@ export async function POST(request: NextRequest) {
   });
 
   try {
-  // ── Agente COS: loop real com ferramentas ─────────────────────────────────
+  // ── Agente COS: streaming com tool calling via AI SDK ────────────────────
   if (body.agent === "cos") {
-    const cosResult = await runCosAgent({
-      userId: user.id,
-      message: body.message,
-      conversationMessages: (previous ?? []).filter((item: { role: string }) => item.role !== "system")
+    const cosMessages: ModelMessage[] = [
+      ...(previous ?? [])
+        .filter((item: { role: string }) => item.role !== "system")
+        .map((m: { role: string; content: string }) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        })),
+      { role: "user", content: body.message },
+    ];
+
+    const encoder = new TextEncoder();
+    const cosStream = new ReadableStream({
+      async start(controller) {
+        let fullAnswer = "";
+        let sources: AiSource[] = [];
+        const send = (obj: Record<string, unknown>) =>
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+        try {
+          for await (const event of streamWithTools({
+            userId: user.id,
+            agent: "cos",
+            messages: cosMessages,
+            userModel,
+          })) {
+            if (event.type === "chunk") {
+              fullAnswer += event.text;
+              send({ t: "c", v: event.text });
+            } else if (event.type === "tool_call") {
+              send({ t: "tool_call", name: event.name, label: toolLabel(event.name) });
+            } else if (event.type === "tool_done") {
+              send({ t: "tool_done", name: event.name });
+            } else if (event.type === "sources") {
+              sources = event.sources;
+            }
+          }
+          await supabase.from("messages").insert({
+            conversation_id: conversationId,
+            user_id: user.id,
+            role: "assistant",
+            content: fullAnswer || "Não foi possível gerar uma resposta.",
+            sources,
+          });
+          await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
+          send({ t: "done", conversationId, sources });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          const isQuota = msg.includes("429") || msg.includes("quota") || msg.includes("insufficient_quota");
+          send({ t: "err", e: isQuota ? "Cota esgotada. Verifique os créditos do provedor ativo." : msg });
+        } finally {
+          controller.close();
+        }
+      }
     });
 
-    await supabase.from("messages").insert({
-      conversation_id: conversationId,
-      user_id: user.id,
-      role: "assistant",
-      content: cosResult.answer,
-      sources: cosResult.sources
+    return new Response(cosStream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        "X-Accel-Buffering": "no",
+      },
     });
-
-    await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
-    return NextResponse.json({ conversationId, ...cosResult });
   }
 
   // ── Contextos em tempo real para agentes especializados ───────────────────
