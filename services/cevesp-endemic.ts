@@ -36,22 +36,36 @@ function stddev(values: number[], avg: number): number {
   return Math.sqrt(variance);
 }
 
+function median(sortedValues: number[]): number {
+  const n = sortedValues.length;
+  if (n === 0) return 0;
+  const mid = n / 2;
+  return n % 2 === 0 ? (sortedValues[mid - 1] + sortedValues[mid]) / 2 : sortedValues[Math.floor(mid)];
+}
+
 /**
  * Limita a influência de um único ano com valor absurdo (erro de digitação/importação
  * no histórico) sobre média/desvio: com só ~10 anos de amostra, um outlier extremo
  * ainda domina o cálculo mesmo em escala log (ex: 9 anos com ~2 mil casos e 1 ano com
  * 300 mil faz o limite superior explodir pra dezenas de vezes a média real). Valores
- * acima de 10× a mediana da própria amostra são travados nesse teto antes do log —
- * não afeta anos de surto genuínos (tipicamente bem abaixo de 10×), só remove a
- * cauda implausível.
+ * acima de 10× a mediana são travados nesse teto antes do log — não afeta anos de
+ * surto genuínos (tipicamente bem abaixo de 10×), só remove a cauda implausível.
+ *
+ * Usa a mediana do PRÓPRIO bucket (SE/mês) como referência quando ela é > 0. Mas em
+ * semanas/meses de baixíssima incidência é comum a maioria dos anos ter 0 casos —
+ * nesse caso a mediana local também é 0, e travar em "0 × 10 = 0" zeraria até valores
+ * legítimos. Por isso cai para a mediana GLOBAL (todos os buckets, todos os anos, do
+ * mesmo filtro de GVE/município) como teto de segurança nesse cenário — ainda barra um
+ * outlier absurdo tipo "300 mil casos numa semana isolada", sem depender de uma
+ * mediana local que não existe.
  */
-function capOutliers(sortedValues: number[]): number[] {
+function capOutliers(sortedValues: number[], globalMedian: number): number[] {
   const n = sortedValues.length;
   if (n < 3) return sortedValues;
-  const mid = n / 2;
-  const median = n % 2 === 0 ? (sortedValues[mid - 1] + sortedValues[mid]) / 2 : sortedValues[Math.floor(mid)];
-  if (median <= 0) return sortedValues;
-  const cap = median * 10;
+  const localMedian = median(sortedValues);
+  const anchor = localMedian > 0 ? localMedian : globalMedian;
+  if (anchor <= 0) return sortedValues;
+  const cap = anchor * 10;
   return sortedValues.map((v) => Math.min(v, cap));
 }
 
@@ -93,6 +107,11 @@ function buildChannel(
   const allSe = Array.from(new Set([...seMap.keys(), ...currMap.keys()])).sort((a, b) => a - b);
   const maxSe = allSe.length > 0 ? Math.min(Math.max(...allSe), maxBucket) : maxBucket;
 
+  // Mediana de todos os valores históricos (todos os buckets, todos os anos) — usada
+  // por capOutliers como referência de segurança quando a mediana de um bucket
+  // específico é 0 (ver comentário na função).
+  const globalMedian = median(Array.from(seMap.values()).flat().sort((a, b) => a - b));
+
   const result: EndemicChannelPoint[] = [];
   for (let se = 1; se <= maxSe; se++) {
     const values = (seMap.get(se) ?? []).sort((a, b) => a - b);
@@ -105,7 +124,7 @@ function buildChannel(
     // é baixo e estável — não sempre que há um ano de surto na amostra.
     // capOutliers evita que um único ano com valor absurdo (ver comentário na
     // função) ainda domine o cálculo mesmo em escala log.
-    const logValues = capOutliers(values).map((v) => Math.log(v + 1));
+    const logValues = capOutliers(values, globalMedian).map((v) => Math.log(v + 1));
     const logMedia  = mean(logValues);
     const logDesvio = stddev(logValues, logMedia);
 
