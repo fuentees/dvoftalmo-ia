@@ -330,7 +330,7 @@ export function CanalEndemicoView({ filters }: Props) {
                 Canal Endêmico — Conjuntivites CEVESP
               </CardTitle>
               <CardDescription className="text-xs">
-                Zonas calculadas com base na média histórica ± 1,96 desvio-padrão dos 10 anos anteriores, por SE. Azul sólido = {refYear}. Cinza tracejado = {refYear - 1}. Azul claro = projeção.
+                Zonas calculadas com base na média histórica ± 2 desvios-padrão dos 10 anos anteriores, por SE. Azul sólido = {refYear}. Cinza tracejado = {refYear - 1}. Azul claro = projeção.
                 {xAxisMode === "mes" && " Valores mensais somam as SEs de cada mês."}
               </CardDescription>
             </div>
@@ -446,9 +446,9 @@ export function CanalEndemicoView({ filters }: Props) {
       {/* ── Legenda das zonas ────────────────────────────────────────────── */}
       <div className="grid gap-3 sm:grid-cols-3">
         {[
-          { color: "bg-green-200 border-green-400", label: "Zona de Sucesso", desc: "Casos até 10% acima da média histórica — transmissão dentro do esperado." },
-          { color: "bg-amber-200 border-amber-400", label: "Zona de Alerta",  desc: "Casos entre o limite de alerta e o de epidemia — tendência de aumento, monitorar GVEs." },
-          { color: "bg-red-200   border-red-400",   label: "Zona Epidêmica",  desc: "Casos acima de média + 1,96 desvio-padrão (piso de 15% acima da média) — epidemia confirmada, acionar protocolos." },
+          { color: "bg-green-200 border-green-400", label: "Zona de Sucesso", desc: "Casos abaixo do limite inferior (média − 2 desvios-padrão) — transmissão baixa, controle bem-sucedido." },
+          { color: "bg-amber-200 border-amber-400", label: "Zona de Alerta",  desc: "Casos entre o limite inferior e o limite superior (média ± 2 desvios-padrão) — monitorar GVEs." },
+          { color: "bg-red-200   border-red-400",   label: "Zona Epidêmica",  desc: "Casos acima do limite superior (média + 2 desvios-padrão) — epidemia confirmada, acionar protocolos." },
         ].map(({ color, label, desc }) => (
           <div key={label} className={`rounded-lg border-l-4 bg-opacity-40 px-4 py-3 text-xs ${color}`}>
             <p className="font-semibold">{label}</p>

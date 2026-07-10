@@ -11,11 +11,11 @@ function quoteIdentifier(value: string) {
 export interface EndemicChannelPoint {
   se: number;
   min: number;
-  /** Limiar de alerta = média histórica × 1.1. */
+  /** Limite inferior = média histórica − 2×desvio-padrão (piso 0). */
   q1: number;
   /** Média histórica (não mais mediana, apesar do nome do campo). */
   median: number;
-  /** Limiar de epidemia = média + 1.96×desvio-padrão (piso: média × 1.15). */
+  /** Limite superior = média histórica + 2×desvio-padrão. */
   q3: number;
   max: number;
   currentYear: number | null;
@@ -68,21 +68,19 @@ function buildChannel(
     const media  = mean(values);
     const desvio = stddev(values, media);
 
-    // Limite de epidemia: média + 1.96×desvio, com piso de média×1.15 para
-    // evitar faixa degenerada quando o desvio histórico é ~0.
-    const limiteSuperior = Math.max(media + 1.96 * desvio, media * 1.15);
-    // Limite de alerta: 10% acima da média histórica.
-    const limiteAlerta = media * 1.1;
+    // Faixa esperada: média ± 2×desvio-padrão (limite inferior nunca abaixo de 0).
+    const limiteSuperior = media + 2 * desvio;
+    const limiteInferior = Math.max(media - 2 * desvio, 0);
 
     result.push({
       se,
       min: values.length > 0 ? values[0] : 0,
-      q1: Number(limiteAlerta.toFixed(1)),
+      q1: Number(limiteInferior.toFixed(1)),
       median: Number(media.toFixed(1)),
       q3: Number(limiteSuperior.toFixed(1)),
       max: values.length > 0 ? values[values.length - 1] : 0,
       currentYear: currMap.has(se) ? currMap.get(se)! : null,
-      band: Number(Math.max(0, limiteSuperior - limiteAlerta).toFixed(1)),
+      band: Number(Math.max(0, limiteSuperior - limiteInferior).toFixed(1)),
     });
   }
 
