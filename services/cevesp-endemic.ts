@@ -11,11 +11,11 @@ function quoteIdentifier(value: string) {
 export interface EndemicChannelPoint {
   se: number;
   min: number;
-  /** Limite inferior = média histórica − 2×desvio-padrão (piso 0). */
+  /** Limite inferior = exp(médiaLog − 2×desvioLog) − 1 (nunca abaixo de 0). */
   q1: number;
-  /** Média histórica (não mais mediana, apesar do nome do campo). */
+  /** Média geométrica histórica (não mais mediana, apesar do nome do campo). */
   median: number;
-  /** Limite superior = média histórica + 2×desvio-padrão. */
+  /** Limite superior = exp(médiaLog + 2×desvioLog) − 1. */
   q3: number;
   max: number;
   currentYear: number | null;
@@ -40,11 +40,13 @@ function buildChannel(
   hist: Array<Record<string, unknown>>,
   curr: Array<Record<string, unknown>>
 ) {
-  // seMap: se → [cases per year]
+  // seMap: se → [cases per year]. Soma de TotalCaso por (ano, SE) pode vir negativa
+  // no cache (registros de correção/estorno) — travada em 0 aqui, pois um valor
+  // negativo quebraria log(cases+1) mais abaixo (log de zero/negativo = -Infinity/NaN).
   const seMap = new Map<number, number[]>();
   for (const row of hist) {
     const se = Number(row.se ?? 0);
-    const cases = Number(row.cases ?? 0);
+    const cases = Math.max(Number(row.cases ?? 0), 0);
     if (se >= 1 && se <= 53 && Number.isFinite(cases)) {
       const existing = seMap.get(se) ?? [];
       existing.push(cases);
@@ -55,8 +57,8 @@ function buildChannel(
   const currMap = new Map<number, number>();
   for (const row of curr) {
     const se = Number(row.se ?? 0);
-    const cases = Number(row.cases ?? 0);
-    if (se >= 1 && se <= 53) currMap.set(se, cases);
+    const cases = Math.max(Number(row.cases ?? 0), 0);
+    if (se >= 1 && se <= 53 && Number.isFinite(cases)) currMap.set(se, cases);
   }
 
   const allSe = Array.from(new Set([...seMap.keys(), ...currMap.keys()])).sort((a, b) => a - b);
@@ -65,12 +67,20 @@ function buildChannel(
   const result: EndemicChannelPoint[] = [];
   for (let se = 1; se <= maxSe; se++) {
     const values = (seMap.get(se) ?? []).sort((a, b) => a - b);
-    const media  = mean(values);
-    const desvio = stddev(values, media);
 
-    // Faixa esperada: média ± 2×desvio-padrão (limite inferior nunca abaixo de 0).
-    const limiteSuperior = media + 2 * desvio;
-    const limiteInferior = Math.max(media - 2 * desvio, 0);
+    // Estatísticas em escala log(casos+1): séries epidemiológicas semanais são
+    // tipicamente assimétricas (1-2 anos de surto na janela histórica inflam o
+    // desvio-padrão bem acima da média), o que faz o limite inferior em escala
+    // linear colapsar em 0 quase sempre. Calculando em log e revertendo com
+    // exp, o limite inferior só fica perto de 0 quando o histórico realmente
+    // é baixo e estável — não sempre que há um ano de surto na amostra.
+    const logValues = values.map((v) => Math.log(v + 1));
+    const logMedia  = mean(logValues);
+    const logDesvio = stddev(logValues, logMedia);
+
+    const media           = Math.expm1(logMedia);
+    const limiteSuperior  = Math.expm1(logMedia + 2 * logDesvio);
+    const limiteInferior  = Math.max(Math.expm1(logMedia - 2 * logDesvio), 0);
 
     result.push({
       se,

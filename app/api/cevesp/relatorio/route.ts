@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
     lines.push(csvRow([`Gerado em: ${dateStr}`]));
     lines.push(csvRow([`Abrangência: ${scope}`]));
     lines.push(csvRow([`Ano de referência: ${year}`]));
-    lines.push(csvRow(["Canal endêmico calculado com média histórica ± 2 desvios-padrão dos últimos 10 anos (por SE)"]));
+    lines.push(csvRow(["Canal endêmico calculado com média histórica ± 2 desvios-padrão (escala logarítmica) dos últimos 10 anos (por SE)"]));
     lines.push("");
 
     // ── KPIs da última SE ────────────────────────────────────────────────────

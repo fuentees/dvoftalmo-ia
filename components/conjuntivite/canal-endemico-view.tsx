@@ -339,7 +339,7 @@ export function CanalEndemicoView({ filters }: Props) {
                 Canal Endêmico — Conjuntivites CEVESP
               </CardTitle>
               <CardDescription className="text-xs">
-                Faixa azul = intervalo esperado (média ± 2 desvios-padrão dos 10 anos anteriores). Azul escuro = {refYear}. Roxo tracejado = {refYear - 1}. Cinza pontilhado = média histórica. Azul claro tracejado = projeção.
+                Faixa azul = intervalo esperado (média ± 2 desvios-padrão em escala logarítmica, dos 10 anos anteriores — evita que anos de surto distorçam o limite inferior). Azul escuro = {refYear}. Roxo tracejado = {refYear - 1}. Cinza pontilhado = média histórica. Azul claro tracejado = projeção.
                 {xAxisMode === "mes" && " Valores mensais somam as SEs de cada mês."}
               </CardDescription>
             </div>
@@ -470,9 +470,9 @@ export function CanalEndemicoView({ filters }: Props) {
       {/* ── Legenda das zonas ────────────────────────────────────────────── */}
       <div className="grid gap-3 sm:grid-cols-3">
         {[
-          { color: "bg-green-200 border-green-400", label: "Zona de Sucesso",   desc: "Casos abaixo do limite inferior (média − 2 desvios-padrão) — transmissão baixa, controle bem-sucedido." },
-          { color: "bg-sky-200   border-sky-400",   label: "Dentro do Esperado", desc: "Casos dentro da faixa azul do gráfico (média ± 2 desvios-padrão) — comportamento normal, sem ação adicional." },
-          { color: "bg-red-200   border-red-400",   label: "Zona Epidêmica",    desc: "Casos acima do limite superior (média + 2 desvios-padrão) — epidemia confirmada, acionar protocolos." },
+          { color: "bg-green-200 border-green-400", label: "Zona de Sucesso",   desc: "Casos abaixo do limite inferior (média − 2 DP em escala log) — transmissão baixa, controle bem-sucedido." },
+          { color: "bg-sky-200   border-sky-400",   label: "Dentro do Esperado", desc: "Casos dentro da faixa azul do gráfico (média ± 2 DP em escala log) — comportamento normal, sem ação adicional." },
+          { color: "bg-red-200   border-red-400",   label: "Zona Epidêmica",    desc: "Casos acima do limite superior (média + 2 DP em escala log) — epidemia confirmada, acionar protocolos." },
         ].map(({ color, label, desc }) => (
           <div key={label} className={`rounded-lg border-l-4 bg-opacity-40 px-4 py-3 text-xs ${color}`}>
             <p className="font-semibold">{label}</p>
