@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { BarChart3, ChevronRight, LogOut, Menu, Moon, Sun, User, X } from "lucide-react";
 import { navigationGroups } from "@/components/navigation/nav-items";
+import { EpiWeekBadge } from "@/components/epi-week-badge";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 
@@ -62,20 +63,23 @@ export function MobileNav() {
 
   return (
     <>
-      <header className="flex h-14 items-center justify-between border-b bg-card px-4 md:hidden">
-        <div className="flex items-center gap-3">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary">
+      <header className="flex h-14 items-center justify-between gap-2 border-b bg-card px-4 md:hidden">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary">
             <BarChart3 className="h-3.5 w-3.5 text-primary-foreground" />
           </div>
           <span className="min-w-0 truncate text-sm font-semibold">Centro de Oftalmologia Sanitária</span>
         </div>
-        <button
-          onClick={() => setOpen(true)}
-          className="flex h-9 w-9 items-center justify-center rounded-md hover:bg-muted"
-          aria-label="Abrir menu"
-        >
-          <Menu className="h-5 w-5" />
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <EpiWeekBadge />
+          <button
+            onClick={() => setOpen(true)}
+            className="flex h-9 w-9 items-center justify-center rounded-md hover:bg-muted"
+            aria-label="Abrir menu"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        </div>
       </header>
 
       {open && (
@@ -101,13 +105,16 @@ export function MobileNav() {
               <p className="text-[11px] text-muted-foreground">Vigilância em Saúde · SP</p>
             </div>
           </div>
-          <button
-            onClick={() => setOpen(false)}
-            className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted"
-            aria-label="Fechar menu"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <EpiWeekBadge />
+            <button
+              onClick={() => setOpen(false)}
+              className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted"
+              aria-label="Fechar menu"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         <nav className="flex-1 overflow-y-auto px-3 py-3">

@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { BarChart3, ChevronRight, LogOut, Moon, Sun, User } from "lucide-react";
 import { navigationGroups } from "@/components/navigation/nav-items";
+import { EpiWeekBadge } from "@/components/epi-week-badge";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 
@@ -60,10 +61,11 @@ export function AppSidebar() {
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
           <BarChart3 className="h-4 w-4 text-primary-foreground" />
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold leading-tight">Centro de Oftalmologia Sanitária</p>
           <p className="truncate text-[11px] text-muted-foreground">Vigilância em Saúde · SP</p>
         </div>
+        <EpiWeekBadge />
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-3">
