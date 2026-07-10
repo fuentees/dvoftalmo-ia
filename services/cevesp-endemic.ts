@@ -36,6 +36,25 @@ function stddev(values: number[], avg: number): number {
   return Math.sqrt(variance);
 }
 
+/**
+ * Limita a influência de um único ano com valor absurdo (erro de digitação/importação
+ * no histórico) sobre média/desvio: com só ~10 anos de amostra, um outlier extremo
+ * ainda domina o cálculo mesmo em escala log (ex: 9 anos com ~2 mil casos e 1 ano com
+ * 300 mil faz o limite superior explodir pra dezenas de vezes a média real). Valores
+ * acima de 10× a mediana da própria amostra são travados nesse teto antes do log —
+ * não afeta anos de surto genuínos (tipicamente bem abaixo de 10×), só remove a
+ * cauda implausível.
+ */
+function capOutliers(sortedValues: number[]): number[] {
+  const n = sortedValues.length;
+  if (n < 3) return sortedValues;
+  const mid = n / 2;
+  const median = n % 2 === 0 ? (sortedValues[mid - 1] + sortedValues[mid]) / 2 : sortedValues[Math.floor(mid)];
+  if (median <= 0) return sortedValues;
+  const cap = median * 10;
+  return sortedValues.map((v) => Math.min(v, cap));
+}
+
 export type EndemicChannelGrain = "week" | "month";
 
 function bucketCountFor(grain: EndemicChannelGrain) {
@@ -84,7 +103,9 @@ function buildChannel(
     // linear colapsar em 0 quase sempre. Calculando em log e revertendo com
     // exp, o limite inferior só fica perto de 0 quando o histórico realmente
     // é baixo e estável — não sempre que há um ano de surto na amostra.
-    const logValues = values.map((v) => Math.log(v + 1));
+    // capOutliers evita que um único ano com valor absurdo (ver comentário na
+    // função) ainda domine o cálculo mesmo em escala log.
+    const logValues = capOutliers(values).map((v) => Math.log(v + 1));
     const logMedia  = mean(logValues);
     const logDesvio = stddev(logValues, logMedia);
 

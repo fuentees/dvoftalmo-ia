@@ -169,7 +169,7 @@ export async function GET(request: NextRequest) {
     addLegendRow("Alerta",  "Casos entre o limite inferior e o limite superior (média ± 2 DP em escala log) — monitorar GVEs.", FILL_ALERTA);
     addLegendRow("Epidemia","Casos acima do limite superior (média + 2 DP em escala log) — zona epidêmica confirmada, acionar protocolos.", FILL_EPIDEMIA);
     wl.addRow([]);
-    wl.addRow(["Metodologia", "Canal endêmico calculado com média histórica ± 2 desvios-padrão (em escala logarítmica) dos últimos 10 anos por semana epidemiológica."]);
+    wl.addRow(["Metodologia", "Canal endêmico calculado com média histórica ± 2 desvios-padrão (em escala logarítmica) dos últimos 10 anos por semana epidemiológica. Valores brutos acima de 10× a mediana histórica do período são limitados antes do cálculo, para não distorcer o resultado com prováveis erros de digitação/importação; as colunas Mín/Máx histórico exibidas continuam sem esse ajuste."]);
     wl.addRow(["Fonte", "CEVESP — Centro de Vigilância Epidemiológica / Centro de Oftalmologia Sanitária — SES-SP"]);
     wl.addRow(["Exportado em", now.toLocaleString("pt-BR")]);
 
