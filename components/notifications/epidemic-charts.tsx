@@ -10,14 +10,12 @@ import {
   LabelList,
   Legend,
   Line,
-  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis
 } from "recharts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import type { EndemicChannelPoint } from "@/services/cevesp-endemic";
 
 interface WeekPoint {
   week: string;
@@ -247,120 +245,5 @@ export function EpidemicCharts({
         )}
       </div>
     </div>
-  );
-}
-
-interface EndemicChannelChartProps {
-  data: EndemicChannelPoint[];
-}
-
-export function EndemicChannelChart({ data }: EndemicChannelChartProps) {
-  const currentWeek = new Date();
-  const startOfYear = new Date(currentWeek.getFullYear(), 0, 1);
-  const days = Math.floor((currentWeek.getTime() - startOfYear.getTime()) / 86400000);
-  const currentSe = Math.ceil((days + startOfYear.getDay() + 1) / 7);
-
-  const chartData = data.map((point) => ({
-    se: `SE${String(point.se).padStart(2, "0")}`,
-    seNum: point.se,
-    q1: point.q1,
-    band: point.band,
-    median: point.median,
-    max: point.max,
-    anoAtual: point.currentYear
-  }));
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Canal endêmico</CardTitle>
-        <CardDescription>
-          Faixa interquartil (Q1–Q3) dos últimos 5 anos × ano atual. SE atual: {currentSe}.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="h-[340px]">
-        <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-            <XAxis dataKey="se" tick={{ fontSize: 10 }} interval={3} />
-            <YAxis />
-            <Tooltip
-              formatter={(value: unknown, name: string) => {
-                const labels: Record<string, string> = {
-                  q1: "Q1 (hist.)",
-                  band: "Canal Q1–Q3",
-                  median: "Mediana (hist.)",
-                  max: "Máximo (hist.)",
-                  anoAtual: "Ano atual"
-                };
-                return [value != null ? String(value) : "—", labels[name] ?? name];
-              }}
-            />
-            <Legend
-              formatter={(value: string) => {
-                const labels: Record<string, string> = {
-                  q1: "Q1",
-                  band: "Canal Q1–Q3",
-                  median: "Mediana histórica",
-                  max: "Máximo histórico",
-                  anoAtual: "Ano atual"
-                };
-                return labels[value] ?? value;
-              }}
-            />
-            <Area
-              type="monotone"
-              dataKey="q1"
-              stackId="canal"
-              stroke="none"
-              fill="transparent"
-              legendType="none"
-            />
-            <Area
-              type="monotone"
-              dataKey="band"
-              stackId="canal"
-              stroke="none"
-              fill="#0f766e"
-              fillOpacity={0.2}
-              name="band"
-            />
-            <Line
-              type="monotone"
-              dataKey="median"
-              stroke="#0f766e"
-              strokeDasharray="6 3"
-              dot={false}
-              name="median"
-              strokeWidth={1.5}
-            />
-            <Line
-              type="monotone"
-              dataKey="max"
-              stroke="#ca8a04"
-              strokeDasharray="3 3"
-              dot={false}
-              name="max"
-              strokeWidth={1}
-            />
-            <Line
-              type="monotone"
-              dataKey="anoAtual"
-              stroke="#dc2626"
-              dot={false}
-              name="anoAtual"
-              strokeWidth={2.5}
-              connectNulls={false}
-            />
-            <ReferenceLine
-              x={`SE${String(currentSe).padStart(2, "0")}`}
-              stroke="#94a3b8"
-              strokeDasharray="4 2"
-              label={{ value: "SE atual", position: "top", fontSize: 10, fill: "#94a3b8" }}
-            />
-          </ComposedChart>
-        </ResponsiveContainer>
-      </CardContent>
-    </Card>
   );
 }

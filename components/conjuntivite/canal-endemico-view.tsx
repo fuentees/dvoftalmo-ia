@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Area, ComposedChart, CartesianGrid, Legend, Line,
@@ -10,7 +10,12 @@ import { AlertTriangle, CheckCircle2, Download, RefreshCw, TrendingUp, XCircle }
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { EndemicChannelPoint } from "@/services/cevesp-endemic";
-import { pickCurrentChannelPoint } from "@/lib/epi-week";
+import { pickCurrentChannelPoint, monthToEpiWeekRange } from "@/lib/epi-week";
+
+const MESES = [
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+];
 
 // ── Linear regression for trend projection ──────────────────────────────────
 function linearRegression(pts: Array<{ x: number; y: number }>) {
@@ -71,14 +76,46 @@ type Props = {
 };
 
 export function CanalEndemicoView({ filters }: Props) {
-  const currentYear = new Date().getFullYear();
+  const thisYear = new Date().getFullYear();
+
+  // ── Ano de referência (qual ano é o "ano atual" da comparação) ──────────────
+  const [refYear, setRefYear] = useState(thisYear);
+
+  // ── Mês / SE (recorte visual do gráfico, não muda o ano buscado) ────────────
+  const [mes, setMes] = useState<string>("");
+  const [seInicio, setSeInicio] = useState<number | undefined>(undefined);
+  const [seFim, setSeFim] = useState<number | undefined>(undefined);
+
+  useEffect(() => {
+    if (!mes) return;
+    const [inicio, fim] = monthToEpiWeekRange(refYear, Number(mes));
+    setSeInicio(inicio);
+    setSeFim(fim);
+  }, [mes, refYear]);
+
+  function limparRecorte() {
+    setMes("");
+    setSeInicio(undefined);
+    setSeFim(undefined);
+  }
+
+  const anosQuery = useQuery<{ anos: number[] }>({
+    queryKey: ["cevesp-anos"],
+    queryFn: async () => {
+      const res = await fetch("/api/cevesp/anos");
+      return res.json() as Promise<{ anos: number[] }>;
+    },
+    staleTime: 10 * 60 * 1000,
+  });
+  const anoOptions = anosQuery.data?.anos?.length ? anosQuery.data.anos : [thisYear];
 
   const qs = useMemo(() => {
     const p = new URLSearchParams();
     if (filters?.gve)       p.set("gve", filters.gve);
     if (filters?.municipio) p.set("municipality", filters.municipio);
+    p.set("year", String(refYear));
     return p.toString();
-  }, [filters]);
+  }, [filters, refYear]);
 
   const { data, isLoading, isError, error } = useQuery<EndemicChannelPoint[]>({
     queryKey: ["canal-endemico", qs],
@@ -95,9 +132,9 @@ export function CanalEndemicoView({ filters }: Props) {
     const p = new URLSearchParams();
     if (filters?.gve)       p.set("gve", filters.gve);
     if (filters?.municipio) p.set("municipality", filters.municipio);
-    p.set("year", String(currentYear - 1));
+    p.set("year", String(refYear - 1));
     return p.toString();
-  }, [filters, currentYear]);
+  }, [filters, refYear]);
 
   const { data: prevData } = useQuery<EndemicChannelPoint[]>({
     queryKey: ["canal-endemico-prev", prevYearQs],
@@ -154,15 +191,25 @@ export function CanalEndemicoView({ filters }: Props) {
     return { chartData, lastSE, currentZona, projStart };
   }, [data, prevData]);
 
+  // ── Recorte visual (mês / SE) aplicado ao gráfico ────────────────────────────
+  const visibleChartData = useMemo(() => {
+    if (seInicio == null && seFim == null) return chartData;
+    const lo = seInicio ?? 1;
+    const hi = seFim ?? 53;
+    return chartData.filter((d) => d.se >= lo && d.se <= hi);
+  }, [chartData, seInicio, seFim]);
+
   // ── KPIs ───────────────────────────────────────────────────────────────────
   const kpis = useMemo(() => {
     if (!data || !lastSE) return null;
     const seData = data.find((d) => d.se === lastSE);
     if (!seData) return null;
     const atual = seData.currentYear ?? 0;
-    const acima = data.filter((d) => d.currentYear !== null && d.currentYear > d.q3).length;
+    const lo = seInicio ?? 1;
+    const hi = seFim ?? 53;
+    const acima = data.filter((d) => d.se >= lo && d.se <= hi && d.currentYear !== null && d.currentYear > d.q3).length;
     return { atual, q1: seData.q1, q3: seData.q3, median: seData.median, acima };
-  }, [data, lastSE]);
+  }, [data, lastSE, seInicio, seFim]);
 
   if (isLoading) return (
     <div className="flex items-center justify-center py-20 text-sm text-muted-foreground">
@@ -171,13 +218,13 @@ export function CanalEndemicoView({ filters }: Props) {
   );
 
   if (isError) return (
-    <Card className="border-destructive m-6">
+    <Card className="border-destructive">
       <CardContent className="py-8 text-center text-sm text-red-700">{(error as Error).message}</CardContent>
     </Card>
   );
 
   if (!data || data.length === 0) return (
-    <Card className="m-6">
+    <Card>
       <CardContent className="py-10 text-center text-sm text-muted-foreground">
         Sem dados suficientes para calcular o canal endêmico. Sincronize o CEVESP.
       </CardContent>
@@ -185,7 +232,67 @@ export function CanalEndemicoView({ filters }: Props) {
   );
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6">
+      {/* ── Ano / mês / SE ──────────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">Ano</span>
+          <select
+            value={refYear}
+            onChange={(e) => setRefYear(Number(e.target.value))}
+            className="h-8 rounded-md border bg-background px-2 text-xs"
+          >
+            {(anoOptions.includes(refYear) ? anoOptions : [...anoOptions, refYear])
+              .sort((a, b) => b - a)
+              .map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">Mês</span>
+          <select
+            value={mes}
+            onChange={(e) => setMes(e.target.value)}
+            className="h-8 rounded-md border bg-background px-2 text-xs"
+          >
+            <option value="">Ano inteiro</option>
+            {MESES.map((label, index) => (
+              <option key={label} value={index + 1}>{label}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">SE</span>
+          <input
+            type="number"
+            min={1}
+            max={53}
+            placeholder="01"
+            value={seInicio ?? ""}
+            onChange={(e) => { setMes(""); setSeInicio(e.target.value ? Number(e.target.value) : undefined); }}
+            className="h-8 w-14 rounded-md border bg-background px-2 text-xs text-center"
+          />
+          <span className="text-xs text-muted-foreground">a</span>
+          <input
+            type="number"
+            min={1}
+            max={53}
+            placeholder="53"
+            value={seFim ?? ""}
+            onChange={(e) => { setMes(""); setSeFim(e.target.value ? Number(e.target.value) : undefined); }}
+            className="h-8 w-14 rounded-md border bg-background px-2 text-xs text-center"
+          />
+        </div>
+        {(mes || seInicio != null || seFim != null) && (
+          <button
+            type="button"
+            onClick={limparRecorte}
+            className="h-8 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            Limpar recorte
+          </button>
+        )}
+      </div>
+
       {/* ── KPI row + export ────────────────────────────────────────────── */}
       {kpis && lastSE && (
         <div className="flex flex-wrap items-center gap-3">
@@ -200,7 +307,7 @@ export function CanalEndemicoView({ filters }: Props) {
           {kpis.acima > 0 && (
             <div className="flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700 shadow-sm">
               <AlertTriangle className="h-3.5 w-3.5" />
-              {kpis.acima} {kpis.acima === 1 ? "semana acima" : "semanas acima"} do Q3 no ano atual
+              {kpis.acima} {kpis.acima === 1 ? "semana acima" : "semanas acima"} do Q3 em {refYear}{(seInicio != null || seFim != null) ? " (recorte)" : ""}
             </div>
           )}
           <div className="ml-auto flex items-center gap-2">
@@ -236,7 +343,8 @@ export function CanalEndemicoView({ filters }: Props) {
                 Canal Endêmico — Conjuntivites CEVESP
               </CardTitle>
               <CardDescription className="text-xs">
-                Zonas calculadas com base nos últimos 5 anos (P25–P75 por SE). Azul sólido = {currentYear}. Cinza tracejado = {currentYear - 1}. Azul claro = projeção. Linha vermelha = limiar Farrington (EARS C2).
+                Zonas calculadas com base nos 5 anos anteriores (P25–P75 por SE). Azul sólido = {refYear}. Cinza tracejado = {refYear - 1}. Azul claro = projeção. Linha vermelha = limiar Farrington (EARS C2).
+                {(seInicio != null || seFim != null) && ` Exibindo SE ${seInicio ?? 1} a ${seFim ?? 53}.`}
               </CardDescription>
             </div>
             {projStart && (
@@ -249,7 +357,7 @@ export function CanalEndemicoView({ filters }: Props) {
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={360}>
-            <ComposedChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+            <ComposedChart data={visibleChartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
               <XAxis
                 dataKey="se"

@@ -50,7 +50,7 @@ export function EpidemicZoneBanner({ gve, municipio }: Props) {
       <span className="flex-1 leading-snug">
         <strong>SE {lastSE} — zona {zona}:</strong>{" "}
         {cur.toLocaleString("pt-BR")} casos registrados, {threshold}.{" "}
-        <a href="?tab=canal" className="underline underline-offset-2 hover:opacity-80">
+        <a href="?tab=situacao" className="underline underline-offset-2 hover:opacity-80">
           Ver canal endêmico →
         </a>
       </span>

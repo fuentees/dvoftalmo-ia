@@ -7,7 +7,6 @@ import {
   BarChart3,
   Download,
   FileText,
-  LineChart,
   MessageSquareText,
   RefreshCw
 } from "lucide-react";
@@ -17,12 +16,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { RateMap, type RateMapRow } from "@/components/epidemiology/rate-map";
-import { EndemicChannelChart, EpidemicCharts } from "@/components/notifications/epidemic-charts";
+import { EpidemicCharts } from "@/components/notifications/epidemic-charts";
 import { ConjuntiviteChartsView } from "@/components/conjuntivite/conjuntivite-charts-view";
+import { CanalEndemicoView } from "@/components/conjuntivite/canal-endemico-view";
 import { AnalysisChart } from "@/components/analysis-chart";
 import { listarMunicipiosPorGve } from "@/lib/municipios-sp";
 
-type HubTab = "situacao" | "consulta" | "canal" | "saidas";
+type HubTab = "situacao" | "consulta" | "saidas";
 type NotificationsReportViewProps = {
   section?: "situacao" | "consulta";
   externalFilters?: {
@@ -143,7 +143,6 @@ type AskData = {
 const tabs: Array<{ id: HubTab; label: string; icon: React.ElementType }> = [
   { id: "situacao", label: "Situação", icon: BarChart3 },
   { id: "consulta", label: "Consulta", icon: MessageSquareText },
-  { id: "canal", label: "Canal", icon: LineChart },
   { id: "saidas", label: "Saídas", icon: FileText }
 ];
 
@@ -420,7 +419,6 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
   const [structuredMetric, setStructuredMetric] = useState("Total de casos");
   const [structuredDimension, setStructuredDimension] = useState("por GVE");
   const [structuredPeriod, setStructuredPeriod] = useState("últimos 5 anos");
-  const [showEndemic, setShowEndemic] = useState(false);
   const [selectedYear, setSelectedYear] = useState<number | undefined>(undefined);
   const [selectedYearEnd, setSelectedYearEnd] = useState<number | undefined>(undefined);
   const [selectedGve, setSelectedGve] = useState<string>("");
@@ -523,17 +521,6 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
       return data as QualityData;
     },
     staleTime: 5 * 60 * 1000
-  });
-
-  const endemic = useQuery({
-    queryKey: ["canal-endemico"],
-    queryFn: async () => {
-      const response = await fetch("/api/cevesp/canal-endemico");
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Erro ao calcular canal endemico");
-      return data;
-    },
-    enabled: showEndemic || activeTab === "canal" || activeTab === "situacao"
   });
 
   const rates = useQuery<CevespRatesData>({
@@ -786,10 +773,7 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
             return (
               <button
                 key={item.id}
-                onClick={() => {
-                  setTab(item.id);
-                  if (item.id === "canal") setShowEndemic(true);
-                }}
+                onClick={() => setTab(item.id)}
                 className={`flex h-9 items-center gap-2 whitespace-nowrap rounded-md px-3 text-sm transition-colors ${
                   activeTab === item.id ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                 }`}
@@ -949,21 +933,7 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
                 title="Canal endêmico"
                 description="Série histórica para detectar semanas acima do esperado e apoiar decisão de investigação."
               />
-              {endemic.isFetching && (
-                <Card><CardContent className="py-6 text-center text-sm text-muted-foreground">Calculando canal endêmico...</CardContent></Card>
-              )}
-              {endemic.isError && (
-                <Card className="border-destructive">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-destructive">
-                      <AlertTriangle className="h-5 w-5" />
-                      Erro no canal endêmico
-                    </CardTitle>
-                    <CardDescription>{(endemic.error as Error).message}</CardDescription>
-                  </CardHeader>
-                </Card>
-              )}
-              {endemic.data && endemic.data.length > 0 && <EndemicChannelChart data={endemic.data} />}
+              <CanalEndemicoView filters={{ gve: selectedGve, municipio: selectedMunicipio }} />
             </div>
           </div>
         )}
@@ -1113,26 +1083,6 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
               )}
             </CardContent>
           </Card>
-        )}
-
-        {activeTab === "canal" && (
-          <div className="space-y-4">
-            {endemic.isFetching && (
-              <Card><CardContent className="py-6 text-center text-sm text-muted-foreground">Calculando canal endêmico...</CardContent></Card>
-            )}
-            {endemic.isError && (
-              <Card className="border-destructive">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-destructive">
-                    <AlertTriangle className="h-5 w-5" />
-                    Erro no canal endêmico
-                  </CardTitle>
-                  <CardDescription>{(endemic.error as Error).message}</CardDescription>
-                </CardHeader>
-              </Card>
-            )}
-            {endemic.data && endemic.data.length > 0 && <EndemicChannelChart data={endemic.data} />}
-          </div>
         )}
 
         {activeTab === "saidas" && (

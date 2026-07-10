@@ -183,7 +183,7 @@ function CanalZoneStrip({ data, loading }: { data?: EndemicChannelPoint[]; loadi
                  :              "bg-teal-100 text-teal-700";
 
   return (
-    <Link href="/conjuntivite?tab=canal" className={`flex items-center gap-3 rounded-lg border px-4 py-2.5 text-sm transition-opacity hover:opacity-80 ${bg}`}>
+    <Link href="/conjuntivite?tab=situacao" className={`flex items-center gap-3 rounded-lg border px-4 py-2.5 text-sm transition-opacity hover:opacity-80 ${bg}`}>
       <TrendingUp className="h-4 w-4 shrink-0" />
       <span className="flex-1 font-medium">Canal Endêmico · SE {pt.se}</span>
       <span className={`rounded px-2 py-0.5 text-xs font-semibold ${badgeCls}`}>{zona}</span>

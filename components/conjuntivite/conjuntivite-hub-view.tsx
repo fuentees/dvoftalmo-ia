@@ -2,27 +2,25 @@
 
 import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
-import { Activity, Database, ShieldAlert, TrendingUp } from "lucide-react";
+import { Activity, Database, ShieldAlert } from "lucide-react";
 import { NotificationsReportView } from "@/components/notifications/notifications-report-view";
 import { CevespQualidadeView } from "@/components/cevesp/cevesp-qualidade-view";
-import { CanalEndemicoView } from "@/components/conjuntivite/canal-endemico-view";
 import { listarGvesSp, listarMunicipiosPorGve } from "@/lib/municipios-sp";
 import { EpidemicZoneBanner } from "@/components/conjuntivite/epidemic-zone-banner";
 
-type OuterTab = "situacao" | "qualidade" | "consulta" | "canal";
+type OuterTab = "situacao" | "qualidade" | "consulta";
 
 const outerTabs: Array<{ id: OuterTab; label: string; icon: React.ElementType }> = [
   { id: "situacao",  label: "Situação Epidemiológica", icon: Activity },
   { id: "qualidade", label: "Qualidade dos Dados",     icon: ShieldAlert },
   { id: "consulta",  label: "Consulta",                icon: Database },
-  { id: "canal",     label: "Canal Endêmico",          icon: TrendingUp },
 ];
 
 export function ConjuntiviteHubView() {
   const searchParams = useSearchParams();
   const requestedTab = searchParams.get("tab");
   const initialTab: OuterTab =
-    requestedTab === "qualidade" || requestedTab === "consulta" || requestedTab === "canal"
+    requestedTab === "qualidade" || requestedTab === "consulta"
       ? requestedTab
       : "situacao";
   const [tab, setTab] = useState<OuterTab>(initialTab);
@@ -116,7 +114,6 @@ export function ConjuntiviteHubView() {
         {tab === "situacao"  && <NotificationsReportView section="situacao" externalFilters={reportFilters} hideFilters />}
         {tab === "qualidade" && <CevespQualidadeView externalFilters={reportFilters} />}
         {tab === "consulta"  && <NotificationsReportView section="consulta" externalFilters={reportFilters} hideFilters />}
-        {tab === "canal"     && <CanalEndemicoView filters={{ gve, municipio }} />}
       </div>
     </div>
   );
