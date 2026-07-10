@@ -1,175 +1,15 @@
-import type OpenAI from "openai";
-import Anthropic from "@anthropic-ai/sdk";
 import type { AiSource, TracomaSurveyResult } from "@/lib/types";
-import { chatModel } from "@/services/ai/openai";
-import { buildSystemPrompt } from "@/services/ai/prompts";
-import { getAIConfig, generateCompletion } from "@/services/ai/provider";
 import { runCevespAnalysis } from "@/services/cevesp-analytics";
 import { fetchTracomaSurveys, estimateAzithromycin } from "@/services/tracoma-analytics";
 import { retrieveContext } from "@/services/ai/rag";
 import { findInvalidRecords, saveCorrectionsToQueue } from "@/services/cevesp-corrections";
 import { getNotificationTableName } from "@/lib/external/notification-db";
 import { auditarSinanTracoma, runSinanTracomaAnalysis } from "@/services/sinan-tracoma";
+import { runEndemicChannel } from "@/services/cevesp-endemic";
+import { extractChartData, type ChartData } from "@/services/ai/chart-utils";
+
 // 5-min in-memory cache for tracoma queries (REDCap is slow and data rarely changes)
 const tracomaCache = new Map<string, { data: { data: TracomaSurveyResult[]; isMock: boolean }; expiresAt: number }>();
-
-// ── Tool definitions ──────────────────────────────────────────────────────────
-
-const COS_TOOLS: OpenAI.ChatCompletionTool[] = [
-  {
-    type: "function",
-    function: {
-      name: "consultar_cevesp",
-      description:
-        "Consulta o banco de dados CEVESP com dados de notificações de conjuntivites do Estado de SP. " +
-        "Use para perguntas sobre total de casos, distribuição por SE, GVE, DRS, município, surtos, " +
-        "faixa etária, sexo ou tendência temporal.",
-      parameters: {
-        type: "object",
-        properties: {
-          pergunta: {
-            type: "string",
-            description: "Pergunta em linguagem natural. Ex.: total de casos por GVE nos últimos 3 anos por SE"
-          }
-        },
-        required: ["pergunta"]
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "consultar_tracoma",
-      description:
-        "Consulta inquéritos de tracoma do REDCap. Retorna prevalência TF e TT por município, " +
-        "status de eliminação OMS e estimativa de doses de azitromicina. " +
-        "Use para perguntas sobre tracoma, TF, TT, eliminação, cobertura de tratamento.",
-      parameters: {
-        type: "object",
-        properties: {
-          municipio: { type: "string", description: "Nome do município (opcional)" },
-          uf: { type: "string", description: "UF de 2 letras, ex.: SP (opcional)" },
-          ano_inicio: { type: "number", description: "Ano de início do filtro (opcional)" },
-          ano_fim: { type: "number", description: "Ano fim do filtro (opcional)" }
-        },
-        required: []
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "estimar_azitromicina",
-      description:
-        "Estima o número de doses de azitromicina necessárias para tratamento em massa de tracoma " +
-        "conforme protocolo OMS/OPAS (20 mg/kg, faixas de peso padrão).",
-      parameters: {
-        type: "object",
-        properties: {
-          total_examinados: {
-            type: "number",
-            description: "Total de crianças/adultos examinados no inquérito"
-          },
-          prevalencia_tf: {
-            type: "number",
-            description: "Prevalência TF em porcentagem (ex.: 12.5 para 12,5%)"
-          },
-          cobertura_populacao: {
-            type: "number",
-            description: "Fração da população a cobrir com tratamento (0 a 1, padrão: 1)"
-          }
-        },
-        required: ["total_examinados", "prevalencia_tf"]
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "identificar_invalidos_cevesp",
-      description:
-        "Busca registros no CEVESP com data de notificação ou SE inválida (futuro, impossível). " +
-        "Use para auditar qualidade de dado antes de propor correções. " +
-        "Retorna lista de registros com o problema identificado e sugestão de correção.",
-      parameters: {
-        type: "object",
-        properties: {
-          limite: {
-            type: "number",
-            description: "Máximo de registros a retornar (padrão: 50, máximo: 100)"
-          }
-        },
-        required: []
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "consultar_sinan_tracoma",
-      description:
-        "Consulta o cache SINAN Tracoma. " +
-        "TRACONET = casos individuais reais (sexo, idade, forma clínica TF/TI/TS/TT/CO, tratamento). " +
-        "NOTTRACONET = consolidado/agregados (número de examinados e positivos por localidade). " +
-        "Retorna contagens por município, GVE, DRS, ano, banco, classificação ou agravo. " +
-        "Use para perguntas sobre casos notificados, distribuição territorial/temporal, comparação entre bancos.",
-      parameters: {
-        type: "object",
-        properties: {
-          pergunta: {
-            type: "string",
-            description: "Pergunta em linguagem natural sobre os dados SINAN Tracoma. Ex.: total de casos TT por município em 2023"
-          }
-        },
-        required: ["pergunta"]
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "auditar_sinan_tracoma",
-      description:
-        "Audita qualidade e consistência dos dados SINAN Tracoma. " +
-        "TRACONET = casos individuais (TF/TT/sexo/idade); NOTTRACONET = consolidado/agregados. " +
-        "Detecta: divergências entre os dois bancos por município/ano (ex: consolidado tem 40 casos mas só 20 individuais registrados), " +
-        "casos sem graduação TF/TI/TS/TT/CO, TF sem tratamento (azitromicina), TT sem cirurgia/epilation, " +
-        "anos impossíveis e completude dos campos clínicos. " +
-        "Use para perguntas sobre completude, subregistro, inconsistências ou qualidade dos dados SINAN tracoma.",
-      parameters: {
-        type: "object",
-        properties: {
-          municipio: { type: "string", description: "Filtrar por município (opcional)" },
-          gve: { type: "string", description: "Filtrar por GVE/regional de saúde (opcional)" },
-          year_start: { type: "number", description: "Ano de início do filtro (opcional)" },
-          year_end: { type: "number", description: "Ano fim do filtro (opcional)" }
-        },
-        required: []
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "propor_correcao_cevesp",
-      description:
-        "Envia uma proposta de correção de registro CEVESP para a fila de aprovação. " +
-        "Use após identificar_invalidos_cevesp. A correção só será aplicada após aprovação de um supervisor.",
-      parameters: {
-        type: "object",
-        properties: {
-          record_id: { type: "string", description: "ID do registro a corrigir" },
-          pk_column: { type: "string", description: "Nome da coluna de chave primária" },
-          field_name: { type: "string", description: "Campo a corrigir (ex: DtNotificacao, SemEpidemio)" },
-          old_value: { type: "string", description: "Valor atual (inválido)" },
-          new_value: { type: "string", description: "Valor proposto (correto)" },
-          reason: { type: "string", description: "Motivo da correção" }
-        },
-        required: ["record_id", "pk_column", "field_name", "old_value", "new_value", "reason"]
-      }
-    }
-  }
-];
 
 // ── Data quality: future SE/year filter ──────────────────────────────────────
 
@@ -271,6 +111,7 @@ function validateDates(rows: Record<string, unknown>[]): DateQualityResult {
 interface ToolResult {
   content: string;
   sources?: AiSource[];
+  chart?: ChartData | null;
 }
 
 export async function executeTool(
@@ -312,16 +153,49 @@ export async function executeTool(
         ? `\n\n--- Qualidade de dado ---\n` + warnings.join("\n")
         : "";
 
+      const chart = extractChartData(valid, cols, result.metricLabel ?? "Dados", result.timeLabel ?? "");
+
       return {
         content:
           `Métrica: ${result.metricLabel ?? ""} | Período: ${result.timeLabel ?? ""}\n` +
           `Registros analisados: ${valid.length}` +
           (excluded > 0 ? ` | Excluídos (inválidos): ${excluded}` : "") +
           (suspicious > 0 ? ` | Suspeitos (verificar): ${suspicious}` : "") +
-          `\n\n${header}\n${rowLines}${interp}${qualityNote}`
+          `\n\n${header}\n${rowLines}${interp}${qualityNote}`,
+        chart
       };
     } catch (err) {
       return { content: `Erro CEVESP: ${err instanceof Error ? err.message : String(err)}` };
+    }
+  }
+
+  if (name === "consultar_canal_endemico") {
+    try {
+      const points = await runEndemicChannel({
+        gve: args.gve ? String(args.gve) : undefined,
+        municipality: args.municipio ? String(args.municipio) : undefined,
+      });
+      const withData = points.filter((p) => p.currentYear !== null);
+      if (!withData.length) {
+        return { content: "Canal endêmico — sem dados suficientes do ano atual para posicionar a curva." };
+      }
+      const lastSE = Math.max(...withData.map((p) => p.se));
+      const pt = withData.find((p) => p.se === lastSE)!;
+      const cur = pt.currentYear!;
+      const zona = cur > pt.q3 ? "EPIDEMIA" : cur > pt.q1 ? "ALERTA" : "SUCESSO";
+      const weeksAbove = withData.filter((p) => p.currentYear! > p.q3).length;
+      return {
+        content:
+          `Canal endêmico — SE ${lastSE} (ano atual):\n` +
+          `Zona: ${zona}\n` +
+          `Casos na SE: ${cur}\n` +
+          `Q1 histórico (limite sucesso): ${pt.q1}\n` +
+          `Mediana histórica (P50): ${pt.median}\n` +
+          `Q3 histórico (limite alerta): ${pt.q3}\n` +
+          `Semanas acima do Q3 no ano: ${weeksAbove}`
+      };
+    } catch (err) {
+      return { content: `Erro no canal endêmico: ${err instanceof Error ? err.message : String(err)}` };
     }
   }
 
@@ -514,174 +388,4 @@ export async function executeTool(
   }
 
   return { content: `Ferramenta desconhecida: ${name}` };
-}
-
-// ── COS Agent loop ────────────────────────────────────────────────────────────
-
-export interface CosAgentInput {
-  userId: string;
-  message: string;
-  conversationMessages?: Array<{ role: "user" | "assistant"; content: string }>;
-}
-
-export interface CosAgentResult {
-  answer: string;
-  sources: AiSource[];
-  toolsUsed: string[];
-}
-
-// ── OpenAI tool-loop ──────────────────────────────────────────────────────────
-async function runWithOpenAI(input: CosAgentInput, apiKey: string, model: string): Promise<CosAgentResult> {
-  const client = new (await import("openai")).default({ apiKey });
-  const messages: OpenAI.ChatCompletionMessageParam[] = [
-    { role: "system", content: buildSystemPrompt("cos") },
-    ...(input.conversationMessages ?? []),
-    { role: "user", content: input.message }
-  ];
-  const allSources: AiSource[] = [];
-  const toolsUsed: string[] = [];
-  const forcedTool = step0ToolName(input.message);
-
-  for (let step = 0; step < 8; step++) {
-    const toolChoice = step === 0
-      ? { type: "function" as const, function: { name: forcedTool } }
-      : "auto" as const;
-    const response = await client.chat.completions.create({
-      model, temperature: 0.2, tools: COS_TOOLS, tool_choice: toolChoice, messages
-    });
-    const assistantMsg = response.choices[0].message;
-    messages.push(assistantMsg as OpenAI.ChatCompletionMessageParam);
-
-    if (!assistantMsg.tool_calls?.length) {
-      return { answer: assistantMsg.content ?? "Sem resposta.", sources: allSources, toolsUsed };
-    }
-
-    const fnCalls = assistantMsg.tool_calls.filter(
-      (tc): tc is OpenAI.ChatCompletionMessageFunctionToolCall => tc.type === "function"
-    );
-    const toolResults = await Promise.all(fnCalls.map(async (tc) => {
-      const args = JSON.parse(tc.function.arguments) as Record<string, unknown>;
-      toolsUsed.push(tc.function.name);
-      const result = await executeTool(tc.function.name, args, input.userId);
-      if (result.sources) allSources.push(...result.sources);
-      return { id: tc.id, content: result.content };
-    }));
-    for (const tr of toolResults) {
-      messages.push({ role: "tool", tool_call_id: tr.id, content: tr.content });
-    }
-  }
-
-  const final = await client.chat.completions.create({
-    model, temperature: 0.2,
-    messages: [...messages, { role: "user", content: "Elabore sua resposta final com os dados obtidos." }]
-  });
-  return { answer: final.choices[0]?.message.content ?? "Sem resposta.", sources: allSources, toolsUsed };
-}
-
-// ── Anthropic tool-loop ───────────────────────────────────────────────────────
-const ANTHROPIC_TOOLS: Anthropic.Tool[] = COS_TOOLS
-  .filter((t): t is OpenAI.ChatCompletionFunctionTool & { type: "function" } => t.type === "function")
-  .map((t) => ({
-    name: t.function.name,
-    description: t.function.description ?? "",
-    input_schema: t.function.parameters as Anthropic.Tool["input_schema"]
-  }));
-
-// Force the right first tool for the COS agent.
-// Without this, Claude picks buscar_documentos for any question and responds
-// with a generic "no access" message when embeddings are unavailable.
-// Strategy: tracoma questions → consultar_tracoma; everything else → consultar_cevesp.
-// Claude can still call other tools on step 1+ via tool_choice:"auto".
-function step0ToolName(message: string): string {
-  const n = message.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-  if (/auditoria|completude|subregistro|inconsistencia|sem tratamento|sem graduacao|sem conclusao|divergencia|traconet|nottraconet|qualidade.*sinan|sinan.*qualidade/.test(n)) {
-    return "auditar_sinan_tracoma";
-  }
-  if (/sinan/.test(n)) return "consultar_sinan_tracoma";
-  if (/tracoma|tf\b|tt\b|azitromicin|eliminac/.test(n)) return "consultar_tracoma";
-  return "consultar_cevesp";
-}
-
-async function runWithAnthropic(input: CosAgentInput, apiKey: string, model: string): Promise<CosAgentResult> {
-  const client = new Anthropic({ apiKey });
-  type AnthropicMsg = Anthropic.MessageParam;
-  const messages: AnthropicMsg[] = [
-    ...(input.conversationMessages ?? []).map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
-    { role: "user", content: input.message }
-  ];
-  const system = buildSystemPrompt("cos");
-  const allSources: AiSource[] = [];
-  const toolsUsed: string[] = [];
-  const forcedTool = step0ToolName(input.message);
-
-  for (let step = 0; step < 8; step++) {
-    const response = await client.messages.create({
-      model, max_tokens: 4096, temperature: 0.2,
-      system, tools: ANTHROPIC_TOOLS,
-      tool_choice: step === 0 ? { type: "tool", name: forcedTool } : { type: "auto" },
-      messages
-    });
-
-    const textBlock = response.content.find((b) => b.type === "text");
-    const toolUseBlocks = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
-
-    if (response.stop_reason === "end_turn" || toolUseBlocks.length === 0) {
-      return {
-        answer: textBlock?.type === "text" ? textBlock.text : "Sem resposta.",
-        sources: allSources, toolsUsed
-      };
-    }
-
-    messages.push({ role: "assistant", content: response.content });
-
-    const toolResults = await Promise.all(toolUseBlocks.map(async (block) => {
-      toolsUsed.push(block.name);
-      const result = await executeTool(block.name, block.input as Record<string, unknown>, input.userId);
-      if (result.sources) allSources.push(...result.sources);
-      return { type: "tool_result" as const, tool_use_id: block.id, content: result.content };
-    }));
-    messages.push({ role: "user", content: toolResults });
-  }
-
-  return { answer: "Limite de passos atingido.", sources: allSources, toolsUsed };
-}
-
-// ── Gemini text-mode (sem tool loop — injeta contexto CEVESP diretamente) ─────
-async function runWithGemini(input: CosAgentInput): Promise<CosAgentResult> {
-  const toolsUsed: string[] = [];
-  const contextParts: string[] = [];
-
-  // Auto-execute CEVESP query and inject as context
-  try {
-    const cevesp = await executeTool("consultar_cevesp", { pergunta: input.message }, input.userId);
-    contextParts.push(`Dados CEVESP:\n${cevesp.content}`);
-    toolsUsed.push("consultar_cevesp");
-  } catch { /* skip */ }
-
-  const systemContent = buildSystemPrompt("cos") +
-    (contextParts.length ? `\n\nContexto obtido automaticamente:\n${contextParts.join("\n\n")}` : "");
-
-  const messages = [
-    { role: "system" as const, content: systemContent },
-    ...(input.conversationMessages ?? []).map((m) => ({ role: m.role as "system" | "user" | "assistant", content: m.content })),
-    { role: "user" as const, content: input.message }
-  ];
-
-  const answer = await generateCompletion(messages, { temperature: 0.2 });
-  return { answer: answer || "Sem resposta.", sources: [], toolsUsed };
-}
-
-// ── Entry point ───────────────────────────────────────────────────────────────
-export async function runCosAgent(input: CosAgentInput): Promise<CosAgentResult> {
-  const config = await getAIConfig();
-
-  if (config.provider === "anthropic" && config.apiKey) {
-    return runWithAnthropic(input, config.apiKey, config.model);
-  }
-  if (config.provider === "gemini") {
-    return runWithGemini(input);
-  }
-  // OpenAI (default)
-  const openaiKey = config.apiKey || process.env.OPENAI_API_KEY || "";
-  return runWithOpenAI(input, openaiKey, config.model || chatModel);
 }

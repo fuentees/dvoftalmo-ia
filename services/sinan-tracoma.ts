@@ -1636,23 +1636,6 @@ export async function auditarSinanTracoma(opts?: {
   };
 }
 
-export async function runSinanTracomaContextQuery(message: string) {
-  const result = await runSinanTracomaAnalysis(message);
-  const header = result.columns.join(" | ");
-  const body = result.rows.slice(0, 40).map((row) => result.columns.map((column) => row[column]).join(" | ")).join("\n");
-  return {
-    result,
-    summary: [
-      `Fonte: cache SINAN Tracoma (TRACONET/NOTTRACONET).`,
-      `Metrica: ${result.metricLabel}. Periodo: ${result.timeLabel}.`,
-      header,
-      body,
-      "",
-      result.interpretation.join("\n")
-    ].join("\n")
-  };
-}
-
 // ── Overview aggregado para dashboard de gráficos ────────────────────────────
 
 export type TracomaOverviewYear = {

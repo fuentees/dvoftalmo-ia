@@ -65,7 +65,7 @@ export async function extractTextFromFile(file: File): Promise<string> {
  * short paragraphs up to maxChars. The last paragraph of each chunk is
  * carried forward as overlap context for the next chunk.
  */
-export function chunkText(text: string, maxChars = 1400): string[] {
+export function chunkText(text: string, maxChars = 2000): string[] {
   // Split on paragraph boundaries (2+ newlines) and before markdown headings
   const paragraphs = text
     .split(/\n{2,}|(?=\n#{1,6}\s)/)

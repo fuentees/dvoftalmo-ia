@@ -5,6 +5,7 @@ import { createAISdkModel } from "@/lib/ai-provider-sdk";
 import { buildSystemPrompt } from "@/services/ai/prompts";
 import { executeTool } from "@/services/cos-agent";
 import { retrieveContext } from "@/services/ai/rag";
+import type { ChartData } from "@/services/ai/chart-utils";
 import type { AiSource, AgentKind } from "@/lib/types";
 
 // ── Event types emitted by streamWithTools ───────────────────────────────────
@@ -13,12 +14,14 @@ export type ToolStreamEvent =
   | { type: "chunk";     text: string }
   | { type: "tool_call"; name: string }
   | { type: "tool_done"; name: string }
-  | { type: "sources";   sources: AiSource[] };
+  | { type: "sources";   sources: AiSource[] }
+  | { type: "chart";     chart: ChartData };
 
 // ── Labels shown in the UI while a tool runs ─────────────────────────────────
 
 const TOOL_LABELS: Record<string, string> = {
   consultar_cevesp:             "Consultando CEVESP…",
+  consultar_canal_endemico:     "Avaliando canal endêmico…",
   consultar_tracoma:            "Consultando tracoma REDCap…",
   consultar_sinan_tracoma:      "Consultando SINAN Tracoma…",
   auditar_sinan_tracoma:        "Auditando SINAN Tracoma…",
@@ -32,16 +35,55 @@ export function toolLabel(name: string): string {
   return TOOL_LABELS[name] ?? `Executando ${name}…`;
 }
 
+// ── Quais ferramentas cada agente pode usar ───────────────────────────────────
+// "cos" tem acesso total; os demais recebem só o que é relevante à sua especialidade
+// (services/ai/prompts.ts) — evita, por exemplo, que o agente de e-mail proponha
+// correcoes no CEVESP.
+const AGENT_TOOLS: Record<AgentKind, string[]> = {
+  cos: [
+    "consultar_cevesp", "consultar_canal_endemico", "consultar_tracoma", "estimar_azitromicina",
+    "identificar_invalidos_cevesp", "propor_correcao_cevesp", "consultar_sinan_tracoma",
+    "auditar_sinan_tracoma", "buscar_documentos",
+  ],
+  epidemiologico: [
+    "consultar_cevesp", "consultar_canal_endemico", "identificar_invalidos_cevesp",
+    "propor_correcao_cevesp", "buscar_documentos",
+  ],
+  tracoma: [
+    "consultar_tracoma", "estimar_azitromicina", "consultar_sinan_tracoma",
+    "auditar_sinan_tracoma", "buscar_documentos",
+  ],
+  dados:        ["buscar_documentos"],
+  geral:        ["buscar_documentos"],
+  documentos:   ["buscar_documentos"],
+  email:        ["buscar_documentos"],
+  treinamentos: ["buscar_documentos"],
+  campo:        ["buscar_documentos"],
+};
+
 // ── Tool definitions (AI SDK v7: inputSchema instead of parameters) ───────────
 
-function buildTools(userId: string) {
+function buildAllTools(userId: string) {
   const exec = (name: string, args: Record<string, unknown>) =>
     executeTool(name, args, userId).then((r) => ({
       text:    r.content,
       sources: (r.sources ?? []) as AiSource[],
+      chart:   r.chart ?? undefined,
     }));
 
   return {
+    consultar_canal_endemico: tool({
+      description:
+        "Consulta a posição da curva epidêmica atual de conjuntivites (SP) no canal endêmico " +
+        "histórico (sucesso/alerta/epidemia por semana epidemiológica). Use para perguntas sobre " +
+        "situação epidemiológica atual, se estamos em alerta/epidemia, ou tendência da semana.",
+      inputSchema: z.object({
+        gve:       z.string().optional().describe("Nome do GVE (opcional)"),
+        municipio: z.string().optional().describe("Nome do município (opcional)"),
+      }),
+      execute: (args) => exec("consultar_canal_endemico", args as Record<string, unknown>),
+    }),
+
     consultar_cevesp: tool({
       description:
         "Consulta o banco CEVESP com dados de notificações de conjuntivites do Estado de SP. " +
@@ -154,8 +196,12 @@ export async function* streamWithTools(params: {
   messages: ModelMessage[];
   userModel?: string | null;
 }): AsyncGenerator<ToolStreamEvent> {
-  const sdkModel = await createAISdkModel(params.userModel);
-  const tools    = buildTools(params.userId);
+  const sdkModel  = await createAISdkModel(params.userModel);
+  const allTools  = buildAllTools(params.userId);
+  const allowed   = new Set(AGENT_TOOLS[params.agent] ?? ["buscar_documentos"]);
+  const tools     = Object.fromEntries(
+    Object.entries(allTools).filter(([name]) => allowed.has(name))
+  ) as typeof allTools;
 
   const result = streamText({
     model:       sdkModel,
@@ -176,8 +222,9 @@ export async function* streamWithTools(params: {
       yield { type: "tool_call", name: tc.toolName };
     } else if (part.type === "tool-result") {
       const tr = part as { type: "tool-result"; toolName: string; output: unknown };
-      const out = tr.output as { sources?: AiSource[] } | undefined;
+      const out = tr.output as { sources?: AiSource[]; chart?: ChartData } | undefined;
       if (Array.isArray(out?.sources)) allSources.push(...out!.sources);
+      if (out?.chart) yield { type: "chart", chart: out.chart };
       yield { type: "tool_done", name: tr.toolName };
     }
   }

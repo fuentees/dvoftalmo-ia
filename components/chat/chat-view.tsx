@@ -12,7 +12,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { agentLabels, type AgentKind } from "@/lib/types";
-import type { ChartData } from "@/app/api/chat/route";
+import type { ChartData } from "@/services/ai/chart-utils";
 import { MODEL_CATALOG } from "@/lib/ai-models";
 
 // Simple Markdown renderer — handles the most common AI output patterns
