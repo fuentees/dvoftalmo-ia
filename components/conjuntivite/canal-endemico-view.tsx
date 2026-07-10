@@ -10,7 +10,7 @@ import { AlertTriangle, CheckCircle2, Download, Info, RefreshCw, TrendingUp, XCi
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { EndemicChannelPoint } from "@/services/cevesp-endemic";
-import { pickCurrentChannelPoint, monthToEpiWeekRange } from "@/lib/epi-week";
+import { pickCurrentChannelPoint, pickCurrentPoint } from "@/lib/epi-week";
 
 const MESES = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -102,7 +102,21 @@ export function CanalEndemicoView({ filters }: Props) {
     staleTime: 10 * 60 * 1000,
   });
 
+  // ── Busca de dados já no grain certo: SE tem estatística própria por semana,
+  // Mês tem estatística própria por mês (não é mais soma das SEs do mês) ──────
+  const grain = xAxisMode === "mes" ? "month" : "week";
+
   const qs = useMemo(() => {
+    const p = new URLSearchParams();
+    if (filters?.gve)       p.set("gve", filters.gve);
+    if (filters?.municipio) p.set("municipality", filters.municipio);
+    p.set("year", String(refYear));
+    if (grain === "month") p.set("grain", "month");
+    return p.toString();
+  }, [filters, refYear, grain]);
+
+  // Export sempre usa o grain semanal (é o único formato que os endpoints de export entendem)
+  const exportQs = useMemo(() => {
     const p = new URLSearchParams();
     if (filters?.gve)       p.set("gve", filters.gve);
     if (filters?.municipio) p.set("municipality", filters.municipio);
@@ -126,8 +140,9 @@ export function CanalEndemicoView({ filters }: Props) {
     if (filters?.gve)       p.set("gve", filters.gve);
     if (filters?.municipio) p.set("municipality", filters.municipio);
     p.set("year", String(refYear - 1));
+    if (grain === "month") p.set("grain", "month");
     return p.toString();
-  }, [filters, refYear]);
+  }, [filters, refYear, grain]);
 
   const { data: prevData } = useQuery<EndemicChannelPoint[]>({
     queryKey: ["canal-endemico-prev", prevYearQs],
@@ -141,12 +156,17 @@ export function CanalEndemicoView({ filters }: Props) {
   });
 
   // ── Derive chart data + projection ─────────────────────────────────────────
-  const { chartData, lastSE, currentZona, projStart } = useMemo(() => {
-    if (!data) return { chartData: [], lastSE: null, currentZona: null, projStart: null };
+  const { chartData, lastSE, lastLabel, currentZona, projStart } = useMemo(() => {
+    if (!data) return { chartData: [], lastSE: null, lastLabel: null, currentZona: null, projStart: null };
+
+    const bucketLabel = (bucket: number) => xAxisMode === "se" ? String(bucket) : MESES[bucket - 1].slice(0, 3);
 
     const withData = data.filter((d) => d.currentYear !== null);
-    const currentPt = pickCurrentChannelPoint(data);
+    const currentPt = xAxisMode === "se"
+      ? pickCurrentChannelPoint(data)
+      : pickCurrentPoint(data, new Date().getMonth() + 1);
     const lastSE    = currentPt?.se ?? null;
+    const lastLabel = lastSE != null ? bucketLabel(lastSE) : null;
     const currentZona = currentPt?.currentYear != null
       ? currentPt.currentYear > currentPt.q3
         ? "epidemia"
@@ -154,10 +174,11 @@ export function CanalEndemicoView({ filters }: Props) {
           ? "esperado" : "sucesso"
       : null;
 
-    // Previous year lookup by SE
+    // Previous year lookup by bucket
     const prevMap = new Map((prevData ?? []).map((p) => [p.se, p.currentYear]));
 
-    // Linear regression on last 6 observed SEs
+    // Projeção linear a partir dos últimos pontos observados: 4 SEs (~1 mês) ou 2 meses
+    const projectionSteps = xAxisMode === "se" ? 4 : 2;
     const recent = withData.slice(-6);
     const reg = linearRegression(recent.map((d) => ({ x: d.se, y: d.currentYear! })));
     const projStart = lastSE ?? null;
@@ -165,13 +186,13 @@ export function CanalEndemicoView({ filters }: Props) {
     const chartData = data.map((d) => {
       const alertBand = Math.max(0, d.q3 - d.q1);
       const projecao =
-        reg && projStart && d.se > projStart && d.se <= projStart + 4
+        reg && projStart && d.se > projStart && d.se <= projStart + projectionSteps
           ? Math.max(0, Math.round(reg.slope * d.se + reg.intercept))
           : undefined;
       const anoAnterior = prevMap.has(d.se) ? prevMap.get(d.se) ?? undefined : undefined;
       return {
         se:                 d.se,
-        label:              String(d.se),
+        label:              bucketLabel(d.se),
         "_q1Base":          d.q1,
         "Faixa esperada":   alertBand,
         "Média":            d.median,
@@ -181,42 +202,8 @@ export function CanalEndemicoView({ filters }: Props) {
       };
     });
 
-    return { chartData, lastSE, currentZona, projStart };
-  }, [data, prevData]);
-
-  // ── Agregação mensal (soma das SEs de cada mês), usada quando o eixo X = Mês ─
-  const monthlyChartData = useMemo(() => {
-    return Array.from({ length: 12 }, (_, i) => i + 1).map((month) => {
-      const [lo, hi] = monthToEpiWeekRange(refYear, month);
-      const rows = chartData.filter((d) => d.se >= lo && d.se <= hi);
-      const sum = (key: "_q1Base" | "Faixa esperada" | "Média" | "Atual" | "Ano anterior" | "Projeção") =>
-        rows.reduce((s, r) => s + (Number(r[key]) || 0), 0);
-      const sumIfAny = (key: "Atual" | "Ano anterior" | "Projeção") =>
-        rows.some((r) => r[key] != null) ? sum(key) : undefined;
-      return {
-        se:                 month,
-        label:              MESES[month - 1].slice(0, 3),
-        "_q1Base":          sum("_q1Base"),
-        "Faixa esperada":   sum("Faixa esperada"),
-        "Média":            sum("Média"),
-        "Atual":            sumIfAny("Atual"),
-        "Ano anterior":     sumIfAny("Ano anterior"),
-        "Projeção":         sumIfAny("Projeção"),
-      };
-    });
-  }, [chartData, refYear]);
-
-  const displayData = xAxisMode === "se" ? chartData : monthlyChartData;
-
-  // Mês corrente correspondente à última SE observada, para a linha de referência
-  const currentMonthLabel = useMemo(() => {
-    if (lastSE == null) return null;
-    for (let month = 1; month <= 12; month++) {
-      const [lo, hi] = monthToEpiWeekRange(refYear, month);
-      if (lastSE >= lo && lastSE <= hi) return MESES[month - 1].slice(0, 3);
-    }
-    return null;
-  }, [lastSE, refYear]);
+    return { chartData, lastSE, lastLabel, currentZona, projStart };
+  }, [data, prevData, xAxisMode]);
 
   // ── KPIs ───────────────────────────────────────────────────────────────────
   const kpis = useMemo(() => {
@@ -293,7 +280,7 @@ export function CanalEndemicoView({ filters }: Props) {
       {kpis && lastSE && (
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2 rounded-lg border bg-card px-4 py-2 text-sm shadow-sm">
-            <span className="text-muted-foreground">SE {lastSE} — casos:</span>
+            <span className="text-muted-foreground">{xAxisMode === "se" ? `SE ${lastLabel}` : lastLabel} — casos:</span>
             <span className="font-semibold">{kpis.atual.toLocaleString("pt-BR")}</span>
             <ZoneBadge zona={currentZona} />
           </div>
@@ -303,7 +290,9 @@ export function CanalEndemicoView({ filters }: Props) {
           {kpis.acima > 0 && (
             <div className="flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700 shadow-sm">
               <AlertTriangle className="h-3.5 w-3.5" />
-              {kpis.acima} {kpis.acima === 1 ? "semana acima" : "semanas acima"} do limite de epidemia em {refYear}
+              {kpis.acima} {xAxisMode === "se"
+                ? (kpis.acima === 1 ? "semana acima" : "semanas acima")
+                : (kpis.acima === 1 ? "mês acima" : "meses acima")} do limite de epidemia em {refYear}
             </div>
           )}
           <div className="ml-auto flex items-center gap-2">
@@ -311,7 +300,7 @@ export function CanalEndemicoView({ filters }: Props) {
               size="sm"
               variant="outline"
               className="h-8 gap-1.5 text-xs"
-              onClick={() => { window.location.href = `/api/cevesp/canal-endemico/export${qs ? `?${qs}` : ""}`; }}
+              onClick={() => { window.location.href = `/api/cevesp/canal-endemico/export${exportQs ? `?${exportQs}` : ""}`; }}
             >
               <Download className="h-3.5 w-3.5" />
               Exportar XLSX
@@ -320,7 +309,7 @@ export function CanalEndemicoView({ filters }: Props) {
               size="sm"
               variant="outline"
               className="h-8 gap-1.5 text-xs"
-              onClick={() => { window.location.href = `/api/cevesp/relatorio${qs ? `?${qs}` : ""}`; }}
+              onClick={() => { window.location.href = `/api/cevesp/relatorio${exportQs ? `?${exportQs}` : ""}`; }}
             >
               <Download className="h-3.5 w-3.5" />
               Exportar CSV
@@ -340,7 +329,7 @@ export function CanalEndemicoView({ filters }: Props) {
               </CardTitle>
               <CardDescription className="text-xs">
                 Faixa azul = intervalo esperado (média ± 2 desvios-padrão em escala logarítmica, dos 10 anos anteriores — evita que anos de surto distorçam o limite inferior). Azul escuro = {refYear}. Roxo tracejado = {refYear - 1}. Cinza pontilhado = média histórica. Azul claro tracejado = projeção.
-                {xAxisMode === "mes" && " Valores mensais somam as SEs de cada mês."}
+                {xAxisMode === "mes" && " Estatísticas calculadas por mês, independente da visão por SE."}
               </CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -356,10 +345,10 @@ export function CanalEndemicoView({ filters }: Props) {
                   </div>
                 );
               })()}
-              {projStart && (
+              {projStart && (xAxisMode === "se" || projStart < 12) && (
                 <div className="flex items-center gap-1 rounded border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-700">
                   <TrendingUp className="h-3 w-3" />
-                  Projeção a partir da SE {projStart + 1}
+                  Projeção a partir {xAxisMode === "se" ? `da SE ${projStart + 1}` : `de ${MESES[projStart]}`}
                 </div>
               )}
             </div>
@@ -367,7 +356,7 @@ export function CanalEndemicoView({ filters }: Props) {
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={360}>
-            <ComposedChart data={displayData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+            <ComposedChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
               <XAxis
                 dataKey="label"
@@ -454,12 +443,12 @@ export function CanalEndemicoView({ filters }: Props) {
               />
 
               {/* Linha da SE (ou mês) atual */}
-              {lastSE && (xAxisMode === "se" || currentMonthLabel) && (
+              {lastLabel && (
                 <ReferenceLine
-                  x={xAxisMode === "se" ? String(lastSE) : currentMonthLabel!}
+                  x={lastLabel}
                   stroke="#6b7280"
                   strokeDasharray="2 2"
-                  label={{ value: xAxisMode === "se" ? `SE ${lastSE}` : currentMonthLabel!, position: "top", fontSize: 10, fill: "#6b7280" }}
+                  label={{ value: xAxisMode === "se" ? `SE ${lastLabel}` : lastLabel, position: "top", fontSize: 10, fill: "#6b7280" }}
                 />
               )}
             </ComposedChart>

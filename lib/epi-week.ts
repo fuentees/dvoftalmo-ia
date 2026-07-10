@@ -12,24 +12,24 @@ export function currentEpiWeek(): { year: number; se: number } {
   return { year: now.getFullYear(), se: dateToEpiWeek(now) };
 }
 
-/** Faixa aproximada de SEs (início, fim) cobertas por um mês (1-12) de um determinado ano. */
-export function monthToEpiWeekRange(year: number, month: number): [number, number] {
-  const first = new Date(year, month - 1, 1);
-  const last = new Date(year, month, 0);
-  return [dateToEpiWeek(first), dateToEpiWeek(last)];
-}
-
 /**
- * Seleciona o ponto do canal endêmico correspondente à semana epidemiológica atual real,
- * em vez da maior SE presente nos dados — uma linha invalida com SE=53 no ano corrente
- * (ex: erro de digitação) nao deve ser escolhida como "semana atual" em pleno meio do ano.
- * Cai para a SE mais recente disponível caso a semana atual ainda não tenha dado.
+ * Seleciona o ponto do canal endêmico correspondente ao "balde" atual real (SE ou mês,
+ * conforme `currentBucket`), em vez do maior balde presente nos dados — um valor invalido
+ * no ano corrente (ex: erro de digitação) nao deve ser escolhido como "atual" em pleno meio
+ * do periodo. Cai para o balde mais recente disponível caso o atual ainda não tenha dado.
  */
-export function pickCurrentChannelPoint(points: EndemicChannelPoint[]): EndemicChannelPoint | null {
+export function pickCurrentPoint<T extends { se: number; currentYear: number | null }>(
+  points: T[],
+  currentBucket: number
+): T | null {
   const withData = points.filter((p) => p.currentYear !== null);
   if (!withData.length) return null;
-  const { se: currentSe } = currentEpiWeek();
-  const upToNow = withData.filter((p) => p.se <= currentSe);
+  const upToNow = withData.filter((p) => p.se <= currentBucket);
   const pool = upToNow.length ? upToNow : withData;
   return pool.reduce((a, b) => (b.se > a.se ? b : a));
+}
+
+/** Variante de `pickCurrentPoint` fixada na semana epidemiológica real de hoje. */
+export function pickCurrentChannelPoint(points: EndemicChannelPoint[]): EndemicChannelPoint | null {
+  return pickCurrentPoint(points, currentEpiWeek().se);
 }

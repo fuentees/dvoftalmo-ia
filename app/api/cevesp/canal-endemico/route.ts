@@ -12,9 +12,10 @@ export async function GET(request: NextRequest) {
   const municipality = request.nextUrl.searchParams.get("municipality") ?? undefined;
   const yearParam    = request.nextUrl.searchParams.get("year");
   const year         = yearParam ? Number(yearParam) : undefined;
+  const grain        = request.nextUrl.searchParams.get("grain") === "month" ? "month" : "week";
 
   try {
-    const data = await runEndemicChannel({ gve, municipality, year });
+    const data = await runEndemicChannel({ gve, municipality, year, grain });
     return NextResponse.json(data);
   } catch (error) {
     return NextResponse.json(
