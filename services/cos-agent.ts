@@ -186,10 +186,10 @@ export async function executeTool(
           `Canal endêmico — SE ${pt.se} (ano atual)${staleNote}:\n` +
           `Zona: ${zona}\n` +
           `Casos na SE: ${cur}\n` +
-          `Q1 histórico (limite sucesso): ${pt.q1}\n` +
-          `Mediana histórica (P50): ${pt.median}\n` +
-          `Q3 histórico (limite alerta): ${pt.q3}\n` +
-          `Semanas acima do Q3 no ano: ${weeksAbove}`
+          `Limite de alerta: ${pt.q1}\n` +
+          `Média histórica: ${pt.median}\n` +
+          `Limite de epidemia: ${pt.q3}\n` +
+          `Semanas acima do limite de epidemia no ano: ${weeksAbove}`
       };
     } catch (err) {
       return { content: `Erro no canal endêmico: ${err instanceof Error ? err.message : String(err)}` };

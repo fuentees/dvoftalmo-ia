@@ -54,18 +54,17 @@ function ZoneBadge({ zona }: { zona: string | null }) {
 function CanalTooltip({ active, payload, label, mode }: { active?: boolean; payload?: Array<{ name: string; value: number; color: string }>; label?: string | number; mode?: "se" | "mes" }) {
   if (!active || !payload?.length) return null;
   const byName = Object.fromEntries(payload.map((p) => [p.name, p.value]));
-  const q1   = byName["Sucesso (Q1)"]   ?? 0;
-  const band = byName["Alerta (Q1-Q3)"] ?? 0;
+  const q1   = byName["Sucesso"]   ?? 0;
+  const band = byName["Alerta"] ?? 0;
   const q3   = q1 + band;
   return (
     <div className="rounded-lg border bg-background px-3 py-2 text-xs shadow-md">
       <p className="mb-1 font-semibold">{mode === "mes" ? label : `SE ${label}`}</p>
       {byName["Atual"] != null        && <p className="text-blue-600">Atual: {Number(byName["Atual"]).toLocaleString("pt-BR")}</p>}
       {byName["Projeção"] != null     && <p className="text-blue-400">Projeção: {Number(byName["Projeção"]).toLocaleString("pt-BR")}</p>}
-      {byName["Mediana"] != null      && <p className="text-gray-500">Mediana hist.: {Number(byName["Mediana"]).toLocaleString("pt-BR")}</p>}
-      <p className="text-green-700">Q1 (limite sucesso): {q1.toLocaleString("pt-BR")}</p>
-      <p className="text-amber-700">Q3 (limite alerta): {q3.toLocaleString("pt-BR")}</p>
-      {byName["Farrington"] != null   && <p className="text-red-700 font-medium">Limiar Farrington: {Number(byName["Farrington"]).toLocaleString("pt-BR")}</p>}
+      {byName["Média"] != null        && <p className="text-gray-500">Média hist.: {Number(byName["Média"]).toLocaleString("pt-BR")}</p>}
+      <p className="text-green-700">Limite de alerta: {q1.toLocaleString("pt-BR")}</p>
+      <p className="text-red-700 font-medium">Limite de epidemia: {q3.toLocaleString("pt-BR")}</p>
     </div>
   );
 }
@@ -164,13 +163,12 @@ export function CanalEndemicoView({ filters }: Props) {
       return {
         se:                 d.se,
         label:              String(d.se),
-        "Sucesso (Q1)":     d.q1,
-        "Alerta (Q1-Q3)":   alertBand,
-        "Mediana":          d.median,
+        "Sucesso":     d.q1,
+        "Alerta":   alertBand,
+        "Média":            d.median,
         "Atual":            d.currentYear ?? undefined,
         "Ano anterior":     anoAnterior,
         "Projeção":         projecao,
-        "Farrington":       d.farrington ?? undefined,
       };
     });
 
@@ -182,20 +180,19 @@ export function CanalEndemicoView({ filters }: Props) {
     return Array.from({ length: 12 }, (_, i) => i + 1).map((month) => {
       const [lo, hi] = monthToEpiWeekRange(refYear, month);
       const rows = chartData.filter((d) => d.se >= lo && d.se <= hi);
-      const sum = (key: "Sucesso (Q1)" | "Alerta (Q1-Q3)" | "Mediana" | "Atual" | "Ano anterior" | "Projeção" | "Farrington") =>
+      const sum = (key: "Sucesso" | "Alerta" | "Média" | "Atual" | "Ano anterior" | "Projeção") =>
         rows.reduce((s, r) => s + (Number(r[key]) || 0), 0);
       const sumIfAny = (key: "Atual" | "Ano anterior" | "Projeção") =>
         rows.some((r) => r[key] != null) ? sum(key) : undefined;
       return {
         se:                 month,
         label:              MESES[month - 1].slice(0, 3),
-        "Sucesso (Q1)":     sum("Sucesso (Q1)"),
-        "Alerta (Q1-Q3)":   sum("Alerta (Q1-Q3)"),
-        "Mediana":          sum("Mediana"),
+        "Sucesso":     sum("Sucesso"),
+        "Alerta":   sum("Alerta"),
+        "Média":            sum("Média"),
         "Atual":            sumIfAny("Atual"),
         "Ano anterior":     sumIfAny("Ano anterior"),
         "Projeção":         sumIfAny("Projeção"),
-        "Farrington":       sum("Farrington"),
       };
     });
   }, [chartData, refYear]);
@@ -292,12 +289,12 @@ export function CanalEndemicoView({ filters }: Props) {
             <ZoneBadge zona={currentZona} />
           </div>
           <div className="rounded-lg border bg-card px-4 py-2 text-xs text-muted-foreground shadow-sm">
-            Q1 histórico: <strong>{kpis.q1.toLocaleString("pt-BR")}</strong> · mediana: <strong>{kpis.median.toLocaleString("pt-BR")}</strong> · Q3: <strong>{kpis.q3.toLocaleString("pt-BR")}</strong>
+            Limite de alerta: <strong>{kpis.q1.toLocaleString("pt-BR")}</strong> · média: <strong>{kpis.median.toLocaleString("pt-BR")}</strong> · Limite de epidemia: <strong>{kpis.q3.toLocaleString("pt-BR")}</strong>
           </div>
           {kpis.acima > 0 && (
             <div className="flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700 shadow-sm">
               <AlertTriangle className="h-3.5 w-3.5" />
-              {kpis.acima} {kpis.acima === 1 ? "semana acima" : "semanas acima"} do Q3 em {refYear}
+              {kpis.acima} {kpis.acima === 1 ? "semana acima" : "semanas acima"} do limite de epidemia em {refYear}
             </div>
           )}
           <div className="ml-auto flex items-center gap-2">
@@ -333,7 +330,7 @@ export function CanalEndemicoView({ filters }: Props) {
                 Canal Endêmico — Conjuntivites CEVESP
               </CardTitle>
               <CardDescription className="text-xs">
-                Zonas calculadas com base nos 10 anos anteriores (P25–P75 por SE). Azul sólido = {refYear}. Cinza tracejado = {refYear - 1}. Azul claro = projeção. Linha vermelha = limiar Farrington (EARS C2).
+                Zonas calculadas com base na média histórica ± 1,96 desvio-padrão dos 10 anos anteriores, por SE. Azul sólido = {refYear}. Cinza tracejado = {refYear - 1}. Azul claro = projeção.
                 {xAxisMode === "mes" && " Valores mensais somam as SEs de cada mês."}
               </CardDescription>
             </div>
@@ -369,7 +366,7 @@ export function CanalEndemicoView({ filters }: Props) {
               {/* Zonas — stacked areas */}
               <Area
                 type="monotone"
-                dataKey="Sucesso (Q1)"
+                dataKey="Sucesso"
                 stackId="zone"
                 fill="#bbf7d0"
                 stroke="none"
@@ -378,7 +375,7 @@ export function CanalEndemicoView({ filters }: Props) {
               />
               <Area
                 type="monotone"
-                dataKey="Alerta (Q1-Q3)"
+                dataKey="Alerta"
                 stackId="zone"
                 fill="#fde68a"
                 stroke="none"
@@ -386,10 +383,10 @@ export function CanalEndemicoView({ filters }: Props) {
                 legendType="square"
               />
 
-              {/* Mediana histórica */}
+              {/* Média histórica */}
               <Line
                 type="monotone"
-                dataKey="Mediana"
+                dataKey="Média"
                 stroke="#9ca3af"
                 strokeWidth={1.5}
                 strokeDasharray="4 4"
@@ -432,18 +429,6 @@ export function CanalEndemicoView({ filters }: Props) {
                 connectNulls
               />
 
-              {/* Limiar epidêmico Farrington (EARS C2 simplificado) */}
-              <Line
-                type="monotone"
-                dataKey="Farrington"
-                stroke="#dc2626"
-                strokeWidth={1.5}
-                strokeDasharray="4 2"
-                dot={false}
-                legendType="line"
-                connectNulls
-              />
-
               {/* Linha da SE (ou mês) atual */}
               {lastSE && (xAxisMode === "se" || currentMonthLabel) && (
                 <ReferenceLine
@@ -459,12 +444,11 @@ export function CanalEndemicoView({ filters }: Props) {
       </Card>
 
       {/* ── Legenda das zonas ────────────────────────────────────────────── */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-3">
         {[
-          { color: "bg-green-200 border-green-400", label: "Zona de Sucesso", desc: "Casos abaixo do Q1 histórico — transmissão baixa ou esperada." },
-          { color: "bg-amber-200 border-amber-400", label: "Zona de Alerta",  desc: "Casos entre Q1 e Q3 — tendência de aumento, monitorar GVEs." },
-          { color: "bg-red-200   border-red-400",   label: "Zona Epidêmica",  desc: "Casos acima do Q3 — epidemia confirmada, acionar protocolos." },
-          { color: "bg-rose-100  border-rose-500",  label: "Limiar Farrington", desc: "Limiar estatístico EARS C2 (μ + 2,576·√(φ·μ)). Acima: sinal epidêmico robusto independente de sazonalidade." },
+          { color: "bg-green-200 border-green-400", label: "Zona de Sucesso", desc: "Casos até 10% acima da média histórica — transmissão dentro do esperado." },
+          { color: "bg-amber-200 border-amber-400", label: "Zona de Alerta",  desc: "Casos entre o limite de alerta e o de epidemia — tendência de aumento, monitorar GVEs." },
+          { color: "bg-red-200   border-red-400",   label: "Zona Epidêmica",  desc: "Casos acima de média + 1,96 desvio-padrão (piso de 15% acima da média) — epidemia confirmada, acionar protocolos." },
         ].map(({ color, label, desc }) => (
           <div key={label} className={`rounded-lg border-l-4 bg-opacity-40 px-4 py-3 text-xs ${color}`}>
             <p className="font-semibold">{label}</p>

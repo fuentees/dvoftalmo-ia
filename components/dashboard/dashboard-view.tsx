@@ -188,7 +188,7 @@ function CanalZoneStrip({ data, loading }: { data?: EndemicChannelPoint[]; loadi
       <span className="flex-1 font-medium">Canal Endêmico · SE {pt.se}</span>
       <span className={`rounded px-2 py-0.5 text-xs font-semibold ${badgeCls}`}>{zona}</span>
       <span className="text-xs opacity-75">
-        {cur.toLocaleString("pt-BR")} casos · Q1={pt.q1.toLocaleString("pt-BR")} Q3={pt.q3.toLocaleString("pt-BR")}
+        {cur.toLocaleString("pt-BR")} casos · alerta={pt.q1.toLocaleString("pt-BR")} epidemia={pt.q3.toLocaleString("pt-BR")}
       </span>
       <ArrowRight className="h-3.5 w-3.5 shrink-0 opacity-60" />
     </Link>

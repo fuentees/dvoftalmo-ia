@@ -41,8 +41,8 @@ export function EpidemicZoneBanner({ gve, municipio }: Props) {
   const ico = isEpidemia ? "text-red-500"                : "text-amber-500";
   const zona = isEpidemia ? "epidêmica" : "de alerta";
   const threshold = isEpidemia
-    ? `acima do Q3 histórico (${pt.q3.toLocaleString("pt-BR")} casos)`
-    : `entre Q1=${pt.q1.toLocaleString("pt-BR")} e Q3=${pt.q3.toLocaleString("pt-BR")}`;
+    ? `acima do limite de epidemia (${pt.q3.toLocaleString("pt-BR")} casos)`
+    : `entre o limite de alerta (${pt.q1.toLocaleString("pt-BR")}) e o de epidemia (${pt.q3.toLocaleString("pt-BR")})`;
 
   return (
     <div className={`flex items-start gap-3 border-b px-6 py-3 text-sm ${bg} ${txt}`}>

@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
     ws.mergeCells("A4:H4");
     const summary = ws.getCell("A4");
     summary.value = lastPt
-      ? `Última SE observada: ${lastPt.se}  |  Casos: ${lastPt.currentYear}  |  Zona: ${zonaAtual}  |  Q1=${lastPt.q1}  |  Mediana=${lastPt.median}  |  Q3=${lastPt.q3}`
+      ? `Última SE observada: ${lastPt.se}  |  Casos: ${lastPt.currentYear}  |  Zona: ${zonaAtual}  |  Limite alerta=${lastPt.q1}  |  Média=${lastPt.median}  |  Limite epidemia=${lastPt.q3}`
       : "Sem dados do ano atual disponíveis.";
     summary.font = { bold: true, size: 10 };
     const sumFill = lastPt ? zoneFill(lastPt.currentYear, lastPt.q1, lastPt.q3) : FILL_SUMMARY;
@@ -96,9 +96,9 @@ export async function GET(request: NextRequest) {
     const headerRow = ws.addRow([
       "SE",
       `Casos ${year}`,
-      `Q1 (P25)`,
-      "Mediana (P50)",
-      "Q3 (P75)",
+      "Limite de alerta (média × 1,1)",
+      "Média histórica",
+      "Limite de epidemia (média + 1,96 DP)",
       "Mín histórico",
       "Máx histórico",
       `Zona ${year}`
@@ -141,9 +141,9 @@ export async function GET(request: NextRequest) {
     // Column widths
     ws.getColumn(1).width = 8;   // SE
     ws.getColumn(2).width = 14;  // Casos
-    ws.getColumn(3).width = 13;  // Q1
-    ws.getColumn(4).width = 16;  // Mediana
-    ws.getColumn(5).width = 13;  // Q3
+    ws.getColumn(3).width = 20;  // Limite de alerta
+    ws.getColumn(4).width = 16;  // Média
+    ws.getColumn(5).width = 24;  // Limite de epidemia
     ws.getColumn(6).width = 14;  // Min
     ws.getColumn(7).width = 14;  // Max
     ws.getColumn(8).width = 14;  // Zona
@@ -165,11 +165,11 @@ export async function GET(request: NextRequest) {
     wl.addRow(["LEGENDA DAS ZONAS DO CANAL ENDÊMICO"]).getCell(1).font = { bold: true, size: 12 };
     wl.addRow([]);
     wl.addRow(["Zona", "Descrição"]).eachCell((c) => { c.font = { bold: true }; });
-    addLegendRow("Sucesso", "Casos abaixo do Q1 histórico — transmissão baixa ou dentro do esperado.", FILL_SUCESSO);
-    addLegendRow("Alerta",  "Casos entre Q1 e Q3 — tendência de aumento, monitorar GVEs.", FILL_ALERTA);
-    addLegendRow("Epidemia","Casos acima do Q3 — zona epidêmica confirmada, acionar protocolos.", FILL_EPIDEMIA);
+    addLegendRow("Sucesso", "Casos até 10% acima da média histórica — transmissão dentro do esperado.", FILL_SUCESSO);
+    addLegendRow("Alerta",  "Casos entre o limite de alerta e o de epidemia — tendência de aumento, monitorar GVEs.", FILL_ALERTA);
+    addLegendRow("Epidemia","Casos acima de média + 1,96 desvio-padrão (piso de 15% acima da média) — zona epidêmica confirmada, acionar protocolos.", FILL_EPIDEMIA);
     wl.addRow([]);
-    wl.addRow(["Metodologia", "Canal endêmico calculado com percentis (P25/P50/P75) dos últimos 10 anos por semana epidemiológica."]);
+    wl.addRow(["Metodologia", "Canal endêmico calculado com média histórica ± 1,96 desvio-padrão dos últimos 10 anos por semana epidemiológica."]);
     wl.addRow(["Fonte", "CEVESP — Centro de Vigilância Epidemiológica / Centro de Oftalmologia Sanitária — SES-SP"]);
     wl.addRow(["Exportado em", now.toLocaleString("pt-BR")]);
 
