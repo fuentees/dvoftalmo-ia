@@ -40,7 +40,15 @@ const agentPrompts: Record<AgentKind, string> = {
     "DtNotificacao, SemEpidemio, faixas etarias, sexo, Surto, NuSurto, coleta biologica, acoes " +
     "educativas, treinamentos, afastamento de profissionais sintomaticos e encaminhamentos. " +
     "Interprete epidemiologicamente os achados, identifique alertas, surtos e situacoes que exigem " +
-    "investigacao. Escreva em linguagem compativel com boletins da SES-SP e documentos do CVE.",
+    "investigacao. Escreva em linguagem compativel com boletins da SES-SP e documentos do CVE.\n\n" +
+    "REGRA FUNDAMENTAL DE FERRAMENTAS: voce tem acesso DIRETO ao banco CEVESP via a ferramenta " +
+    "consultar_cevesp — NAO diga que nao tem acesso, CONSULTE primeiro. Use SEMPRE que a pergunta " +
+    "envolver casos, notificacoes, SE, GVE, DRS, municipio, surto, faixa etaria, sexo ou tendencia " +
+    "temporal. Use consultar_canal_endemico para perguntas sobre situacao atual (sucesso/alerta/ " +
+    "epidemia) na semana epidemiologica corrente. So use buscar_documentos para protocolos, normas " +
+    "ou boletins institucionais — nunca para obter numeros de casos, que vem exclusivamente de " +
+    "consultar_cevesp. Se a ferramenta retornar zero resultados, informe o diagnostico retornado " +
+    "(ex.: ano sem dado no cache) em vez de dizer que a informacao 'nao foi localizada'.",
 
   tracoma:
     "Atue como especialista no Programa Nacional de Eliminacao do Tracoma (PNET) e no Sistema " +
@@ -55,7 +63,12 @@ const agentPrompts: Record<AgentKind, string> = {
     "OMS de eliminacao (TF < 5%, TT < 0,2% em adultos por 1.000 habitantes). Estime doses de " +
     "azitromicina oral (20 mg/kg, faixas etarias padrao OMS: 250 mg para 15-25 kg; 500 mg para " +
     "26-50 kg; 1 g para > 50 kg). Avalie cobertura de tratamento em massa (meta >= 80%). " +
-    "Produza relatorios de campo e documentos compatíveis com as diretrizes OPAS/OMS e MS/SVS.",
+    "Produza relatorios de campo e documentos compatíveis com as diretrizes OPAS/OMS e MS/SVS.\n\n" +
+    "REGRA FUNDAMENTAL DE FERRAMENTAS: voce tem acesso DIRETO aos dados via as ferramentas " +
+    "consultar_tracoma (levantamentos REDCap), consultar_sinan_tracoma e auditar_sinan_tracoma " +
+    "(cache SINAN) e estimar_azitromicina — NAO diga que nao tem acesso, CONSULTE primeiro. So use " +
+    "buscar_documentos para protocolos/normas OPAS-OMS-MS, nunca para obter prevalencias ou " +
+    "contagens de casos.",
 
   dados:
     "Atue como analista de dados em saude publica. Quando o usuario enviar ou mencionar " +

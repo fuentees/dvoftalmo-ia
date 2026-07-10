@@ -170,7 +170,9 @@ function buildAllTools(userId: string) {
     buscar_documentos: tool({
       description:
         "Busca documentos na base de conhecimento (RAG) — protocolos, manuais, normas, " +
-        "boletins e documentos técnicos indexados pelo sistema.",
+        "boletins e documentos técnicos indexados pelo sistema. NÃO use para números de casos, " +
+        "notificações, prevalência ou qualquer dado epidemiológico em tempo real — isso vem das " +
+        "ferramentas consultar_cevesp/consultar_canal_endemico/consultar_tracoma/consultar_sinan_tracoma.",
       inputSchema: z.object({
         consulta: z.string().describe("Termos de busca em linguagem natural"),
       }),
