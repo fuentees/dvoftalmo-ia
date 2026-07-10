@@ -7,18 +7,12 @@ import { getNotificationTableName } from "@/lib/external/notification-db";
 import { auditarSinanTracoma, runSinanTracomaAnalysis } from "@/services/sinan-tracoma";
 import { runEndemicChannel } from "@/services/cevesp-endemic";
 import { extractChartData, type ChartData } from "@/services/ai/chart-utils";
+import { currentEpiWeek, pickCurrentChannelPoint } from "@/lib/epi-week";
 
 // 5-min in-memory cache for tracoma queries (REDCap is slow and data rarely changes)
 const tracomaCache = new Map<string, { data: { data: TracomaSurveyResult[]; isMock: boolean }; expiresAt: number }>();
 
 // ── Data quality: future SE/year filter ──────────────────────────────────────
-
-function currentEpiWeek(): { year: number; se: number } {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), 0, 1);
-  const se = Math.ceil(((now.getTime() - start.getTime()) / 86_400_000 + start.getDay() + 1) / 7);
-  return { year: now.getFullYear(), se };
-}
 
 interface DateQualityResult {
   valid: Record<string, unknown>[];
@@ -176,17 +170,20 @@ export async function executeTool(
         municipality: args.municipio ? String(args.municipio) : undefined,
       });
       const withData = points.filter((p) => p.currentYear !== null);
-      if (!withData.length) {
+      const pt = pickCurrentChannelPoint(points);
+      if (!pt) {
         return { content: "Canal endêmico — sem dados suficientes do ano atual para posicionar a curva." };
       }
-      const lastSE = Math.max(...withData.map((p) => p.se));
-      const pt = withData.find((p) => p.se === lastSE)!;
+      const { se: realSe, year: realYear } = currentEpiWeek();
       const cur = pt.currentYear!;
       const zona = cur > pt.q3 ? "EPIDEMIA" : cur > pt.q1 ? "ALERTA" : "SUCESSO";
       const weeksAbove = withData.filter((p) => p.currentYear! > p.q3).length;
+      const staleNote = pt.se !== realSe
+        ? ` (a SE ${realSe}/${realYear}, semana atual real, ainda não tem notificações no cache; mostrando a última disponível.)`
+        : "";
       return {
         content:
-          `Canal endêmico — SE ${lastSE} (ano atual):\n` +
+          `Canal endêmico — SE ${pt.se} (ano atual)${staleNote}:\n` +
           `Zona: ${zona}\n` +
           `Casos na SE: ${cur}\n` +
           `Q1 histórico (limite sucesso): ${pt.q1}\n` +

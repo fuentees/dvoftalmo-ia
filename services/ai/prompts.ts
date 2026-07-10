@@ -1,4 +1,5 @@
 import type { AgentKind } from "@/lib/types";
+import { currentEpiWeek } from "@/lib/epi-week";
 
 const basePrompt = `
 Voce e o Centro de Oftalmologia Sanitária, uma plataforma de inteligencia artificial especializada em Oftalmologia
@@ -106,6 +107,12 @@ const agentPrompts: Record<AgentKind, string> = {
 export function buildSystemPrompt(agent: AgentKind) {
   const now = new Date();
   const dateStr = now.toLocaleDateString("pt-BR", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  const dateLine = `Data e hora atual do sistema: ${dateStr} (${now.toISOString()}). Ano atual: ${now.getFullYear()}.`;
+  const { year: epiYear, se: epiSe } = currentEpiWeek();
+  const dateLine =
+    `Data e hora atual do sistema: ${dateStr} (${now.toISOString()}). Ano atual: ${now.getFullYear()}. ` +
+    `Semana epidemiologica atual (real, calculada pela data de hoje): SE ${epiSe}/${epiYear}. ` +
+    `Se uma ferramenta retornar uma semana epidemiologica diferente desta como "semana atual", trate como ` +
+    `a ultima semana com dado disponivel no cache, nao como a semana corrente real — informe ambas ao usuario ` +
+    `quando houver divergencia.`;
   return `${basePrompt}\n\n${dateLine}\n\nEspecialidade ativa:\n${agentPrompts[agent]}`;
 }

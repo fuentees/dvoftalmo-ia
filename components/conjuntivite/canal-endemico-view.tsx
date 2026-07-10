@@ -10,6 +10,7 @@ import { AlertTriangle, CheckCircle2, Download, RefreshCw, TrendingUp, XCircle }
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { EndemicChannelPoint } from "@/services/cevesp-endemic";
+import { pickCurrentChannelPoint } from "@/lib/epi-week";
 
 // ── Linear regression for trend projection ──────────────────────────────────
 function linearRegression(pts: Array<{ x: number; y: number }>) {
@@ -114,13 +115,14 @@ export function CanalEndemicoView({ filters }: Props) {
     if (!data) return { chartData: [], lastSE: null, currentZona: null, projStart: null };
 
     const withData = data.filter((d) => d.currentYear !== null);
-    const lastSE   = withData.length > 0 ? Math.max(...withData.map((d) => d.se)) : null;
-    const currentZona = lastSE ? (data.find((d) => d.se === lastSE)?.currentYear ?? null) !== null
-      ? data.find((d) => d.se === lastSE)!.currentYear! > data.find((d) => d.se === lastSE)!.q3
+    const currentPt = pickCurrentChannelPoint(data);
+    const lastSE    = currentPt?.se ?? null;
+    const currentZona = currentPt?.currentYear != null
+      ? currentPt.currentYear > currentPt.q3
         ? "epidemia"
-        : data.find((d) => d.se === lastSE)!.currentYear! > data.find((d) => d.se === lastSE)!.q1
+        : currentPt.currentYear > currentPt.q1
           ? "alerta" : "sucesso"
-      : null : null;
+      : null;
 
     // Previous year lookup by SE
     const prevMap = new Map((prevData ?? []).map((p) => [p.se, p.currentYear]));

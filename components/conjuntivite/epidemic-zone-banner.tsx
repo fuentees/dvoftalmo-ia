@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
 import type { EndemicChannelPoint } from "@/services/cevesp-endemic";
+import { pickCurrentChannelPoint } from "@/lib/epi-week";
 
 type Props = { gve?: string; municipio?: string };
 
@@ -26,12 +27,9 @@ export function EpidemicZoneBanner({ gve, municipio }: Props) {
 
   if (dismissed || !data?.length) return null;
 
-  const withData = data.filter((d) => d.currentYear !== null);
-  if (!withData.length) return null;
-
-  const lastSE = Math.max(...withData.map((d) => d.se));
-  const pt     = data.find((d) => d.se === lastSE);
+  const pt = pickCurrentChannelPoint(data);
   if (!pt || pt.currentYear === null) return null;
+  const lastSE = pt.se;
 
   const cur         = pt.currentYear;
   const isEpidemia  = cur > pt.q3;

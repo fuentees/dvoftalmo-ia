@@ -6,6 +6,7 @@ import { readNotificationRows } from "@/lib/external/notification-db";
 import { summarizeNotificationRows, summarizeFromRpc, type RpcRelatorioData } from "@/services/notification-report";
 import { runEndemicChannel } from "@/services/cevesp-endemic";
 import { generateBulletinDocx, generateBulletinPdf, type CanalEndemicoInput } from "@/services/bulletin";
+import { pickCurrentChannelPoint } from "@/lib/epi-week";
 
 function dateToSe(date: Date): number {
   const startOfYear = new Date(date.getFullYear(), 0, 1);
@@ -65,21 +66,19 @@ export async function GET(request: NextRequest) {
     let canalEndemico: CanalEndemicoInput | undefined;
     if (endemicData.status === "fulfilled" && endemicData.value.length > 0) {
       const pts = endemicData.value;
-      const withData = pts.filter((p) => p.currentYear !== null);
-      if (withData.length > 0) {
-        const lastSE = Math.max(...withData.map((p) => p.se));
-        const pt = pts.find((p) => p.se === lastSE)!;
+      const pt = pickCurrentChannelPoint(pts);
+      if (pt) {
         const cur = pt.currentYear!;
         const zona: CanalEndemicoInput["zona"] =
           cur > pt.q3 ? "epidemia" : cur > pt.q1 ? "alerta" : "sucesso";
         canalEndemico = {
-          lastSE,
+          lastSE: pt.se,
           zona,
           currentCases: cur,
           q1: pt.q1,
           median: pt.median,
           q3: pt.q3,
-          weeksAboveQ3: withData.filter((p) => p.currentYear! > p.q3).length
+          weeksAboveQ3: pts.filter((p) => p.currentYear != null && p.currentYear > p.q3).length
         };
       }
     }

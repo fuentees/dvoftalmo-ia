@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { runEndemicChannel } from "@/services/cevesp-endemic";
+import { pickCurrentChannelPoint } from "@/lib/epi-week";
 
 function seZone(atual: number | null, q1: number, q3: number): string {
   if (atual === null) return "sem dado";
@@ -38,10 +39,9 @@ export async function GET(request: NextRequest) {
     const now      = new Date();
     const dateStr  = now.toLocaleDateString("pt-BR");
     const year     = now.getFullYear();
-    const withData = data.filter((d) => d.currentYear !== null);
-    const lastSE   = withData.length > 0 ? Math.max(...withData.map((d) => d.se)) : null;
-    const lastPt   = lastSE ? data.find((d) => d.se === lastSE) : null;
-    const zona     = lastPt ? seZone(lastPt.currentYear, lastPt.q1, lastPt.q3) : "sem dado";
+    const lastPt = pickCurrentChannelPoint(data);
+    const lastSE = lastPt?.se ?? null;
+    const zona   = lastPt ? seZone(lastPt.currentYear, lastPt.q1, lastPt.q3) : "sem dado";
 
     const scope = [gve && `GVE: ${gve}`, municipality && `Município: ${municipality}`]
       .filter(Boolean)

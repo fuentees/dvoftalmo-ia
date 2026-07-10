@@ -24,6 +24,7 @@ import { AlertsPanel } from "@/components/dashboard/alerts-panel";
 import type { CevespKpis } from "@/services/cevesp-kpis";
 import type { CevespHistorico } from "@/lib/external/supabase-cevesp";
 import type { EndemicChannelPoint } from "@/services/cevesp-endemic";
+import { pickCurrentChannelPoint } from "@/lib/epi-week";
 
 interface SinanSnapshot {
   totalTraconet?: number;
@@ -167,11 +168,7 @@ function CanalZoneStrip({ data, loading }: { data?: EndemicChannelPoint[]; loadi
   }
   if (!data?.length) return null;
 
-  const withData = data.filter((d) => d.currentYear !== null);
-  if (!withData.length) return null;
-
-  const lastSE = Math.max(...withData.map((d) => d.se));
-  const pt = data.find((d) => d.se === lastSE);
+  const pt = pickCurrentChannelPoint(data);
   if (!pt || pt.currentYear === null) return null;
 
   const cur = pt.currentYear;
@@ -188,7 +185,7 @@ function CanalZoneStrip({ data, loading }: { data?: EndemicChannelPoint[]; loadi
   return (
     <Link href="/conjuntivite?tab=canal" className={`flex items-center gap-3 rounded-lg border px-4 py-2.5 text-sm transition-opacity hover:opacity-80 ${bg}`}>
       <TrendingUp className="h-4 w-4 shrink-0" />
-      <span className="flex-1 font-medium">Canal Endêmico · SE {lastSE}</span>
+      <span className="flex-1 font-medium">Canal Endêmico · SE {pt.se}</span>
       <span className={`rounded px-2 py-0.5 text-xs font-semibold ${badgeCls}`}>{zona}</span>
       <span className="text-xs opacity-75">
         {cur.toLocaleString("pt-BR")} casos · Q1={pt.q1.toLocaleString("pt-BR")} Q3={pt.q3.toLocaleString("pt-BR")}

@@ -3,6 +3,7 @@ import ExcelJS from "exceljs";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { runEndemicChannel } from "@/services/cevesp-endemic";
+import { pickCurrentChannelPoint } from "@/lib/epi-week";
 
 // Zone fill colours (ARGB, no #)
 const FILL_SUCESSO  = "FFD1FAE5"; // green-100
@@ -44,9 +45,7 @@ export async function GET(request: NextRequest) {
     const scope  = [gve && `GVE: ${gve}`, municipality && `Município: ${municipality}`]
       .filter(Boolean).join(" | ") || "Estado de São Paulo";
 
-    const withData   = data.filter((d) => d.currentYear !== null);
-    const lastSE     = withData.length > 0 ? Math.max(...withData.map((d) => d.se)) : null;
-    const lastPt     = lastSE ? data.find((d) => d.se === lastSE) : null;
+    const lastPt     = pickCurrentChannelPoint(data);
     const zonaAtual  = lastPt ? zonaLabel(lastPt.currentYear, lastPt.q1, lastPt.q3) : "—";
 
     // ── Workbook ────────────────────────────────────────────────────────────
@@ -81,8 +80,8 @@ export async function GET(request: NextRequest) {
     // Summary row
     ws.mergeCells("A4:H4");
     const summary = ws.getCell("A4");
-    summary.value = lastSE && lastPt
-      ? `Última SE observada: ${lastSE}  |  Casos: ${lastPt.currentYear}  |  Zona: ${zonaAtual}  |  Q1=${lastPt.q1}  |  Mediana=${lastPt.median}  |  Q3=${lastPt.q3}`
+    summary.value = lastPt
+      ? `Última SE observada: ${lastPt.se}  |  Casos: ${lastPt.currentYear}  |  Zona: ${zonaAtual}  |  Q1=${lastPt.q1}  |  Mediana=${lastPt.median}  |  Q3=${lastPt.q3}`
       : "Sem dados do ano atual disponíveis.";
     summary.font = { bold: true, size: 10 };
     const sumFill = lastPt ? zoneFill(lastPt.currentYear, lastPt.q1, lastPt.q3) : FILL_SUMMARY;
