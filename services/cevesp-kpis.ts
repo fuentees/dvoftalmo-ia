@@ -43,6 +43,8 @@ async function fetchKpisFromCache(): Promise<CevespKpis> {
   const py   = toNum(kpis.prev_year_cases);
   const se   = toNum(kpis.current_se);
   const prevSe = toNum(kpis.prev_se);
+  const outbreaks = toNum(kpis.year_outbreaks);
+  const collections = toNum(kpis.year_collections);
 
   const { data: topMunic } = await supabase.rpc("cevesp_aggregate", {
     p_metric:    "total_casos",
@@ -66,8 +68,8 @@ async function fetchKpisFromCache(): Promise<CevespKpis> {
     currentYear:  { year, cases: cy },
     previousYear: { year: year - 1, cases: py },
     yearDelta:    py > 0 ? Number(((cy - py) / py * 100).toFixed(1)) : null,
-    outbreaksCurrentYear:     0,
-    collectionsCurrentYear:   0,
+    outbreaksCurrentYear:     outbreaks,
+    collectionsCurrentYear:   collections,
     topMunicipalitiesCurrentWeek: ((topMunic ?? []) as Array<{label: string; valor: number}>).map(r => ({
       name:  r.label,
       cases: r.valor

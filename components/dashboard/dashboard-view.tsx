@@ -468,31 +468,6 @@ export function DashboardView() {
       </div>
 
       <div className="space-y-5 p-6">
-        <AlertsPanel />
-        <TodayPrioritiesPanel data={priorities.data} loading={priorities.isLoading} />
-
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          {quickActions.map((action) => {
-            const Icon = action.icon;
-            return (
-              <Link
-                key={action.href}
-                href={action.href}
-                className="group flex min-h-20 items-center gap-3 rounded-md border bg-card p-3 transition-colors hover:border-primary/40 hover:bg-primary/5"
-              >
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-                  <Icon className="h-4 w-4" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-semibold">{action.label}</span>
-                  <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">{action.detail}</span>
-                </span>
-                <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
-              </Link>
-            );
-          })}
-        </div>
-
         {(kpis.isError || sinan.isError) && (
           <Card className="border-amber-300 bg-amber-50">
             <CardContent className="flex items-start gap-3 py-4 text-sm text-amber-900">
@@ -532,6 +507,31 @@ export function DashboardView() {
         </div>
 
         <CanalZoneStrip data={canal.data} loading={canal.isFetching && !canal.data} />
+
+        <AlertsPanel />
+        <TodayPrioritiesPanel data={priorities.data} loading={priorities.isLoading} />
+
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          {quickActions.map((action) => {
+            const Icon = action.icon;
+            return (
+              <Link
+                key={action.href}
+                href={action.href}
+                className="group flex min-h-20 items-center gap-3 rounded-md border bg-card p-3 transition-colors hover:border-primary/40 hover:bg-primary/5"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                  <Icon className="h-4 w-4" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold">{action.label}</span>
+                  <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">{action.detail}</span>
+                </span>
+                <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
+              </Link>
+            );
+          })}
+        </div>
 
         <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
           <Card>

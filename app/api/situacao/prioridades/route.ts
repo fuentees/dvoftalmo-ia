@@ -228,13 +228,17 @@ async function buildPriorities(filters: { gve?: string; municipio?: string; year
   const wantedGve = normalizeText(filters.gve);
   const wantedMunicipio = normalizeText(filters.municipio);
 
-  return items
+  const sorted = items
     .filter((item) => {
       const haystack = normalizeText(`${item.territorio} ${item.motivo} ${item.detalhe ?? ""}`);
       return (!wantedGve || haystack.includes(wantedGve)) && (!wantedMunicipio || haystack.includes(wantedMunicipio));
     })
-    .sort((a, b) => priorityRank(a.level) - priorityRank(b.level) || b.score - a.score)
-    .slice(0, 12);
+    .sort((a, b) => priorityRank(a.level) - priorityRank(b.level) || b.score - a.score);
+
+  return {
+    all: sorted,
+    priorities: sorted.slice(0, 12)
+  };
 }
 
 export async function GET(req: NextRequest) {
@@ -249,15 +253,15 @@ export async function GET(req: NextRequest) {
     yearStart: searchParams.get("yearStart") ? Number(searchParams.get("yearStart")) : undefined,
     yearEnd: searchParams.get("yearEnd") ? Number(searchParams.get("yearEnd")) : undefined
   };
-  const priorities = await buildPriorities(filters);
+  const { all, priorities } = await buildPriorities(filters);
   return NextResponse.json({
     generatedAt: new Date().toISOString(),
     priorities,
     summary: {
-      total: priorities.length,
-      critica: priorities.filter((item) => item.level === "critica").length,
-      alta: priorities.filter((item) => item.level === "alta").length,
-      media: priorities.filter((item) => item.level === "media").length
+      total: all.length,
+      critica: all.filter((item) => item.level === "critica").length,
+      alta: all.filter((item) => item.level === "alta").length,
+      media: all.filter((item) => item.level === "media").length
     }
   });
 }
