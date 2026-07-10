@@ -29,16 +29,17 @@ export async function GET(request: NextRequest) {
 
   const gve          = request.nextUrl.searchParams.get("gve")          ?? undefined;
   const municipality = request.nextUrl.searchParams.get("municipality") ?? undefined;
+  const yearParam    = request.nextUrl.searchParams.get("year");
+  const year         = yearParam ? Number(yearParam) : new Date().getFullYear();
 
   try {
-    const data = await runEndemicChannel({ gve, municipality });
+    const data = await runEndemicChannel({ gve, municipality, year });
     if (!data.length) {
       return NextResponse.json({ error: "Sem dados para gerar relatório." }, { status: 404 });
     }
 
     const now      = new Date();
     const dateStr  = now.toLocaleDateString("pt-BR");
-    const year     = now.getFullYear();
     const lastPt = pickCurrentChannelPoint(data);
     const lastSE = lastPt?.se ?? null;
     const zona   = lastPt ? seZone(lastPt.currentYear, lastPt.q1, lastPt.q3) : "sem dado";
@@ -55,7 +56,7 @@ export async function GET(request: NextRequest) {
     lines.push(csvRow([`Gerado em: ${dateStr}`]));
     lines.push(csvRow([`Abrangência: ${scope}`]));
     lines.push(csvRow([`Ano de referência: ${year}`]));
-    lines.push(csvRow(["Canal endêmico calculado com base nos últimos 5 anos históricos (P25–P75 por SE)"]));
+    lines.push(csvRow(["Canal endêmico calculado com base nos últimos 10 anos históricos (P25–P75 por SE)"]));
     lines.push("");
 
     // ── KPIs da última SE ────────────────────────────────────────────────────

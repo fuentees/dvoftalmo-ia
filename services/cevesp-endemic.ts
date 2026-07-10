@@ -111,7 +111,7 @@ async function runEndemicChannelFromCache(options: {
 } = {}) {
   const supabase = createAdminClient();
   const currentYear = options.year ?? new Date().getFullYear();
-  const startYear = currentYear - 5;
+  const startYear = currentYear - 10;
 
   const histMap = new Map<string, number>();
   const currMap = new Map<number, number>();
@@ -231,7 +231,7 @@ export async function runEndemicChannel(options: {
         ${extraWhere}
       group by se, yr
       order by yr, se`,
-      [refYear - 5, refYear - 1, ...params]
+      [refYear - 10, refYear - 1, ...params]
     );
 
     const [currRows] = await connection.query(

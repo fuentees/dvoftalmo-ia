@@ -33,15 +33,16 @@ export async function GET(request: NextRequest) {
 
   const gve          = request.nextUrl.searchParams.get("gve")          ?? undefined;
   const municipality = request.nextUrl.searchParams.get("municipality") ?? undefined;
+  const yearParam    = request.nextUrl.searchParams.get("year");
+  const year         = yearParam ? Number(yearParam) : new Date().getFullYear();
 
   try {
-    const data = await runEndemicChannel({ gve, municipality });
+    const data = await runEndemicChannel({ gve, municipality, year });
     if (!data.length) {
       return NextResponse.json({ error: "Sem dados para exportar." }, { status: 404 });
     }
 
     const now    = new Date();
-    const year   = now.getFullYear();
     const scope  = [gve && `GVE: ${gve}`, municipality && `Município: ${municipality}`]
       .filter(Boolean).join(" | ") || "Estado de São Paulo";
 
@@ -168,7 +169,7 @@ export async function GET(request: NextRequest) {
     addLegendRow("Alerta",  "Casos entre Q1 e Q3 — tendência de aumento, monitorar GVEs.", FILL_ALERTA);
     addLegendRow("Epidemia","Casos acima do Q3 — zona epidêmica confirmada, acionar protocolos.", FILL_EPIDEMIA);
     wl.addRow([]);
-    wl.addRow(["Metodologia", "Canal endêmico calculado com percentis (P25/P50/P75) dos últimos 5 anos por semana epidemiológica."]);
+    wl.addRow(["Metodologia", "Canal endêmico calculado com percentis (P25/P50/P75) dos últimos 10 anos por semana epidemiológica."]);
     wl.addRow(["Fonte", "CEVESP — Centro de Vigilância Epidemiológica / Centro de Oftalmologia Sanitária — SES-SP"]);
     wl.addRow(["Exportado em", now.toLocaleString("pt-BR")]);
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Area, ComposedChart, CartesianGrid, Legend, Line,
@@ -51,7 +51,7 @@ function ZoneBadge({ zona }: { zona: string | null }) {
 }
 
 // ── Custom tooltip ───────────────────────────────────────────────────────────
-function CanalTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; color: string }>; label?: string | number }) {
+function CanalTooltip({ active, payload, label, mode }: { active?: boolean; payload?: Array<{ name: string; value: number; color: string }>; label?: string | number; mode?: "se" | "mes" }) {
   if (!active || !payload?.length) return null;
   const byName = Object.fromEntries(payload.map((p) => [p.name, p.value]));
   const q1   = byName["Sucesso (Q1)"]   ?? 0;
@@ -59,7 +59,7 @@ function CanalTooltip({ active, payload, label }: { active?: boolean; payload?: 
   const q3   = q1 + band;
   return (
     <div className="rounded-lg border bg-background px-3 py-2 text-xs shadow-md">
-      <p className="mb-1 font-semibold">SE {label}</p>
+      <p className="mb-1 font-semibold">{mode === "mes" ? label : `SE ${label}`}</p>
       {byName["Atual"] != null        && <p className="text-blue-600">Atual: {Number(byName["Atual"]).toLocaleString("pt-BR")}</p>}
       {byName["Projeção"] != null     && <p className="text-blue-400">Projeção: {Number(byName["Projeção"]).toLocaleString("pt-BR")}</p>}
       {byName["Mediana"] != null      && <p className="text-gray-500">Mediana hist.: {Number(byName["Mediana"]).toLocaleString("pt-BR")}</p>}
@@ -81,23 +81,8 @@ export function CanalEndemicoView({ filters }: Props) {
   // ── Ano de referência (qual ano é o "ano atual" da comparação) ──────────────
   const [refYear, setRefYear] = useState(thisYear);
 
-  // ── Mês / SE (recorte visual do gráfico, não muda o ano buscado) ────────────
-  const [mes, setMes] = useState<string>("");
-  const [seInicio, setSeInicio] = useState<number | undefined>(undefined);
-  const [seFim, setSeFim] = useState<number | undefined>(undefined);
-
-  useEffect(() => {
-    if (!mes) return;
-    const [inicio, fim] = monthToEpiWeekRange(refYear, Number(mes));
-    setSeInicio(inicio);
-    setSeFim(fim);
-  }, [mes, refYear]);
-
-  function limparRecorte() {
-    setMes("");
-    setSeInicio(undefined);
-    setSeFim(undefined);
-  }
+  // ── Granularidade do eixo X do gráfico: semana epidemiológica ou mês ────────
+  const [xAxisMode, setXAxisMode] = useState<"se" | "mes">("se");
 
   const anosQuery = useQuery<{ anos: number[] }>({
     queryKey: ["cevesp-anos"],
@@ -178,6 +163,7 @@ export function CanalEndemicoView({ filters }: Props) {
       const anoAnterior = prevMap.has(d.se) ? prevMap.get(d.se) ?? undefined : undefined;
       return {
         se:                 d.se,
+        label:              String(d.se),
         "Sucesso (Q1)":     d.q1,
         "Alerta (Q1-Q3)":   alertBand,
         "Mediana":          d.median,
@@ -191,13 +177,40 @@ export function CanalEndemicoView({ filters }: Props) {
     return { chartData, lastSE, currentZona, projStart };
   }, [data, prevData]);
 
-  // ── Recorte visual (mês / SE) aplicado ao gráfico ────────────────────────────
-  const visibleChartData = useMemo(() => {
-    if (seInicio == null && seFim == null) return chartData;
-    const lo = seInicio ?? 1;
-    const hi = seFim ?? 53;
-    return chartData.filter((d) => d.se >= lo && d.se <= hi);
-  }, [chartData, seInicio, seFim]);
+  // ── Agregação mensal (soma das SEs de cada mês), usada quando o eixo X = Mês ─
+  const monthlyChartData = useMemo(() => {
+    return Array.from({ length: 12 }, (_, i) => i + 1).map((month) => {
+      const [lo, hi] = monthToEpiWeekRange(refYear, month);
+      const rows = chartData.filter((d) => d.se >= lo && d.se <= hi);
+      const sum = (key: "Sucesso (Q1)" | "Alerta (Q1-Q3)" | "Mediana" | "Atual" | "Ano anterior" | "Projeção" | "Farrington") =>
+        rows.reduce((s, r) => s + (Number(r[key]) || 0), 0);
+      const sumIfAny = (key: "Atual" | "Ano anterior" | "Projeção") =>
+        rows.some((r) => r[key] != null) ? sum(key) : undefined;
+      return {
+        se:                 month,
+        label:              MESES[month - 1].slice(0, 3),
+        "Sucesso (Q1)":     sum("Sucesso (Q1)"),
+        "Alerta (Q1-Q3)":   sum("Alerta (Q1-Q3)"),
+        "Mediana":          sum("Mediana"),
+        "Atual":            sumIfAny("Atual"),
+        "Ano anterior":     sumIfAny("Ano anterior"),
+        "Projeção":         sumIfAny("Projeção"),
+        "Farrington":       sum("Farrington"),
+      };
+    });
+  }, [chartData, refYear]);
+
+  const displayData = xAxisMode === "se" ? chartData : monthlyChartData;
+
+  // Mês corrente correspondente à última SE observada, para a linha de referência
+  const currentMonthLabel = useMemo(() => {
+    if (lastSE == null) return null;
+    for (let month = 1; month <= 12; month++) {
+      const [lo, hi] = monthToEpiWeekRange(refYear, month);
+      if (lastSE >= lo && lastSE <= hi) return MESES[month - 1].slice(0, 3);
+    }
+    return null;
+  }, [lastSE, refYear]);
 
   // ── KPIs ───────────────────────────────────────────────────────────────────
   const kpis = useMemo(() => {
@@ -205,11 +218,9 @@ export function CanalEndemicoView({ filters }: Props) {
     const seData = data.find((d) => d.se === lastSE);
     if (!seData) return null;
     const atual = seData.currentYear ?? 0;
-    const lo = seInicio ?? 1;
-    const hi = seFim ?? 53;
-    const acima = data.filter((d) => d.se >= lo && d.se <= hi && d.currentYear !== null && d.currentYear > d.q3).length;
+    const acima = data.filter((d) => d.currentYear !== null && d.currentYear > d.q3).length;
     return { atual, q1: seData.q1, q3: seData.q3, median: seData.median, acima };
-  }, [data, lastSE, seInicio, seFim]);
+  }, [data, lastSE]);
 
   if (isLoading) return (
     <div className="flex items-center justify-center py-20 text-sm text-muted-foreground">
@@ -233,7 +244,7 @@ export function CanalEndemicoView({ filters }: Props) {
 
   return (
     <div className="space-y-6">
-      {/* ── Ano / mês / SE ──────────────────────────────────────────────── */}
+      {/* ── Ano de referência / eixo X ───────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-muted-foreground">Ano</span>
@@ -248,49 +259,28 @@ export function CanalEndemicoView({ filters }: Props) {
           </select>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="text-xs text-muted-foreground">Mês</span>
-          <select
-            value={mes}
-            onChange={(e) => setMes(e.target.value)}
-            className="h-8 rounded-md border bg-background px-2 text-xs"
-          >
-            <option value="">Ano inteiro</option>
-            {MESES.map((label, index) => (
-              <option key={label} value={index + 1}>{label}</option>
-            ))}
-          </select>
+          <span className="text-xs text-muted-foreground">Eixo X</span>
+          <div className="flex gap-0.5 rounded-md bg-muted/60 p-0.5">
+            <button
+              type="button"
+              onClick={() => setXAxisMode("se")}
+              className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+                xAxisMode === "se" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              SE
+            </button>
+            <button
+              type="button"
+              onClick={() => setXAxisMode("mes")}
+              className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+                xAxisMode === "mes" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Mês
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-muted-foreground">SE</span>
-          <input
-            type="number"
-            min={1}
-            max={53}
-            placeholder="01"
-            value={seInicio ?? ""}
-            onChange={(e) => { setMes(""); setSeInicio(e.target.value ? Number(e.target.value) : undefined); }}
-            className="h-8 w-14 rounded-md border bg-background px-2 text-xs text-center"
-          />
-          <span className="text-xs text-muted-foreground">a</span>
-          <input
-            type="number"
-            min={1}
-            max={53}
-            placeholder="53"
-            value={seFim ?? ""}
-            onChange={(e) => { setMes(""); setSeFim(e.target.value ? Number(e.target.value) : undefined); }}
-            className="h-8 w-14 rounded-md border bg-background px-2 text-xs text-center"
-          />
-        </div>
-        {(mes || seInicio != null || seFim != null) && (
-          <button
-            type="button"
-            onClick={limparRecorte}
-            className="h-8 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            Limpar recorte
-          </button>
-        )}
       </div>
 
       {/* ── KPI row + export ────────────────────────────────────────────── */}
@@ -307,7 +297,7 @@ export function CanalEndemicoView({ filters }: Props) {
           {kpis.acima > 0 && (
             <div className="flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700 shadow-sm">
               <AlertTriangle className="h-3.5 w-3.5" />
-              {kpis.acima} {kpis.acima === 1 ? "semana acima" : "semanas acima"} do Q3 em {refYear}{(seInicio != null || seFim != null) ? " (recorte)" : ""}
+              {kpis.acima} {kpis.acima === 1 ? "semana acima" : "semanas acima"} do Q3 em {refYear}
             </div>
           )}
           <div className="ml-auto flex items-center gap-2">
@@ -343,8 +333,8 @@ export function CanalEndemicoView({ filters }: Props) {
                 Canal Endêmico — Conjuntivites CEVESP
               </CardTitle>
               <CardDescription className="text-xs">
-                Zonas calculadas com base nos 5 anos anteriores (P25–P75 por SE). Azul sólido = {refYear}. Cinza tracejado = {refYear - 1}. Azul claro = projeção. Linha vermelha = limiar Farrington (EARS C2).
-                {(seInicio != null || seFim != null) && ` Exibindo SE ${seInicio ?? 1} a ${seFim ?? 53}.`}
+                Zonas calculadas com base nos 10 anos anteriores (P25–P75 por SE). Azul sólido = {refYear}. Cinza tracejado = {refYear - 1}. Azul claro = projeção. Linha vermelha = limiar Farrington (EARS C2).
+                {xAxisMode === "mes" && " Valores mensais somam as SEs de cada mês."}
               </CardDescription>
             </div>
             {projStart && (
@@ -357,13 +347,13 @@ export function CanalEndemicoView({ filters }: Props) {
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={360}>
-            <ComposedChart data={visibleChartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+            <ComposedChart data={displayData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
               <XAxis
-                dataKey="se"
+                dataKey="label"
                 tick={{ fontSize: 11 }}
                 tickLine={false}
-                label={{ value: "Semana Epidemiológica", position: "insideBottom", offset: -2, fontSize: 11, fill: "#6b7280" }}
+                label={{ value: xAxisMode === "se" ? "Semana Epidemiológica" : "Mês", position: "insideBottom", offset: -2, fontSize: 11, fill: "#6b7280" }}
                 height={36}
               />
               <YAxis
@@ -373,7 +363,7 @@ export function CanalEndemicoView({ filters }: Props) {
                 tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)}
                 width={48}
               />
-              <Tooltip content={<CanalTooltip />} />
+              <Tooltip content={<CanalTooltip mode={xAxisMode} />} />
               <Legend verticalAlign="top" height={28} iconSize={10} wrapperStyle={{ fontSize: 11 }} />
 
               {/* Zonas — stacked areas */}
@@ -454,13 +444,13 @@ export function CanalEndemicoView({ filters }: Props) {
                 connectNulls
               />
 
-              {/* Linha da SE atual */}
-              {lastSE && (
+              {/* Linha da SE (ou mês) atual */}
+              {lastSE && (xAxisMode === "se" || currentMonthLabel) && (
                 <ReferenceLine
-                  x={lastSE}
+                  x={xAxisMode === "se" ? String(lastSE) : currentMonthLabel!}
                   stroke="#6b7280"
                   strokeDasharray="2 2"
-                  label={{ value: `SE ${lastSE}`, position: "top", fontSize: 10, fill: "#6b7280" }}
+                  label={{ value: xAxisMode === "se" ? `SE ${lastSE}` : currentMonthLabel!, position: "top", fontSize: 10, fill: "#6b7280" }}
                 />
               )}
             </ComposedChart>
