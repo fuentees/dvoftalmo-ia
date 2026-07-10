@@ -197,7 +197,7 @@ async function runEndemicChannelFromCache(options: {
     const { data, error } = await query;
     if (error) throw new Error(`Erro ao consultar cache CEVESP: ${error.message}`);
 
-    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    for (const row of (data ?? []) as unknown as Array<Record<string, unknown>>) {
       const year = Number(row.ANO ?? 0);
       let bucket = Number(row[bucketColumn] ?? 0);
       if (grain === "month" && !(bucket >= 1 && bucket <= 12) && row.DtNotificacao) {
