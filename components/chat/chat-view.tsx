@@ -176,7 +176,7 @@ export function ChatView() {
   const queryClient = useQueryClient();
   const [conversationId, setConversationId] = useState<string | undefined>();
   const [message, setMessage] = useState("");
-  const [agent, setAgent] = useState<AgentKind>("geral");
+  const [agent, setAgent] = useState<AgentKind>("cos");
   const [search, setSearch] = useState("");
   const [localMessages, setLocalMessages] = useState<Message[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
