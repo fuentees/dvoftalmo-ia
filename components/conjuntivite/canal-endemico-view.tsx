@@ -93,6 +93,15 @@ export function CanalEndemicoView({ filters }: Props) {
   });
   const anoOptions = anosQuery.data?.anos?.length ? anosQuery.data.anos : [thisYear];
 
+  const syncInfo = useQuery<{ latestNotificationDate: string | null; lastSync: string | null }>({
+    queryKey: ["cevesp-sync-info"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/cevesp-status");
+      return res.json();
+    },
+    staleTime: 10 * 60 * 1000,
+  });
+
   const qs = useMemo(() => {
     const p = new URLSearchParams();
     if (filters?.gve)       p.set("gve", filters.gve);
@@ -334,12 +343,26 @@ export function CanalEndemicoView({ filters }: Props) {
                 {xAxisMode === "mes" && " Valores mensais somam as SEs de cada mês."}
               </CardDescription>
             </div>
-            {projStart && (
-              <div className="flex items-center gap-1 rounded border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-700">
-                <TrendingUp className="h-3 w-3" />
-                Projeção a partir da SE {projStart + 1}
-              </div>
-            )}
+            <div className="flex flex-wrap items-center gap-2">
+              {syncInfo.data?.latestNotificationDate && (() => {
+                const latest = new Date(syncInfo.data!.latestNotificationDate!);
+                const daysStale = Math.floor((Date.now() - latest.getTime()) / 86_400_000);
+                const stale = daysStale > 14;
+                return (
+                  <div className={`flex items-center gap-1 rounded border px-2 py-1 text-xs ${stale ? "border-amber-200 bg-amber-50 text-amber-700" : "border-teal-200 bg-teal-50 text-teal-700"}`}>
+                    {stale && <AlertTriangle className="h-3 w-3" />}
+                    Dados até {latest.toLocaleDateString("pt-BR")}
+                    {stale && ` (${daysStale} dias sem notificação nova)`}
+                  </div>
+                );
+              })()}
+              {projStart && (
+                <div className="flex items-center gap-1 rounded border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-700">
+                  <TrendingUp className="h-3 w-3" />
+                  Projeção a partir da SE {projStart + 1}
+                </div>
+              )}
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -383,7 +406,8 @@ export function CanalEndemicoView({ filters }: Props) {
                 name="Faixa esperada"
               />
 
-              {/* Ano anterior — atrás das outras linhas, tom neutro */}
+              {/* Ano anterior — atrás das outras linhas, tom neutro. Sem connectNulls:
+                  semanas sem notificação sincronizada ficam como lacuna, não como zero. */}
               <Line
                 type="monotone"
                 dataKey="Ano anterior"
@@ -392,7 +416,6 @@ export function CanalEndemicoView({ filters }: Props) {
                 strokeDasharray="4 3"
                 dot={false}
                 legendType="line"
-                connectNulls
               />
 
               {/* Média histórica — linha de referência fina */}
@@ -418,7 +441,9 @@ export function CanalEndemicoView({ filters }: Props) {
                 connectNulls
               />
 
-              {/* Ano atual — linha principal, mais grossa e escura que todas as outras */}
+              {/* Ano atual — linha principal, mais grossa e escura que todas as outras.
+                  Sem connectNulls: semanas sem notificação sincronizada viram lacuna
+                  visível, em vez de parecer "zero casos confirmados". */}
               <Line
                 type="monotone"
                 dataKey="Atual"
@@ -426,7 +451,6 @@ export function CanalEndemicoView({ filters }: Props) {
                 strokeWidth={3.5}
                 dot={false}
                 legendType="line"
-                connectNulls
               />
 
               {/* Linha da SE (ou mês) atual */}
