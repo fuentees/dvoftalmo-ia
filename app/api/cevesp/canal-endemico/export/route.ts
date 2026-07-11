@@ -172,7 +172,7 @@ export async function GET(request: NextRequest) {
     addLegendRow("Alerta",  "Incidência entre o limite inferior e o limite superior (média ± 2 desvios-padrão) — monitorar GVEs.", FILL_ALERTA);
     addLegendRow("Epidemia","Incidência acima do limite superior (média + 2 desvios-padrão) — zona epidêmica confirmada, acionar protocolos.", FILL_EPIDEMIA);
     wl.addRow([]);
-    wl.addRow(["Metodologia", "Canal endêmico calculado sobre coeficiente de incidência por 100 mil habitantes, com média histórica ± 2 desvios-padrão dos últimos 10 anos por semana epidemiológica, excluindo 2011 e considerando apenas anos com casos registrados."]);
+    wl.addRow(["Metodologia", "Canal endêmico calculado sobre coeficiente de incidência por 100 mil habitantes, com média histórica ± 2 desvios-padrão dos últimos 10 anos por semana epidemiológica, excluindo 2011, 2021 e 2022 e considerando apenas anos com casos registrados."]);
     wl.addRow(["Fonte", "CEVESP — Centro de Vigilância Epidemiológica / Centro de Oftalmologia Sanitária — SES-SP"]);
     wl.addRow(["Exportado em", now.toLocaleString("pt-BR")]);
 

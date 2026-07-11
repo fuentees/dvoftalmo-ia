@@ -33,7 +33,7 @@ type PopulationRow = {
   populacao?: number | string | null;
 };
 
-const EXCLUDED_BASELINE_YEARS = new Set([2011]);
+const EXCLUDED_BASELINE_YEARS = new Set([2011, 2021, 2022]);
 
 /** Média aritmética. */
 function mean(values: number[]): number {
@@ -130,6 +130,9 @@ function buildChannel(
   // O canal de controle deve ser calculado sobre coeficiente de incidencia, não
   // sobre casos absolutos, para acompanhar a planilha epidemiologica de referencia.
   // O ano de 2011 é excluido da linha de base por ser ano epidemico extremo.
+  // Os anos 2021 e 2022 também são excluidos por forte efeito da pandemia na
+  // procura/registro de conjuntivites, o que derruba artificialmente a incidencia
+  // esperada e distorce os desvios-padrão dos anos posteriores.
   //
   // Apenas 2026 em diante passou a
   // registrar notificações explícitas de 0 caso; nos anos históricos anteriores,

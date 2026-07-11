@@ -337,7 +337,7 @@ export function CanalEndemicoView({ filters }: Props) {
                 Canal Endêmico — Conjuntivites CEVESP
               </CardTitle>
               <CardDescription className="text-xs">
-                Faixa azul = intervalo esperado do coeficiente de incidência por 100 mil habitantes (média ± 2 desvios-padrão dos últimos 10 anos, excluindo 2011 e considerando só anos com casos registrados; zeros históricos anteriores a 2026 são tratados como ausência de notificação de zero caso). Azul escuro = {refYear}. Roxo tracejado = {refYear - 1}. Cinza pontilhado = média histórica. Azul claro tracejado = projeção. Casos absolutos aparecem no tooltip.
+                Faixa azul = intervalo esperado do coeficiente de incidência por 100 mil habitantes (média ± 2 desvios-padrão dos últimos 10 anos, excluindo 2011, 2021 e 2022 e considerando só anos com casos registrados; zeros históricos anteriores a 2026 são tratados como ausência de notificação de zero caso). Azul escuro = {refYear}. Roxo tracejado = {refYear - 1}. Cinza pontilhado = média histórica. Azul claro tracejado = projeção. Casos absolutos aparecem no tooltip.
                 {xAxisMode === "mes" && " Estatísticas calculadas por mês, independente da visão por SE."}
               </CardDescription>
             </div>

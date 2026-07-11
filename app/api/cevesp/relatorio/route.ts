@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
     lines.push(csvRow([`Gerado em: ${dateStr}`]));
     lines.push(csvRow([`Abrangência: ${scope}`]));
     lines.push(csvRow([`Ano de referência: ${year}`]));
-    lines.push(csvRow(["Canal endêmico calculado sobre coeficiente de incidência por 100 mil habitantes, com média histórica ± 2 desvios-padrão dos últimos 10 anos (por SE), excluindo 2011 e considerando apenas anos com casos registrados."]));
+    lines.push(csvRow(["Canal endêmico calculado sobre coeficiente de incidência por 100 mil habitantes, com média histórica ± 2 desvios-padrão dos últimos 10 anos (por SE), excluindo 2011, 2021 e 2022 e considerando apenas anos com casos registrados."]));
     lines.push("");
 
     // ── KPIs da última SE ────────────────────────────────────────────────────
