@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createNotificationConnection, getNotificationTableName, isNotificationConnectionError } from "@/lib/external/notification-db";
+import { listarMunicipiosPorGve } from "@/lib/municipios-sp";
 
 const identifierPattern = /^[a-zA-Z0-9_]+$/;
 
@@ -11,16 +12,28 @@ function quoteIdentifier(value: string) {
 export interface EndemicChannelPoint {
   se: number;
   min: number;
-  /** Limite inferior = média − 2×desvio-padrão (nunca abaixo de 0). */
+  /** Limite inferior do coeficiente de incidencia por 100 mil hab. = media − 2×DP. */
   q1: number;
-  /** Média histórica (não mediana, apesar do nome do campo). */
+  /** Media historica do coeficiente de incidencia por 100 mil hab. */
   median: number;
-  /** Limite superior = média + 2×desvio-padrão. */
+  /** Limite superior do coeficiente de incidencia por 100 mil hab. = media + 2×DP. */
   q3: number;
   max: number;
   currentYear: number | null;
+  currentIncidence: number | null;
+  population: number | null;
   band: number;
+  metric: "incidence_per_100k";
 }
+
+type PopulationRow = {
+  codigo_ibge?: string | null;
+  municipio?: string | null;
+  ano?: number | string | null;
+  populacao?: number | string | null;
+};
+
+const EXCLUDED_BASELINE_YEARS = new Set([2011]);
 
 /** Média aritmética. */
 function mean(values: number[]): number {
@@ -36,40 +49,128 @@ function stddev(values: number[], avg: number): number {
   return Math.sqrt(variance);
 }
 
+function normalizeText(value: unknown) {
+  return String(value ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function incidencePer100k(cases: number, population: number) {
+  if (!population || population <= 0) return null;
+  return (cases / population) * 100_000;
+}
+
 export type EndemicChannelGrain = "week" | "month";
 
 function bucketCountFor(grain: EndemicChannelGrain) {
   return grain === "month" ? 12 : 53;
 }
 
+async function loadScopedPopulation(options: {
+  gve?: string;
+  municipality?: string;
+}) {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("ibge_municipio_populacao")
+    .select("codigo_ibge, municipio, ano, populacao")
+    .limit(100000);
+
+  if (error) throw new Error(`Erro ao consultar populacao IBGE: ${error.message}`);
+
+  const selectedMunicipality = normalizeText(options.municipality);
+  const gveMunicipalities = options.gve
+    ? new Set(listarMunicipiosPorGve(options.gve).map((item) => normalizeText(item.nome)))
+    : null;
+
+  const rows = ((data ?? []) as PopulationRow[]).filter((row) => {
+    const name = normalizeText(row.municipio);
+    if (selectedMunicipality) return name === selectedMunicipality || name.includes(selectedMunicipality);
+    if (gveMunicipalities) return gveMunicipalities.has(name);
+    return true;
+  });
+
+  const byYear = new Map<number, number>();
+  for (const row of rows) {
+    const year = Number(row.ano);
+    const population = Number(row.populacao ?? 0);
+    if (Number.isInteger(year) && year > 1900 && Number.isFinite(population) && population > 0) {
+      byYear.set(year, (byYear.get(year) ?? 0) + population);
+    }
+  }
+
+  const years = Array.from(byYear.keys()).sort((a, b) => a - b);
+  const latestYear = years.at(-1) ?? null;
+
+  function forYear(year: number) {
+    if (byYear.has(year)) return { value: byYear.get(year)!, sourceYear: year, exact: true };
+    const previous = [...years].reverse().find((item) => item <= year);
+    if (previous != null) return { value: byYear.get(previous)!, sourceYear: previous, exact: false };
+    const first = years[0];
+    return first != null
+      ? { value: byYear.get(first)!, sourceYear: first, exact: false }
+      : { value: 0, sourceYear: null, exact: false };
+  }
+
+  return { byYear, years, latestYear, forYear };
+}
+
 function buildChannel(
   hist: Array<Record<string, unknown>>,
   curr: Array<Record<string, unknown>>,
-  grain: EndemicChannelGrain
+  grain: EndemicChannelGrain,
+  population: Awaited<ReturnType<typeof loadScopedPopulation>>
 ) {
   const maxBucket = bucketCountFor(grain);
 
-  // seMap: bucket (SE ou mês) → [cases per year]. Anos com 0 casos naquele bucket não
-  // entram na média/desvio histórico — um ano "parado" não é informação sobre o
-  // patamar esperado de transmissão, só dilui a média pra baixo e infla o desvio.
+  // seMap: bucket (SE ou mês) → [incidencia por 100 mil hab. por ano].
+  // O canal de controle deve ser calculado sobre coeficiente de incidencia, não
+  // sobre casos absolutos, para acompanhar a planilha epidemiologica de referencia.
+  // O ano de 2011 é excluido da linha de base por ser ano epidemico extremo.
+  //
+  // Apenas 2026 em diante passou a
+  // registrar notificações explícitas de 0 caso; nos anos históricos anteriores,
+  // zero costuma significar ausência desse tipo de registro, não zero epidemiológico.
+  // Por isso zeros históricos não entram na média/desvio. Já o ano de referência
+  // preserva zero quando ele existe no banco, para mostrar a curva atual corretamente.
   // Soma de TotalCaso por (ano, balde) também pode vir negativa no cache (registros
-  // de correção/estorno) — travada em 0 (e portanto já excluída) por segurança.
+  // de correção/estorno) — travada em 0 (e portanto já excluída do histórico) por segurança.
   const seMap = new Map<number, number[]>();
   for (const row of hist) {
     const se = Number(row.se ?? 0);
+    const year = Number(row.yr ?? row.year ?? row.ano ?? 0);
     const cases = Math.max(Number(row.cases ?? 0), 0);
-    if (se >= 1 && se <= maxBucket && Number.isFinite(cases) && cases > 0) {
+    const pop = population.forYear(year);
+    const incidence = incidencePer100k(cases, pop.value);
+    if (
+      se >= 1 &&
+      se <= maxBucket &&
+      Number.isFinite(cases) &&
+      cases > 0 &&
+      incidence != null &&
+      !EXCLUDED_BASELINE_YEARS.has(year)
+    ) {
       const existing = seMap.get(se) ?? [];
-      existing.push(cases);
+      existing.push(incidence);
       seMap.set(se, existing);
     }
   }
 
   const currMap = new Map<number, number>();
+  const currIncidenceMap = new Map<number, number>();
   for (const row of curr) {
     const se = Number(row.se ?? 0);
+    const year = Number(row.yr ?? row.year ?? row.ano ?? 0);
     const cases = Math.max(Number(row.cases ?? 0), 0);
-    if (se >= 1 && se <= maxBucket && Number.isFinite(cases)) currMap.set(se, cases);
+    const pop = population.forYear(year);
+    const incidence = incidencePer100k(cases, pop.value);
+    if (se >= 1 && se <= maxBucket && Number.isFinite(cases)) {
+      currMap.set(se, cases);
+      if (incidence != null) currIncidenceMap.set(se, incidence);
+    }
   }
 
   const allSe = Array.from(new Set([...seMap.keys(), ...currMap.keys()])).sort((a, b) => a - b);
@@ -94,7 +195,10 @@ function buildChannel(
       q3: Number(limiteSuperior.toFixed(1)),
       max: values.length > 0 ? values[values.length - 1] : 0,
       currentYear: currMap.has(se) ? currMap.get(se)! : null,
+      currentIncidence: currIncidenceMap.has(se) ? Number(currIncidenceMap.get(se)!.toFixed(1)) : null,
+      population: population.latestYear ? population.forYear(population.latestYear).value : null,
       band: Number(Math.max(0, limiteSuperior - limiteInferior).toFixed(1)),
+      metric: "incidence_per_100k",
     });
   }
 
@@ -112,6 +216,7 @@ async function runEndemicChannelFromCache(options: {
   const maxBucket = bucketCountFor(grain);
   const currentYear = options.year ?? new Date().getFullYear();
   const startYear = currentYear - 10;
+  const population = await loadScopedPopulation(options);
 
   const histMap = new Map<string, number>();
   const currMap = new Map<number, number>();
@@ -139,11 +244,11 @@ async function runEndemicChannelFromCache(options: {
         }
       }
       const hist = Array.from(histMap.entries()).map(([key, cases]) => {
-        const [, se] = key.split("-").map(Number);
-        return { se, cases };
+        const [yr, se] = key.split("-").map(Number);
+        return { yr, se, cases };
       });
-      const curr = Array.from(currMap.entries()).map(([se, cases]) => ({ se, cases }));
-      return buildChannel(hist, curr, grain);
+      const curr = Array.from(currMap.entries()).map(([se, cases]) => ({ yr: currentYear, se, cases }));
+      return buildChannel(hist, curr, grain, population);
     }
   } catch { /* fallback */ }
 
@@ -193,12 +298,12 @@ async function runEndemicChannelFromCache(options: {
   }
 
   const hist = Array.from(histMap.entries()).map(([key, cases]) => {
-    const [, se] = key.split("-").map(Number);
-    return { se, cases };
+    const [yr, se] = key.split("-").map(Number);
+    return { yr, se, cases };
   });
-  const curr = Array.from(currMap.entries()).map(([se, cases]) => ({ se, cases }));
+  const curr = Array.from(currMap.entries()).map(([se, cases]) => ({ yr: currentYear, se, cases }));
 
-  return buildChannel(hist, curr, grain);
+  return buildChannel(hist, curr, grain, population);
 }
 
 export async function runEndemicChannel(options: {
@@ -239,6 +344,7 @@ export async function runEndemicChannel(options: {
       : "coalesce(SemEpidemio, week(DtNotificacao, 3))";
 
     const refYear = options.year ?? new Date().getFullYear();
+    const population = await loadScopedPopulation(options);
     const [histRows] = await connection.query(
       `select
         ${bucketExpr} as se,
@@ -256,6 +362,7 @@ export async function runEndemicChannel(options: {
     const [currRows] = await connection.query(
       `select
         ${bucketExpr} as se,
+        year(DtNotificacao) as yr,
         sum(coalesce(TotalCaso, 0)) as cases
       from ${table}
       where DtNotificacao is not null
@@ -266,7 +373,7 @@ export async function runEndemicChannel(options: {
       [refYear, ...params]
     );
 
-    return buildChannel(histRows as Array<Record<string, unknown>>, currRows as Array<Record<string, unknown>>, grain);
+    return buildChannel(histRows as Array<Record<string, unknown>>, currRows as Array<Record<string, unknown>>, grain, population);
   } catch (error) {
     if (isNotificationConnectionError(error)) {
       return runEndemicChannelFromCache(options);

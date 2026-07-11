@@ -15,14 +15,14 @@ const FILL_SUMMARY  = "FFE0F2FE"; // sky-100
 function zoneFill(atual: number | null, q1: number, q3: number) {
   if (atual === null) return undefined;
   if (atual > q3) return FILL_EPIDEMIA;
-  if (atual > q1) return FILL_ALERTA;
+  if (atual >= q1) return FILL_ALERTA;
   return FILL_SUCESSO;
 }
 
 function zonaLabel(atual: number | null, q1: number, q3: number) {
   if (atual === null) return "sem dado";
   if (atual > q3) return "Epidemia";
-  if (atual > q1) return "Alerta";
+  if (atual >= q1) return "Alerta";
   return "Sucesso";
 }
 
@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
       .filter(Boolean).join(" | ") || "Estado de São Paulo";
 
     const lastPt     = pickCurrentChannelPoint(data);
-    const zonaAtual  = lastPt ? zonaLabel(lastPt.currentYear, lastPt.q1, lastPt.q3) : "—";
+    const zonaAtual  = lastPt ? zonaLabel(lastPt.currentIncidence, lastPt.q1, lastPt.q3) : "—";
 
     // ── Workbook ────────────────────────────────────────────────────────────
     const wb = new ExcelJS.Workbook();
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
     ws.properties.defaultRowHeight = 16;
 
     // Title rows
-    ws.mergeCells("A1:H1");
+    ws.mergeCells("A1:I1");
     const t1 = ws.getCell("A1");
     t1.value = "CANAL ENDÊMICO — VIGILÂNCIA DAS CONJUNTIVITES — CEVESP/SP";
     t1.font  = { bold: true, size: 13, color: { argb: "FFFFFFFF" } };
@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
     t1.alignment = { horizontal: "center", vertical: "middle" };
     ws.getRow(1).height = 22;
 
-    ws.mergeCells("A2:H2");
+    ws.mergeCells("A2:I2");
     const t2 = ws.getCell("A2");
     t2.value = `Gerado em: ${now.toLocaleDateString("pt-BR")}  |  Abrangência: ${scope}  |  Ano de referência: ${year}`;
     t2.font  = { size: 10, italic: true, color: { argb: "FF374151" } };
@@ -79,13 +79,13 @@ export async function GET(request: NextRequest) {
     ws.addRow([]); // spacer
 
     // Summary row
-    ws.mergeCells("A4:H4");
+    ws.mergeCells("A4:I4");
     const summary = ws.getCell("A4");
     summary.value = lastPt
-      ? `Última SE observada: ${lastPt.se}  |  Casos: ${lastPt.currentYear}  |  Zona: ${zonaAtual}  |  Limite alerta=${lastPt.q1}  |  Média=${lastPt.median}  |  Limite epidemia=${lastPt.q3}`
+      ? `Última SE observada: ${lastPt.se}  |  Casos: ${lastPt.currentYear}  |  Incidência: ${lastPt.currentIncidence} por 100 mil hab.  |  Zona: ${zonaAtual}  |  Limite inferior=${lastPt.q1}  |  Média=${lastPt.median}  |  Limite superior=${lastPt.q3}`
       : "Sem dados do ano atual disponíveis.";
     summary.font = { bold: true, size: 10 };
-    const sumFill = lastPt ? zoneFill(lastPt.currentYear, lastPt.q1, lastPt.q3) : FILL_SUMMARY;
+    const sumFill = lastPt ? zoneFill(lastPt.currentIncidence, lastPt.q1, lastPt.q3) : FILL_SUMMARY;
     summary.fill = { type: "pattern", pattern: "solid", fgColor: { argb: sumFill ?? FILL_SUMMARY } };
     summary.alignment = { horizontal: "center" };
     ws.getRow(4).height = 18;
@@ -96,11 +96,12 @@ export async function GET(request: NextRequest) {
     const headerRow = ws.addRow([
       "SE",
       `Casos ${year}`,
-      "Limite inferior (média − 2 DP)",
-      "Média histórica",
-      "Limite superior (média + 2 DP)",
-      "Mín histórico (anos c/ casos)",
-      "Máx histórico",
+      `Incidência ${year} por 100 mil hab.`,
+      "Limite inferior incidência (média − 2 DP)",
+      "Média histórica incidência",
+      "Limite superior incidência (média + 2 DP)",
+      "Mín histórico incidência",
+      "Máx histórico incidência",
       `Zona ${year}`
     ]);
     headerRow.eachCell((cell) => {
@@ -115,20 +116,21 @@ export async function GET(request: NextRequest) {
 
     // Data rows
     for (const pt of data) {
-      const fill = zoneFill(pt.currentYear, pt.q1, pt.q3);
+      const fill = zoneFill(pt.currentIncidence, pt.q1, pt.q3);
       const row = ws.addRow([
         pt.se,
         pt.currentYear ?? null,
+        pt.currentIncidence ?? null,
         pt.q1,
         pt.median,
         pt.q3,
         pt.min,
         pt.max,
-        zonaLabel(pt.currentYear, pt.q1, pt.q3)
+        zonaLabel(pt.currentIncidence, pt.q1, pt.q3)
       ]);
       if (fill) {
         const dataCell = row.getCell(2); // "Casos" column
-        const zonaCell = row.getCell(8); // "Zona" column
+        const zonaCell = row.getCell(9); // "Zona" column
         dataCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fill } };
         zonaCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fill } };
       }
@@ -141,12 +143,13 @@ export async function GET(request: NextRequest) {
     // Column widths
     ws.getColumn(1).width = 8;   // SE
     ws.getColumn(2).width = 14;  // Casos
-    ws.getColumn(3).width = 20;  // Limite de alerta
-    ws.getColumn(4).width = 16;  // Média
-    ws.getColumn(5).width = 24;  // Limite de epidemia
-    ws.getColumn(6).width = 14;  // Min
-    ws.getColumn(7).width = 14;  // Max
-    ws.getColumn(8).width = 14;  // Zona
+    ws.getColumn(3).width = 20;  // Incidencia
+    ws.getColumn(4).width = 24;  // Limite inferior
+    ws.getColumn(5).width = 22;  // Média
+    ws.getColumn(6).width = 24;  // Limite superior
+    ws.getColumn(7).width = 20;  // Min
+    ws.getColumn(8).width = 20;  // Max
+    ws.getColumn(9).width = 14;  // Zona
 
     // ── Sheet 2: Legenda ─────────────────────────────────────────────────────
     const wl = wb.addWorksheet("Legenda");
@@ -165,11 +168,11 @@ export async function GET(request: NextRequest) {
     wl.addRow(["LEGENDA DAS ZONAS DO CANAL ENDÊMICO"]).getCell(1).font = { bold: true, size: 12 };
     wl.addRow([]);
     wl.addRow(["Zona", "Descrição"]).eachCell((c) => { c.font = { bold: true }; });
-    addLegendRow("Sucesso", "Casos abaixo do limite inferior (média − 2 desvios-padrão) — transmissão baixa, controle bem-sucedido.", FILL_SUCESSO);
-    addLegendRow("Alerta",  "Casos entre o limite inferior e o limite superior (média ± 2 desvios-padrão) — monitorar GVEs.", FILL_ALERTA);
-    addLegendRow("Epidemia","Casos acima do limite superior (média + 2 desvios-padrão) — zona epidêmica confirmada, acionar protocolos.", FILL_EPIDEMIA);
+    addLegendRow("Sucesso", "Incidência abaixo do limite inferior (média − 2 desvios-padrão) — transmissão baixa, controle bem-sucedido.", FILL_SUCESSO);
+    addLegendRow("Alerta",  "Incidência entre o limite inferior e o limite superior (média ± 2 desvios-padrão) — monitorar GVEs.", FILL_ALERTA);
+    addLegendRow("Epidemia","Incidência acima do limite superior (média + 2 desvios-padrão) — zona epidêmica confirmada, acionar protocolos.", FILL_EPIDEMIA);
     wl.addRow([]);
-    wl.addRow(["Metodologia", "Canal endêmico calculado com média histórica ± 2 desvios-padrão dos últimos 10 anos por semana epidemiológica, considerando apenas anos com casos registrados (anos com 0 casos não entram na média)."]);
+    wl.addRow(["Metodologia", "Canal endêmico calculado sobre coeficiente de incidência por 100 mil habitantes, com média histórica ± 2 desvios-padrão dos últimos 10 anos por semana epidemiológica, excluindo 2011 e considerando apenas anos com casos registrados."]);
     wl.addRow(["Fonte", "CEVESP — Centro de Vigilância Epidemiológica / Centro de Oftalmologia Sanitária — SES-SP"]);
     wl.addRow(["Exportado em", now.toLocaleString("pt-BR")]);
 

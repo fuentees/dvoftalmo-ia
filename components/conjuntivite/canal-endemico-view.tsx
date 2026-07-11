@@ -10,7 +10,7 @@ import { AlertTriangle, CheckCircle2, Download, Info, RefreshCw, TrendingUp, XCi
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { EndemicChannelPoint } from "@/services/cevesp-endemic";
-import { pickCurrentChannelPoint, pickCurrentPoint } from "@/lib/epi-week";
+import { currentEpiWeek, pickCurrentPoint } from "@/lib/epi-week";
 
 const MESES = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -51,20 +51,22 @@ function ZoneBadge({ zona }: { zona: string | null }) {
 }
 
 // ── Custom tooltip ───────────────────────────────────────────────────────────
-function CanalTooltip({ active, payload, label, mode }: { active?: boolean; payload?: Array<{ name: string; value: number; color: string }>; label?: string | number; mode?: "se" | "mes" }) {
+function CanalTooltip({ active, payload, label, mode }: { active?: boolean; payload?: Array<{ name: string; value: number; color: string; payload?: Record<string, unknown> }>; label?: string | number; mode?: "se" | "mes" }) {
   if (!active || !payload?.length) return null;
   const byName = Object.fromEntries(payload.map((p) => [p.name, p.value]));
+  const row = payload[0]?.payload ?? {};
   const q1   = byName["_q1Base"]        ?? 0;
   const band = byName["Faixa esperada"] ?? 0;
   const q3   = q1 + band;
   return (
     <div className="rounded-lg border bg-background px-3 py-2 text-xs shadow-md">
       <p className="mb-1 font-semibold">{mode === "mes" ? label : `SE ${label}`}</p>
-      {byName["Atual"] != null        && <p className="font-medium text-blue-700">Atual: {Number(byName["Atual"]).toLocaleString("pt-BR")}</p>}
-      {byName["Projeção"] != null     && <p className="text-blue-400">Projeção: {Number(byName["Projeção"]).toLocaleString("pt-BR")}</p>}
-      {byName["Ano anterior"] != null && <p className="text-violet-600">Ano anterior: {Number(byName["Ano anterior"]).toLocaleString("pt-BR")}</p>}
+      {byName["Incidência atual"] != null && <p className="font-medium text-blue-700">Incidência atual: {Number(byName["Incidência atual"]).toLocaleString("pt-BR")} / 100 mil</p>}
+      {row["Casos atuais"] != null && <p className="text-blue-700">Casos atuais: {Number(row["Casos atuais"]).toLocaleString("pt-BR")}</p>}
+      {byName["Projeção"] != null     && <p className="text-blue-400">Projeção: {Number(byName["Projeção"]).toLocaleString("pt-BR")} / 100 mil</p>}
+      {byName["Ano anterior"] != null && <p className="text-violet-600">Ano anterior: {Number(byName["Ano anterior"]).toLocaleString("pt-BR")} / 100 mil</p>}
       {byName["Média"] != null        && <p className="text-gray-500">Média hist.: {Number(byName["Média"]).toLocaleString("pt-BR")}</p>}
-      <p className="mt-1 border-t pt-1 text-muted-foreground">Limite inferior: {q1.toLocaleString("pt-BR")} · Limite superior: {q3.toLocaleString("pt-BR")}</p>
+      <p className="mt-1 border-t pt-1 text-muted-foreground">Limite inferior: {q1.toLocaleString("pt-BR")} · Limite superior: {q3.toLocaleString("pt-BR")} / 100 mil</p>
     </div>
   );
 }
@@ -76,6 +78,8 @@ type Props = {
 
 export function CanalEndemicoView({ filters }: Props) {
   const thisYear = new Date().getFullYear();
+  const currentMonth = new Date().getMonth() + 1;
+  const currentWeek = currentEpiWeek();
 
   // ── Ano de referência (qual ano é o "ano atual" da comparação) ──────────────
   const [refYear, setRefYear] = useState(thisYear);
@@ -160,27 +164,29 @@ export function CanalEndemicoView({ filters }: Props) {
     if (!data) return { chartData: [], lastSE: null, lastLabel: null, currentZona: null, projStart: null };
 
     const bucketLabel = (bucket: number) => xAxisMode === "se" ? String(bucket) : MESES[bucket - 1].slice(0, 3);
+    const currentBucket = refYear === thisYear
+      ? (xAxisMode === "se" ? currentWeek.se : currentMonth)
+      : (xAxisMode === "se" ? 53 : 12);
 
-    const withData = data.filter((d) => d.currentYear !== null);
-    const currentPt = xAxisMode === "se"
-      ? pickCurrentChannelPoint(data)
-      : pickCurrentPoint(data, new Date().getMonth() + 1);
+    const withData = data.filter((d) => d.currentIncidence !== null && d.se <= currentBucket);
+    const currentPt = pickCurrentPoint(data, currentBucket);
     const lastSE    = currentPt?.se ?? null;
     const lastLabel = lastSE != null ? bucketLabel(lastSE) : null;
-    const currentZona = currentPt?.currentYear != null
-      ? currentPt.currentYear > currentPt.q3
+    const currentZona = currentPt?.currentIncidence != null
+      ? currentPt.currentIncidence > currentPt.q3
         ? "epidemia"
-        : currentPt.currentYear > currentPt.q1
-          ? "esperado" : "sucesso"
+        : currentPt.currentIncidence >= currentPt.q1
+          ? "esperado"
+          : "sucesso"
       : null;
 
     // Previous year lookup by bucket
-    const prevMap = new Map((prevData ?? []).map((p) => [p.se, p.currentYear]));
+    const prevMap = new Map((prevData ?? []).map((p) => [p.se, p.currentIncidence]));
 
     // Projeção linear a partir dos últimos pontos observados: 4 SEs (~1 mês) ou 2 meses
     const projectionSteps = xAxisMode === "se" ? 4 : 2;
     const recent = withData.slice(-6);
-    const reg = linearRegression(recent.map((d) => ({ x: d.se, y: d.currentYear! })));
+    const reg = linearRegression(recent.map((d) => ({ x: d.se, y: d.currentIncidence! })));
     const projStart = lastSE ?? null;
 
     const chartData = data.map((d) => {
@@ -196,23 +202,25 @@ export function CanalEndemicoView({ filters }: Props) {
         "_q1Base":          d.q1,
         "Faixa esperada":   alertBand,
         "Média":            d.median,
-        "Atual":            d.currentYear ?? undefined,
+        "Incidência atual": d.currentIncidence ?? undefined,
+        "Casos atuais":     d.currentYear ?? undefined,
         "Ano anterior":     anoAnterior,
         "Projeção":         projecao,
       };
     });
 
     return { chartData, lastSE, lastLabel, currentZona, projStart };
-  }, [data, prevData, xAxisMode]);
+  }, [currentMonth, currentWeek.se, data, prevData, refYear, thisYear, xAxisMode]);
 
   // ── KPIs ───────────────────────────────────────────────────────────────────
   const kpis = useMemo(() => {
     if (!data || !lastSE) return null;
     const seData = data.find((d) => d.se === lastSE);
     if (!seData) return null;
-    const atual = seData.currentYear ?? 0;
-    const acima = data.filter((d) => d.currentYear !== null && d.currentYear > d.q3).length;
-    return { atual, q1: seData.q1, q3: seData.q3, median: seData.median, acima };
+    const atual = seData.currentIncidence ?? 0;
+    const casos = seData.currentYear ?? 0;
+    const acima = data.filter((d) => d.currentIncidence !== null && d.currentIncidence > d.q3).length;
+    return { atual, casos, q1: seData.q1, q3: seData.q3, median: seData.median, acima };
   }, [data, lastSE]);
 
   if (isLoading) return (
@@ -280,12 +288,13 @@ export function CanalEndemicoView({ filters }: Props) {
       {kpis && lastSE && (
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2 rounded-lg border bg-card px-4 py-2 text-sm shadow-sm">
-            <span className="text-muted-foreground">{xAxisMode === "se" ? `SE ${lastLabel}` : lastLabel} — casos:</span>
-            <span className="font-semibold">{kpis.atual.toLocaleString("pt-BR")}</span>
+            <span className="text-muted-foreground">{xAxisMode === "se" ? `SE ${lastLabel}` : lastLabel} — incidência:</span>
+            <span className="font-semibold">{kpis.atual.toLocaleString("pt-BR")} / 100 mil</span>
+            <span className="text-xs text-muted-foreground">({kpis.casos.toLocaleString("pt-BR")} casos)</span>
             <ZoneBadge zona={currentZona} />
           </div>
           <div className="rounded-lg border bg-card px-4 py-2 text-xs text-muted-foreground shadow-sm">
-            Limite inferior: <strong>{kpis.q1.toLocaleString("pt-BR")}</strong> · média: <strong>{kpis.median.toLocaleString("pt-BR")}</strong> · Limite superior: <strong>{kpis.q3.toLocaleString("pt-BR")}</strong>
+            Limite inferior: <strong>{kpis.q1.toLocaleString("pt-BR")}</strong> · média: <strong>{kpis.median.toLocaleString("pt-BR")}</strong> · Limite superior: <strong>{kpis.q3.toLocaleString("pt-BR")}</strong> por 100 mil hab.
           </div>
           {kpis.acima > 0 && (
             <div className="flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700 shadow-sm">
@@ -328,7 +337,7 @@ export function CanalEndemicoView({ filters }: Props) {
                 Canal Endêmico — Conjuntivites CEVESP
               </CardTitle>
               <CardDescription className="text-xs">
-                Faixa azul = intervalo esperado (média ± 2 desvios-padrão dos últimos 10 anos, considerando só anos com casos registrados — anos com 0 casos não entram na média). Azul escuro = {refYear}. Roxo tracejado = {refYear - 1}. Cinza pontilhado = média histórica. Azul claro tracejado = projeção.
+                Faixa azul = intervalo esperado do coeficiente de incidência por 100 mil habitantes (média ± 2 desvios-padrão dos últimos 10 anos, excluindo 2011 e considerando só anos com casos registrados; zeros históricos anteriores a 2026 são tratados como ausência de notificação de zero caso). Azul escuro = {refYear}. Roxo tracejado = {refYear - 1}. Cinza pontilhado = média histórica. Azul claro tracejado = projeção. Casos absolutos aparecem no tooltip.
                 {xAxisMode === "mes" && " Estatísticas calculadas por mês, independente da visão por SE."}
               </CardDescription>
             </div>
@@ -430,12 +439,12 @@ export function CanalEndemicoView({ filters }: Props) {
                 connectNulls
               />
 
-              {/* Ano atual — linha principal, mais grossa e escura que todas as outras.
+              {/* Ano atual — linha principal de incidencia, mais grossa e escura que todas as outras.
                   Sem connectNulls: semanas sem notificação sincronizada viram lacuna
                   visível, em vez de parecer "zero casos confirmados". */}
               <Line
                 type="monotone"
-                dataKey="Atual"
+                dataKey="Incidência atual"
                 stroke="#1d4ed8"
                 strokeWidth={3.5}
                 dot={false}
@@ -459,9 +468,9 @@ export function CanalEndemicoView({ filters }: Props) {
       {/* ── Legenda das zonas ────────────────────────────────────────────── */}
       <div className="grid gap-3 sm:grid-cols-3">
         {[
-          { color: "bg-green-200 border-green-400", label: "Zona de Sucesso",   desc: "Casos abaixo do limite inferior (média − 2 desvios-padrão) — transmissão baixa, controle bem-sucedido." },
-          { color: "bg-sky-200   border-sky-400",   label: "Dentro do Esperado", desc: "Casos dentro da faixa azul do gráfico (média ± 2 desvios-padrão) — comportamento normal, sem ação adicional." },
-          { color: "bg-red-200   border-red-400",   label: "Zona Epidêmica",    desc: "Casos acima do limite superior (média + 2 desvios-padrão) — epidemia confirmada, acionar protocolos." },
+          { color: "bg-green-200 border-green-400", label: "Zona de Sucesso",   desc: "Incidência abaixo do limite inferior (média − 2 desvios-padrão) — transmissão baixa, controle bem-sucedido." },
+          { color: "bg-sky-200   border-sky-400",   label: "Dentro do Esperado", desc: "Incidência dentro da faixa azul do gráfico (média ± 2 desvios-padrão) — comportamento normal, sem ação adicional." },
+          { color: "bg-red-200   border-red-400",   label: "Zona Epidêmica",    desc: "Incidência acima do limite superior (média + 2 desvios-padrão) — epidemia confirmada, acionar protocolos." },
         ].map(({ color, label, desc }) => (
           <div key={label} className={`rounded-lg border-l-4 bg-opacity-40 px-4 py-3 text-xs ${color}`}>
             <p className="font-semibold">{label}</p>

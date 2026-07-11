@@ -7,7 +7,7 @@ import { pickCurrentChannelPoint } from "@/lib/epi-week";
 function seZone(atual: number | null, q1: number, q3: number): string {
   if (atual === null) return "sem dado";
   if (atual > q3) return "epidemia";
-  if (atual > q1) return "alerta";
+  if (atual >= q1) return "alerta";
   return "sucesso";
 }
 
@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
     const dateStr  = now.toLocaleDateString("pt-BR");
     const lastPt = pickCurrentChannelPoint(data);
     const lastSE = lastPt?.se ?? null;
-    const zona   = lastPt ? seZone(lastPt.currentYear, lastPt.q1, lastPt.q3) : "sem dado";
+    const zona   = lastPt ? seZone(lastPt.currentIncidence, lastPt.q1, lastPt.q3) : "sem dado";
 
     const scope = [gve && `GVE: ${gve}`, municipality && `Município: ${municipality}`]
       .filter(Boolean)
@@ -56,16 +56,17 @@ export async function GET(request: NextRequest) {
     lines.push(csvRow([`Gerado em: ${dateStr}`]));
     lines.push(csvRow([`Abrangência: ${scope}`]));
     lines.push(csvRow([`Ano de referência: ${year}`]));
-    lines.push(csvRow(["Canal endêmico calculado com média histórica ± 2 desvios-padrão dos últimos 10 anos (por SE), considerando apenas anos com casos registrados"]));
+    lines.push(csvRow(["Canal endêmico calculado sobre coeficiente de incidência por 100 mil habitantes, com média histórica ± 2 desvios-padrão dos últimos 10 anos (por SE), excluindo 2011 e considerando apenas anos com casos registrados."]));
     lines.push("");
 
     // ── KPIs da última SE ────────────────────────────────────────────────────
     lines.push(csvRow(["RESUMO — ÚLTIMA SEMANA OBSERVADA"]));
-    lines.push(csvRow(["SE atual", "Casos", "Limite de alerta", "Média histórica", "Limite de epidemia", "Zona"]));
+    lines.push(csvRow(["SE atual", "Casos", "Incidência por 100 mil hab.", "Limite inferior", "Média histórica", "Limite superior", "Zona"]));
     if (lastSE && lastPt) {
       lines.push(csvRow([
         lastSE,
         lastPt.currentYear,
+        lastPt.currentIncidence,
         lastPt.q1,
         lastPt.median,
         lastPt.q3,
@@ -76,17 +77,18 @@ export async function GET(request: NextRequest) {
 
     // ── Tabela completa por SE ────────────────────────────────────────────────
     lines.push(csvRow(["SÉRIE TEMPORAL POR SEMANA EPIDEMIOLÓGICA"]));
-    lines.push(csvRow(["SE", "Casos " + year, "Limite inferior (média − 2 DP)", "Média histórica", "Limite superior (média + 2 DP)", "Mínimo histórico (anos c/ casos)", "Máximo histórico", "Zona " + year]));
+    lines.push(csvRow(["SE", "Casos " + year, "Incidência " + year + " por 100 mil hab.", "Limite inferior incidência (média − 2 DP)", "Média histórica incidência", "Limite superior incidência (média + 2 DP)", "Mínimo histórico incidência", "Máximo histórico incidência", "Zona " + year]));
     for (const pt of data) {
       lines.push(csvRow([
         pt.se,
         pt.currentYear,
+        pt.currentIncidence,
         pt.q1,
         pt.median,
         pt.q3,
         pt.min,
         pt.max,
-        seZone(pt.currentYear, pt.q1, pt.q3),
+        seZone(pt.currentIncidence, pt.q1, pt.q3),
       ]));
     }
 

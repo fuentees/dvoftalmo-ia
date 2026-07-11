@@ -68,17 +68,19 @@ export async function GET(request: NextRequest) {
       const pts = endemicData.value;
       const pt = pickCurrentChannelPoint(pts);
       if (pt) {
-        const cur = pt.currentYear!;
+        const cur = pt.currentYear ?? 0;
+        const incidence = pt.currentIncidence;
         const zona: CanalEndemicoInput["zona"] =
-          cur > pt.q3 ? "epidemia" : cur > pt.q1 ? "alerta" : "sucesso";
+          incidence == null ? "sucesso" : incidence > pt.q3 ? "epidemia" : incidence >= pt.q1 ? "alerta" : "sucesso";
         canalEndemico = {
           lastSE: pt.se,
           zona,
           currentCases: cur,
+          currentIncidence: incidence,
           q1: pt.q1,
           median: pt.median,
           q3: pt.q3,
-          weeksAboveQ3: pts.filter((p) => p.currentYear != null && p.currentYear > p.q3).length
+          weeksAboveQ3: pts.filter((p) => p.currentIncidence != null && p.currentIncidence > p.q3).length
         };
       }
     }

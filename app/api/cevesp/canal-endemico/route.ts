@@ -11,8 +11,16 @@ export async function GET(request: NextRequest) {
   const gve          = request.nextUrl.searchParams.get("gve")          ?? undefined;
   const municipality = request.nextUrl.searchParams.get("municipality") ?? undefined;
   const yearParam    = request.nextUrl.searchParams.get("year");
-  const year         = yearParam ? Number(yearParam) : undefined;
   const grain        = request.nextUrl.searchParams.get("grain") === "month" ? "month" : "week";
+  let year: number | undefined;
+
+  if (yearParam) {
+    const parsedYear = Number(yearParam);
+    if (!Number.isInteger(parsedYear) || parsedYear < 2000 || parsedYear > 2100) {
+      return NextResponse.json({ error: "Ano inválido para o canal endêmico." }, { status: 400 });
+    }
+    year = parsedYear;
+  }
 
   try {
     const data = await runEndemicChannel({ gve, municipality, year, grain });

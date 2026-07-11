@@ -169,15 +169,16 @@ export async function executeTool(
         gve: args.gve ? String(args.gve) : undefined,
         municipality: args.municipio ? String(args.municipio) : undefined,
       });
-      const withData = points.filter((p) => p.currentYear !== null);
+      const withData = points.filter((p) => p.currentIncidence !== null);
       const pt = pickCurrentChannelPoint(points);
       if (!pt) {
         return { content: "Canal endêmico — sem dados suficientes do ano atual para posicionar a curva." };
       }
       const { se: realSe, year: realYear } = currentEpiWeek();
-      const cur = pt.currentYear!;
-      const zona = cur > pt.q3 ? "EPIDEMIA" : cur > pt.q1 ? "ALERTA" : "SUCESSO";
-      const weeksAbove = withData.filter((p) => p.currentYear! > p.q3).length;
+      const cur = pt.currentYear ?? 0;
+      const incidence = pt.currentIncidence;
+      const zona = incidence == null ? "SEM DADO" : incidence > pt.q3 ? "EPIDEMIA" : incidence >= pt.q1 ? "ALERTA" : "SUCESSO";
+      const weeksAbove = withData.filter((p) => p.currentIncidence! > p.q3).length;
       const staleNote = pt.se !== realSe
         ? ` (a SE ${realSe}/${realYear}, semana atual real, ainda não tem notificações no cache; mostrando a última disponível.)`
         : "";
@@ -186,9 +187,10 @@ export async function executeTool(
           `Canal endêmico — SE ${pt.se} (ano atual)${staleNote}:\n` +
           `Zona: ${zona}\n` +
           `Casos na SE: ${cur}\n` +
-          `Limite de alerta: ${pt.q1}\n` +
-          `Média histórica: ${pt.median}\n` +
-          `Limite de epidemia: ${pt.q3}\n` +
+          `Incidencia na SE: ${incidence ?? "N/A"} por 100 mil hab.\n` +
+          `Limite inferior: ${pt.q1} por 100 mil hab.\n` +
+          `Média histórica: ${pt.median} por 100 mil hab.\n` +
+          `Limite superior: ${pt.q3} por 100 mil hab.\n` +
           `Semanas acima do limite de epidemia no ano: ${weeksAbove}`
       };
     } catch (err) {

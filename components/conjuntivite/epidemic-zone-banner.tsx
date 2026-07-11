@@ -32,8 +32,10 @@ export function EpidemicZoneBanner({ gve, municipio }: Props) {
   const lastSE = pt.se;
 
   const cur         = pt.currentYear;
-  const isEpidemia  = cur > pt.q3;
-  const isAlerta    = !isEpidemia && cur > pt.q1;
+  const incidence   = pt.currentIncidence;
+  if (incidence === null) return null;
+  const isEpidemia  = incidence > pt.q3;
+  const isAlerta    = !isEpidemia && incidence >= pt.q1;
   if (!isEpidemia && !isAlerta) return null;
 
   const bg  = isEpidemia ? "bg-red-50 border-red-200"   : "bg-amber-50 border-amber-200";
@@ -41,15 +43,15 @@ export function EpidemicZoneBanner({ gve, municipio }: Props) {
   const ico = isEpidemia ? "text-red-500"                : "text-amber-500";
   const zona = isEpidemia ? "epidêmica" : "de alerta";
   const threshold = isEpidemia
-    ? `acima do limite de epidemia (${pt.q3.toLocaleString("pt-BR")} casos)`
-    : `entre o limite de alerta (${pt.q1.toLocaleString("pt-BR")}) e o de epidemia (${pt.q3.toLocaleString("pt-BR")})`;
+    ? `acima do limite de epidemia (${pt.q3.toLocaleString("pt-BR")} por 100 mil hab.)`
+    : `entre o limite inferior (${pt.q1.toLocaleString("pt-BR")}) e o superior (${pt.q3.toLocaleString("pt-BR")}) por 100 mil hab.`;
 
   return (
     <div className={`flex items-start gap-3 border-b px-6 py-3 text-sm ${bg} ${txt}`}>
       <AlertTriangle className={`mt-0.5 h-4 w-4 shrink-0 ${ico}`} />
       <span className="flex-1 leading-snug">
         <strong>SE {lastSE} — zona {zona}:</strong>{" "}
-        {cur.toLocaleString("pt-BR")} casos registrados, {threshold}.{" "}
+        {cur.toLocaleString("pt-BR")} casos registrados; incidência de {incidence.toLocaleString("pt-BR")} por 100 mil hab., {threshold}.{" "}
         <a href="?tab=situacao" className="underline underline-offset-2 hover:opacity-80">
           Ver canal endêmico →
         </a>

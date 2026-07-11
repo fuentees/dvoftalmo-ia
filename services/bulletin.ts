@@ -16,6 +16,7 @@ export interface CanalEndemicoInput {
   lastSE: number;
   zona: "sucesso" | "alerta" | "epidemia";
   currentCases: number;
+  currentIncidence: number | null;
   q1: number;
   median: number;
   q3: number;
@@ -195,17 +196,18 @@ export async function generateBulletinDocx(data: BulletinInput): Promise<Buffer>
                       children: [headerCell("Parametro"), headerCell("Valor"), headerCell("Parametro"), headerCell("Valor")]
                     }),
                     kpiRow("SE de referencia", data.canalEndemico.lastSE, "Zona atual", data.canalEndemico.zona.toUpperCase()),
-                    kpiRow("Casos na SE", data.canalEndemico.currentCases, "Media historica", data.canalEndemico.median),
-                    kpiRow("Limite de alerta", data.canalEndemico.q1, "Limite de epidemia", data.canalEndemico.q3),
+                    kpiRow("Casos na SE", data.canalEndemico.currentCases, "Incidencia na SE", data.canalEndemico.currentIncidence ?? "N/A"),
+                    kpiRow("Media historica incidencia", data.canalEndemico.median, "Limite superior incidencia", data.canalEndemico.q3),
+                    kpiRow("Limite inferior incidencia", data.canalEndemico.q1, "Unidade", "por 100 mil hab."),
                     kpiRow("Semanas acima do limite de epidemia no ano", data.canalEndemico.weeksAboveQ3, "", ""),
                   ]
                 }),
                 bodyText(
                   data.canalEndemico.zona === "epidemia"
-                    ? `ATENCAO: a SE ${data.canalEndemico.lastSE} ultrapassou o limite de epidemia do canal endemico (${data.canalEndemico.q3}), configurando zona epidemica. Acionar protocolos de investigacao e controle.`
+                    ? `ATENCAO: a SE ${data.canalEndemico.lastSE} ultrapassou o limite superior de incidencia do canal endemico (${data.canalEndemico.q3} por 100 mil hab.), configurando zona epidemica. Acionar protocolos de investigacao e controle.`
                     : data.canalEndemico.zona === "alerta"
-                    ? `A SE ${data.canalEndemico.lastSE} encontra-se na zona de alerta (entre ${data.canalEndemico.q1} e ${data.canalEndemico.q3}). Intensificar monitoramento e preparar medidas preventivas.`
-                    : `A SE ${data.canalEndemico.lastSE} encontra-se na zona de sucesso (abaixo de ${data.canalEndemico.q1}). Situacao dentro do esperado historicamente.`
+                    ? `A SE ${data.canalEndemico.lastSE} encontra-se na zona de alerta (incidencia entre ${data.canalEndemico.q1} e ${data.canalEndemico.q3} por 100 mil hab.). Intensificar monitoramento e preparar medidas preventivas.`
+                    : `A SE ${data.canalEndemico.lastSE} encontra-se na zona de sucesso (incidencia abaixo de ${data.canalEndemico.q1} por 100 mil hab.). Situacao dentro do esperado historicamente.`
                 ),
                 spacer()
               ]
@@ -430,14 +432,15 @@ export async function generateBulletinPdf(data: BulletinInput): Promise<Uint8Arr
     const c = data.canalEndemico;
     drawSectionHeading("2. CANAL ENDEMICO — SITUACAO DE ALERTA");
     drawKvRow("SE de referencia", String(c.lastSE), "Zona atual", c.zona.toUpperCase());
-    drawKvRow("Casos na SE", String(c.currentCases), "Media historica", String(c.median));
-    drawKvRow("Limite de alerta", String(c.q1), "Limite de epidemia", String(c.q3));
+    drawKvRow("Casos na SE", String(c.currentCases), "Incidencia na SE", String(c.currentIncidence ?? "N/A"));
+    drawKvRow("Media historica incidencia", String(c.median), "Limite superior incidencia", String(c.q3));
+    drawKvRow("Limite inferior incidencia", String(c.q1), "Unidade", "por 100 mil hab.");
     drawKvRow("Semanas acima do limite de epidemia no ano", String(c.weeksAboveQ3), "", "");
     const alertMsg = c.zona === "epidemia"
-      ? `ATENCAO: SE ${c.lastSE} ultrapassou o limite de epidemia (${c.q3}), zona epidemica. Acionar protocolos de controle.`
+      ? `ATENCAO: SE ${c.lastSE} ultrapassou o limite superior de incidencia (${c.q3} por 100 mil hab.), zona epidemica. Acionar protocolos de controle.`
       : c.zona === "alerta"
-      ? `SE ${c.lastSE} em zona de alerta (${c.q1} — ${c.q3}). Intensificar monitoramento.`
-      : `SE ${c.lastSE} em zona de sucesso (abaixo de ${c.q1}). Situacao normal.`;
+      ? `SE ${c.lastSE} em zona de alerta (${c.q1} a ${c.q3} por 100 mil hab.). Intensificar monitoramento.`
+      : `SE ${c.lastSE} em zona de sucesso (abaixo de ${c.q1} por 100 mil hab.). Situacao normal.`;
     drawText(alertMsg, MARGIN, 10, false, c.zona === "epidemia" ? rgb(0.7, 0.1, 0.1) : c.zona === "alerta" ? rgb(0.6, 0.4, 0) : teal);
     y -= 8;
   }
