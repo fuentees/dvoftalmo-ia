@@ -337,7 +337,7 @@ export function CanalEndemicoView({ filters }: Props) {
                 Canal Endêmico — Conjuntivites CEVESP
               </CardTitle>
               <CardDescription className="text-xs">
-                Faixa azul = intervalo esperado do coeficiente de incidência por 100 mil habitantes (média ± 2 desvios-padrão dos últimos 10 anos, excluindo 2011, 2021 e 2022 e considerando só anos com casos registrados; zeros históricos anteriores a 2026 são tratados como ausência de notificação de zero caso). Azul escuro = {refYear}. Roxo tracejado = {refYear - 1}. Cinza pontilhado = média histórica. Azul claro tracejado = projeção. Casos absolutos aparecem no tooltip.
+                Faixa azul = intervalo esperado do coeficiente de incidência por 100 mil habitantes (limite inferior = média − 1 desvio-padrão; limite superior = média + 2 desvios-padrão dos últimos 10 anos, excluindo 2011, 2021 e 2022 e considerando só anos com casos registrados; zeros históricos anteriores a 2026 são tratados como ausência de notificação de zero caso). Azul escuro = {refYear}. Roxo tracejado = {refYear - 1}. Cinza pontilhado = média histórica. Azul claro tracejado = projeção. Casos absolutos aparecem no tooltip.
                 {xAxisMode === "mes" && " Estatísticas calculadas por mês, independente da visão por SE."}
               </CardDescription>
             </div>
@@ -468,7 +468,7 @@ export function CanalEndemicoView({ filters }: Props) {
       {/* ── Legenda das zonas ────────────────────────────────────────────── */}
       <div className="grid gap-3 sm:grid-cols-3">
         {[
-          { color: "bg-green-200 border-green-400", label: "Zona de Sucesso",   desc: "Incidência abaixo do limite inferior (média − 2 desvios-padrão) — transmissão baixa, controle bem-sucedido." },
+          { color: "bg-green-200 border-green-400", label: "Zona de Sucesso",   desc: "Incidência abaixo do limite inferior (média − 1 desvio-padrão) — transmissão baixa, controle bem-sucedido." },
           { color: "bg-sky-200   border-sky-400",   label: "Dentro do Esperado", desc: "Incidência dentro da faixa azul do gráfico (média ± 2 desvios-padrão) — comportamento normal, sem ação adicional." },
           { color: "bg-red-200   border-red-400",   label: "Zona Epidêmica",    desc: "Incidência acima do limite superior (média + 2 desvios-padrão) — epidemia confirmada, acionar protocolos." },
         ].map(({ color, label, desc }) => (

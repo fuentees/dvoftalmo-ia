@@ -169,11 +169,12 @@ function CanalZoneStrip({ data, loading }: { data?: EndemicChannelPoint[]; loadi
   if (!data?.length) return null;
 
   const pt = pickCurrentChannelPoint(data);
-  if (!pt || pt.currentYear === null) return null;
+  if (!pt || pt.currentYear === null || pt.currentIncidence === null) return null;
 
   const cur = pt.currentYear;
-  const isEpidemia = cur > pt.q3;
-  const isAlerta = !isEpidemia && cur > pt.q1;
+  const incidence = pt.currentIncidence;
+  const isEpidemia = incidence > pt.q3;
+  const isAlerta = !isEpidemia && incidence >= pt.q1;
   const zona = isEpidemia ? "Epidemia" : isAlerta ? "Alerta" : "Sucesso";
   const bg  = isEpidemia ? "border-red-200 bg-red-50 text-red-800"
             : isAlerta   ? "border-amber-200 bg-amber-50 text-amber-800"
@@ -188,7 +189,7 @@ function CanalZoneStrip({ data, loading }: { data?: EndemicChannelPoint[]; loadi
       <span className="flex-1 font-medium">Canal Endêmico · SE {pt.se}</span>
       <span className={`rounded px-2 py-0.5 text-xs font-semibold ${badgeCls}`}>{zona}</span>
       <span className="text-xs opacity-75">
-        {cur.toLocaleString("pt-BR")} casos · alerta={pt.q1.toLocaleString("pt-BR")} epidemia={pt.q3.toLocaleString("pt-BR")}
+        {incidence.toLocaleString("pt-BR")} /100 mil · {cur.toLocaleString("pt-BR")} casos
       </span>
       <ArrowRight className="h-3.5 w-3.5 shrink-0 opacity-60" />
     </Link>

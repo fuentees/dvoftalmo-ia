@@ -12,7 +12,7 @@ function quoteIdentifier(value: string) {
 export interface EndemicChannelPoint {
   se: number;
   min: number;
-  /** Limite inferior do coeficiente de incidencia por 100 mil hab. = media − 2×DP. */
+  /** Limite inferior do coeficiente de incidencia por 100 mil hab. = media − 1×DP. */
   q1: number;
   /** Media historica do coeficiente de incidencia por 100 mil hab. */
   median: number;
@@ -187,12 +187,14 @@ function buildChannel(
   for (let se = 1; se <= maxSe; se++) {
     const values = (seMap.get(se) ?? []).sort((a, b) => a - b);
 
-    // Faixa esperada: média ± 2×desvio-padrão dos casos históricos do bucket
-    // (SE ou mês), calculado direto sobre os valores brutos.
+    // Faixa esperada: limite inferior = média − 1×DP; limite superior =
+    // média + 2×DP. Essa regra evita que anos de alta variabilidade recente
+    // derrubem artificialmente o limite inferior para zero, mantendo a régua
+    // superior conservadora para detecção de epidemia.
     const media = mean(values);
     const desvio = stddev(values, media);
     const limiteSuperior = media + 2 * desvio;
-    const limiteInferior = Math.max(media - 2 * desvio, 0);
+    const limiteInferior = Math.max(media - desvio, 0);
 
     result.push({
       se,
