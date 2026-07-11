@@ -337,7 +337,7 @@ export function CanalEndemicoView({ filters }: Props) {
                 Canal Endêmico — Conjuntivites CEVESP
               </CardTitle>
               <CardDescription className="text-xs">
-                Faixa azul = intervalo esperado do coeficiente de incidência por 100 mil habitantes (limite inferior = média − 1 desvio-padrão; limite superior = média + 2 desvios-padrão dos últimos 10 anos, excluindo 2011, 2021 e 2022 e considerando só anos com casos registrados; zeros históricos anteriores a 2026 são tratados como ausência de notificação de zero caso). Azul escuro = {refYear}. Roxo tracejado = {refYear - 1}. Cinza pontilhado = média histórica. Azul claro tracejado = projeção. Casos absolutos aparecem no tooltip.
+                Faixa azul = intervalo esperado do coeficiente de incidência por 100 mil habitantes (média ± 2 desvios-padrão dos últimos 10 anos, excluindo 2011, 2021 e 2022 e considerando só anos com casos registrados; zeros históricos anteriores a 2026 são tratados como ausência de notificação de zero caso). Azul escuro = {refYear}. Roxo tracejado = {refYear - 1}. Cinza pontilhado = média histórica. Azul claro tracejado = projeção. Casos absolutos aparecem no tooltip.
                 {xAxisMode === "mes" && " Estatísticas calculadas por mês, independente da visão por SE."}
               </CardDescription>
             </div>
@@ -465,10 +465,63 @@ export function CanalEndemicoView({ filters }: Props) {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Tabela de conferência do cálculo</CardTitle>
+          <CardDescription className="text-xs">
+            Valores usados para recalcular o canal e comparar com a planilha. Incidência por 100 mil hab.; DP amostral; limite inferior truncado em 0 quando média − 2 DP fica negativo.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="max-h-[32rem] overflow-auto rounded-md border">
+            <table className="w-full min-w-[980px] text-xs">
+              <thead className="sticky top-0 bg-muted">
+                <tr className="text-left">
+                  <th className="px-3 py-2 font-semibold">{xAxisMode === "se" ? "SE" : "Mês"}</th>
+                  <th className="px-3 py-2 font-semibold">Anos usados</th>
+                  <th className="px-3 py-2 font-semibold">Incidências históricas</th>
+                  <th className="px-3 py-2 font-semibold">Média</th>
+                  <th className="px-3 py-2 font-semibold">DP</th>
+                  <th className="px-3 py-2 font-semibold">Média − 2 DP</th>
+                  <th className="px-3 py-2 font-semibold">Limite inf.</th>
+                  <th className="px-3 py-2 font-semibold">Limite sup.</th>
+                  <th className="px-3 py-2 font-semibold">{refYear}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.map((pt) => {
+                  const rawLower = Number((pt.median - 2 * pt.stddev).toFixed(2));
+                  return (
+                    <tr key={pt.se} className="border-t align-top">
+                      <td className="px-3 py-2 font-medium">{xAxisMode === "se" ? pt.se : MESES[pt.se - 1]}</td>
+                      <td className="px-3 py-2">{pt.baseline.map((item) => item.year).join(", ") || "—"}</td>
+                      <td className="px-3 py-2">
+                        {pt.baseline.length
+                          ? pt.baseline.map((item) => `${item.year}: ${item.incidence.toLocaleString("pt-BR")} (${item.cases.toLocaleString("pt-BR")} casos; pop. ${item.population.toLocaleString("pt-BR")}${item.populationYear !== item.year ? `/${item.populationYear}` : ""})`).join(" | ")
+                          : "—"}
+                      </td>
+                      <td className="px-3 py-2 tabular-nums">{pt.median.toLocaleString("pt-BR")}</td>
+                      <td className="px-3 py-2 tabular-nums">{pt.stddev.toLocaleString("pt-BR")}</td>
+                      <td className={`px-3 py-2 tabular-nums ${rawLower < 0 ? "text-red-700" : ""}`}>{rawLower.toLocaleString("pt-BR")}</td>
+                      <td className="px-3 py-2 tabular-nums">{pt.q1.toLocaleString("pt-BR")}</td>
+                      <td className="px-3 py-2 tabular-nums">{pt.q3.toLocaleString("pt-BR")}</td>
+                      <td className="px-3 py-2 tabular-nums">
+                        {pt.currentIncidence != null ? `${pt.currentIncidence.toLocaleString("pt-BR")} / 100 mil` : "—"}
+                        {pt.currentYear != null ? ` (${pt.currentYear.toLocaleString("pt-BR")} casos)` : ""}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* ── Legenda das zonas ────────────────────────────────────────────── */}
       <div className="grid gap-3 sm:grid-cols-3">
         {[
-          { color: "bg-green-200 border-green-400", label: "Zona de Sucesso",   desc: "Incidência abaixo do limite inferior (média − 1 desvio-padrão) — transmissão baixa, controle bem-sucedido." },
+          { color: "bg-green-200 border-green-400", label: "Zona de Sucesso",   desc: "Incidência abaixo do limite inferior (média − 2 desvios-padrão) — transmissão baixa, controle bem-sucedido." },
           { color: "bg-sky-200   border-sky-400",   label: "Dentro do Esperado", desc: "Incidência dentro da faixa azul do gráfico (média ± 2 desvios-padrão) — comportamento normal, sem ação adicional." },
           { color: "bg-red-200   border-red-400",   label: "Zona Epidêmica",    desc: "Incidência acima do limite superior (média + 2 desvios-padrão) — epidemia confirmada, acionar protocolos." },
         ].map(({ color, label, desc }) => (

@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
     lines.push(csvRow([`Gerado em: ${dateStr}`]));
     lines.push(csvRow([`Abrangência: ${scope}`]));
     lines.push(csvRow([`Ano de referência: ${year}`]));
-    lines.push(csvRow(["Canal endêmico calculado sobre coeficiente de incidência por 100 mil habitantes: limite inferior = média − 1 desvio-padrão; limite superior = média + 2 desvios-padrão dos últimos 10 anos (por SE), excluindo 2011, 2021 e 2022 e considerando apenas anos com casos registrados."]));
+    lines.push(csvRow(["Canal endêmico calculado sobre coeficiente de incidência por 100 mil habitantes, com média histórica ± 2 desvios-padrão dos últimos 10 anos (por SE), excluindo 2011, 2021 e 2022 e considerando apenas anos com casos registrados."]));
     lines.push("");
 
     // ── KPIs da última SE ────────────────────────────────────────────────────
@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
 
     // ── Tabela completa por SE ────────────────────────────────────────────────
     lines.push(csvRow(["SÉRIE TEMPORAL POR SEMANA EPIDEMIOLÓGICA"]));
-    lines.push(csvRow(["SE", "Casos " + year, "Incidência " + year + " por 100 mil hab.", "Limite inferior incidência (média − 1 DP)", "Média histórica incidência", "Limite superior incidência (média + 2 DP)", "Mínimo histórico incidência", "Máximo histórico incidência", "Zona " + year]));
+    lines.push(csvRow(["SE", "Casos " + year, "Incidência " + year + " por 100 mil hab.", "Limite inferior incidência (média − 2 DP)", "Média histórica incidência", "Limite superior incidência (média + 2 DP)", "Mínimo histórico incidência", "Máximo histórico incidência", "Zona " + year]));
     for (const pt of data) {
       lines.push(csvRow([
         pt.se,

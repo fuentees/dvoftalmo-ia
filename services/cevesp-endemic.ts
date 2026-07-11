@@ -12,10 +12,12 @@ function quoteIdentifier(value: string) {
 export interface EndemicChannelPoint {
   se: number;
   min: number;
-  /** Limite inferior do coeficiente de incidencia por 100 mil hab. = media − 1×DP. */
+  /** Limite inferior do coeficiente de incidencia por 100 mil hab. = media − 2×DP. */
   q1: number;
   /** Media historica do coeficiente de incidencia por 100 mil hab. */
   median: number;
+  /** Desvio-padrão amostral da incidencia historica por 100 mil hab. */
+  stddev: number;
   /** Limite superior do coeficiente de incidencia por 100 mil hab. = media + 2×DP. */
   q3: number;
   max: number;
@@ -24,6 +26,13 @@ export interface EndemicChannelPoint {
   population: number | null;
   band: number;
   metric: "incidence_per_100k";
+  baseline: Array<{
+    year: number;
+    cases: number;
+    population: number;
+    populationYear: number | null;
+    incidence: number;
+  }>;
 }
 
 type PopulationRow = {
@@ -145,7 +154,7 @@ function buildChannel(
   // preserva zero quando ele existe no banco, para mostrar a curva atual corretamente.
   // Soma de TotalCaso por (ano, balde) também pode vir negativa no cache (registros
   // de correção/estorno) — travada em 0 (e portanto já excluída do histórico) por segurança.
-  const seMap = new Map<number, number[]>();
+  const seMap = new Map<number, Array<{ year: number; cases: number; population: number; populationYear: number | null; incidence: number }>>();
   for (const row of hist) {
     const se = Number(row.se ?? 0);
     const year = Number(row.yr ?? row.year ?? row.ano ?? 0);
@@ -161,7 +170,13 @@ function buildChannel(
       !EXCLUDED_BASELINE_YEARS.has(year)
     ) {
       const existing = seMap.get(se) ?? [];
-      existing.push(incidence);
+      existing.push({
+        year,
+        cases,
+        population: pop.value,
+        populationYear: pop.sourceYear,
+        incidence,
+      });
       seMap.set(se, existing);
     }
   }
@@ -185,22 +200,22 @@ function buildChannel(
 
   const result: EndemicChannelPoint[] = [];
   for (let se = 1; se <= maxSe; se++) {
-    const values = (seMap.get(se) ?? []).sort((a, b) => a - b);
+    const baseline = (seMap.get(se) ?? []).sort((a, b) => a.year - b.year);
+    const values = baseline.map((item) => item.incidence).sort((a, b) => a - b);
 
-    // Faixa esperada: limite inferior = média − 1×DP; limite superior =
-    // média + 2×DP. Essa regra evita que anos de alta variabilidade recente
-    // derrubem artificialmente o limite inferior para zero, mantendo a régua
-    // superior conservadora para detecção de epidemia.
+    // Faixa esperada: média ± 2×desvio-padrão do coeficiente de incidência
+    // histórico do bucket (SE ou mês), calculado direto sobre os valores brutos.
     const media = mean(values);
     const desvio = stddev(values, media);
     const limiteSuperior = media + 2 * desvio;
-    const limiteInferior = Math.max(media - desvio, 0);
+    const limiteInferior = Math.max(media - 2 * desvio, 0);
 
     result.push({
       se,
       min: values.length > 0 ? roundIncidence(values[0]) : 0,
       q1: roundIncidence(limiteInferior),
       median: roundIncidence(media),
+      stddev: roundIncidence(desvio),
       q3: roundIncidence(limiteSuperior),
       max: values.length > 0 ? roundIncidence(values[values.length - 1]) : 0,
       currentYear: currMap.has(se) ? currMap.get(se)! : null,
@@ -208,6 +223,10 @@ function buildChannel(
       population: population.latestYear ? population.forYear(population.latestYear).value : null,
       band: roundIncidence(Math.max(0, limiteSuperior - limiteInferior)),
       metric: "incidence_per_100k",
+      baseline: baseline.map((item) => ({
+        ...item,
+        incidence: roundIncidence(item.incidence),
+      })),
     });
   }
 
