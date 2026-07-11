@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
     lines.push(csvRow([`Gerado em: ${dateStr}`]));
     lines.push(csvRow([`Abrangência: ${scope}`]));
     lines.push(csvRow([`Ano de referência: ${year}`]));
-    lines.push(csvRow(["Canal endêmico calculado com média histórica ± 2 desvios-padrão dos últimos 10 anos (por SE)"]));
+    lines.push(csvRow(["Canal endêmico calculado com média histórica ± 2 desvios-padrão dos últimos 10 anos (por SE), considerando apenas anos com casos registrados"]));
     lines.push("");
 
     // ── KPIs da última SE ────────────────────────────────────────────────────
@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
 
     // ── Tabela completa por SE ────────────────────────────────────────────────
     lines.push(csvRow(["SÉRIE TEMPORAL POR SEMANA EPIDEMIOLÓGICA"]));
-    lines.push(csvRow(["SE", "Casos " + year, "Limite inferior (média − 2 DP)", "Média histórica", "Limite superior (média + 2 DP)", "Mínimo histórico", "Máximo histórico", "Zona " + year]));
+    lines.push(csvRow(["SE", "Casos " + year, "Limite inferior (média − 2 DP)", "Média histórica", "Limite superior (média + 2 DP)", "Mínimo histórico (anos c/ casos)", "Máximo histórico", "Zona " + year]));
     for (const pt of data) {
       lines.push(csvRow([
         pt.se,

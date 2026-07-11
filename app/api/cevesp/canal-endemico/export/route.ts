@@ -99,7 +99,7 @@ export async function GET(request: NextRequest) {
       "Limite inferior (média − 2 DP)",
       "Média histórica",
       "Limite superior (média + 2 DP)",
-      "Mín histórico",
+      "Mín histórico (anos c/ casos)",
       "Máx histórico",
       `Zona ${year}`
     ]);
@@ -169,7 +169,7 @@ export async function GET(request: NextRequest) {
     addLegendRow("Alerta",  "Casos entre o limite inferior e o limite superior (média ± 2 desvios-padrão) — monitorar GVEs.", FILL_ALERTA);
     addLegendRow("Epidemia","Casos acima do limite superior (média + 2 desvios-padrão) — zona epidêmica confirmada, acionar protocolos.", FILL_EPIDEMIA);
     wl.addRow([]);
-    wl.addRow(["Metodologia", "Canal endêmico calculado com média histórica ± 2 desvios-padrão dos últimos 10 anos por semana epidemiológica."]);
+    wl.addRow(["Metodologia", "Canal endêmico calculado com média histórica ± 2 desvios-padrão dos últimos 10 anos por semana epidemiológica, considerando apenas anos com casos registrados (anos com 0 casos não entram na média)."]);
     wl.addRow(["Fonte", "CEVESP — Centro de Vigilância Epidemiológica / Centro de Oftalmologia Sanitária — SES-SP"]);
     wl.addRow(["Exportado em", now.toLocaleString("pt-BR")]);
 

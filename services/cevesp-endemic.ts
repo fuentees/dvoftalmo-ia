@@ -49,14 +49,16 @@ function buildChannel(
 ) {
   const maxBucket = bucketCountFor(grain);
 
-  // seMap: bucket (SE ou mês) → [cases per year]. Soma de TotalCaso por (ano, balde)
-  // pode vir negativa no cache (registros de correção/estorno) — travada em 0 aqui,
-  // já que um total de casos negativo não faz sentido pro cálculo do canal.
+  // seMap: bucket (SE ou mês) → [cases per year]. Anos com 0 casos naquele bucket não
+  // entram na média/desvio histórico — um ano "parado" não é informação sobre o
+  // patamar esperado de transmissão, só dilui a média pra baixo e infla o desvio.
+  // Soma de TotalCaso por (ano, balde) também pode vir negativa no cache (registros
+  // de correção/estorno) — travada em 0 (e portanto já excluída) por segurança.
   const seMap = new Map<number, number[]>();
   for (const row of hist) {
     const se = Number(row.se ?? 0);
     const cases = Math.max(Number(row.cases ?? 0), 0);
-    if (se >= 1 && se <= maxBucket && Number.isFinite(cases)) {
+    if (se >= 1 && se <= maxBucket && Number.isFinite(cases) && cases > 0) {
       const existing = seMap.get(se) ?? [];
       existing.push(cases);
       seMap.set(se, existing);

@@ -328,7 +328,7 @@ export function CanalEndemicoView({ filters }: Props) {
                 Canal Endêmico — Conjuntivites CEVESP
               </CardTitle>
               <CardDescription className="text-xs">
-                Faixa azul = intervalo esperado (média ± 2 desvios-padrão dos 10 anos anteriores). Azul escuro = {refYear}. Roxo tracejado = {refYear - 1}. Cinza pontilhado = média histórica. Azul claro tracejado = projeção.
+                Faixa azul = intervalo esperado (média ± 2 desvios-padrão dos últimos 10 anos, considerando só anos com casos registrados — anos com 0 casos não entram na média). Azul escuro = {refYear}. Roxo tracejado = {refYear - 1}. Cinza pontilhado = média histórica. Azul claro tracejado = projeção.
                 {xAxisMode === "mes" && " Estatísticas calculadas por mês, independente da visão por SE."}
               </CardDescription>
             </div>
