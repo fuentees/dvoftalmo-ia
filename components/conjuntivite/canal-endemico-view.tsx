@@ -193,7 +193,7 @@ export function CanalEndemicoView({ filters }: Props) {
       const alertBand = Math.max(0, d.q3 - d.q1);
       const projecao =
         reg && projStart && d.se > projStart && d.se <= projStart + projectionSteps
-          ? Math.max(0, Math.round(reg.slope * d.se + reg.intercept))
+          ? Number(Math.max(0, reg.slope * d.se + reg.intercept).toFixed(2))
           : undefined;
       const anoAnterior = prevMap.has(d.se) ? prevMap.get(d.se) ?? undefined : undefined;
       return {

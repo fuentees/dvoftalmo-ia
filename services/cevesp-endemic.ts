@@ -63,6 +63,10 @@ function incidencePer100k(cases: number, population: number) {
   return (cases / population) * 100_000;
 }
 
+function roundIncidence(value: number) {
+  return Number(value.toFixed(2));
+}
+
 export type EndemicChannelGrain = "week" | "month";
 
 function bucketCountFor(grain: EndemicChannelGrain) {
@@ -192,15 +196,15 @@ function buildChannel(
 
     result.push({
       se,
-      min: values.length > 0 ? values[0] : 0,
-      q1: Number(limiteInferior.toFixed(1)),
-      median: Number(media.toFixed(1)),
-      q3: Number(limiteSuperior.toFixed(1)),
-      max: values.length > 0 ? values[values.length - 1] : 0,
+      min: values.length > 0 ? roundIncidence(values[0]) : 0,
+      q1: roundIncidence(limiteInferior),
+      median: roundIncidence(media),
+      q3: roundIncidence(limiteSuperior),
+      max: values.length > 0 ? roundIncidence(values[values.length - 1]) : 0,
       currentYear: currMap.has(se) ? currMap.get(se)! : null,
-      currentIncidence: currIncidenceMap.has(se) ? Number(currIncidenceMap.get(se)!.toFixed(1)) : null,
+      currentIncidence: currIncidenceMap.has(se) ? roundIncidence(currIncidenceMap.get(se)!) : null,
       population: population.latestYear ? population.forYear(population.latestYear).value : null,
-      band: Number(Math.max(0, limiteSuperior - limiteInferior).toFixed(1)),
+      band: roundIncidence(Math.max(0, limiteSuperior - limiteInferior)),
       metric: "incidence_per_100k",
     });
   }
