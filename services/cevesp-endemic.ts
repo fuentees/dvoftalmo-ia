@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { currentCalendarYear } from "@/lib/epi-week";
 import { createNotificationConnection, getNotificationTableName, isNotificationConnectionError } from "@/lib/external/notification-db";
 import { listarMunicipiosPorGve } from "@/lib/municipios-sp";
 
@@ -242,7 +243,7 @@ async function runEndemicChannelFromCache(options: {
   const supabase = createAdminClient();
   const grain = options.grain ?? "week";
   const maxBucket = bucketCountFor(grain);
-  const currentYear = options.year ?? new Date().getFullYear();
+  const currentYear = options.year ?? currentCalendarYear();
   const startYear = currentYear - 10;
   const population = await loadScopedPopulation(options);
 
@@ -371,7 +372,7 @@ export async function runEndemicChannel(options: {
       ? "coalesce(Mes, month(DtNotificacao))"
       : "coalesce(SemEpidemio, week(DtNotificacao, 3))";
 
-    const refYear = options.year ?? new Date().getFullYear();
+    const refYear = options.year ?? currentCalendarYear();
     const population = await loadScopedPopulation(options);
     const [histRows] = await connection.query(
       `select

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/supabase/auth";
+import { requireCevespSyncPermission } from "@/lib/admin-guard";
+import { currentCalendarYear } from "@/lib/epi-week";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { syncIbgePopulation, syncIbgePopulationRange } from "@/services/ibge-population";
@@ -8,6 +10,8 @@ export async function GET() {
   const supabase = await createClient();
   const user = await getCurrentUser(supabase);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const forbidden = await requireCevespSyncPermission(supabase, user.id);
+  if (forbidden) return forbidden;
 
   try {
     const admin = createAdminClient();
@@ -34,6 +38,8 @@ export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const user = await getCurrentUser(supabase);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const forbidden = await requireCevespSyncPermission(supabase, user.id);
+  if (forbidden) return forbidden;
 
   const body = await request.json().catch(() => ({})) as {
     year?: number;
@@ -48,7 +54,7 @@ export async function POST(request: NextRequest) {
     const yearEnd = Number(body.yearEnd);
     const result = Number.isInteger(yearStart) && Number.isInteger(yearEnd)
       ? await syncIbgePopulationRange(ufCode, yearStart, yearEnd)
-      : await syncIbgePopulation(ufCode, body.year ?? new Date().getFullYear() - 1);
+      : await syncIbgePopulation(ufCode, body.year ?? currentCalendarYear() - 1);
     return NextResponse.json(result);
   } catch (error) {
     return NextResponse.json(

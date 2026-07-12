@@ -3,7 +3,7 @@ import ExcelJS from "exceljs";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { runEndemicChannel } from "@/services/cevesp-endemic";
-import { pickCurrentChannelPoint } from "@/lib/epi-week";
+import { currentCalendarYear, formatBusinessDate, pickCurrentChannelPoint } from "@/lib/epi-week";
 
 // Zone fill colours (ARGB, no #)
 const FILL_SUCESSO  = "FFD1FAE5"; // green-100
@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
   const gve          = request.nextUrl.searchParams.get("gve")          ?? undefined;
   const municipality = request.nextUrl.searchParams.get("municipality") ?? undefined;
   const yearParam    = request.nextUrl.searchParams.get("year");
-  const year         = yearParam ? Number(yearParam) : new Date().getFullYear();
+  const year         = yearParam ? Number(yearParam) : currentCalendarYear();
 
   try {
     const data = await runEndemicChannel({ gve, municipality, year });
@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
 
     ws.mergeCells("A2:I2");
     const t2 = ws.getCell("A2");
-    t2.value = `Gerado em: ${now.toLocaleDateString("pt-BR")}  |  Abrangência: ${scope}  |  Ano de referência: ${year}`;
+    t2.value = `Gerado em: ${formatBusinessDate(now)}  |  Abrangência: ${scope}  |  Ano de referência: ${year}`;
     t2.font  = { size: 10, italic: true, color: { argb: "FF374151" } };
     t2.fill  = { type: "pattern", pattern: "solid", fgColor: { argb: FILL_SUMMARY } };
     t2.alignment = { horizontal: "center" };
@@ -174,7 +174,7 @@ export async function GET(request: NextRequest) {
     wl.addRow([]);
     wl.addRow(["Metodologia", "Canal endêmico calculado sobre coeficiente de incidência por 100 mil habitantes, com média histórica ± 2 desvios-padrão dos últimos 10 anos por semana epidemiológica, excluindo 2011, 2021 e 2022 e considerando apenas anos com casos registrados."]);
     wl.addRow(["Fonte", "CEVESP — Centro de Vigilância Epidemiológica / Centro de Oftalmologia Sanitária — SES-SP"]);
-    wl.addRow(["Exportado em", now.toLocaleString("pt-BR")]);
+    wl.addRow(["Exportado em", formatBusinessDate(now)]);
 
     // ── Serialize ────────────────────────────────────────────────────────────
     const buffer = await wb.xlsx.writeBuffer();

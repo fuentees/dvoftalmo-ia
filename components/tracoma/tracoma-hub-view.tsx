@@ -100,7 +100,7 @@ export function TracomaHubView() {
 
       <div className="flex-1">
         {tab === "situacao"  && <TracomaAnaliseView externalFilters={filters} />}
-        {tab === "qualidade" && <SinanQualidadeView externalFilters={filters} />}
+        {tab === "qualidade" && <SinanQualidadeView externalFilters={filters} embedded />}
         {tab === "consulta"  && <TracomaConsultaView externalFilters={filters} hideFilters />}
       </div>
     </div>

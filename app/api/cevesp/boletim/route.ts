@@ -6,13 +6,7 @@ import { readNotificationRows } from "@/lib/external/notification-db";
 import { summarizeNotificationRows, summarizeFromRpc, type RpcRelatorioData } from "@/services/notification-report";
 import { runEndemicChannel } from "@/services/cevesp-endemic";
 import { generateBulletinDocx, generateBulletinPdf, type CanalEndemicoInput } from "@/services/bulletin";
-import { pickCurrentChannelPoint } from "@/lib/epi-week";
-
-function dateToSe(date: Date): number {
-  const startOfYear = new Date(date.getFullYear(), 0, 1);
-  const days = Math.floor((date.getTime() - startOfYear.getTime()) / 86400000);
-  return Math.ceil((days + startOfYear.getDay() + 1) / 7);
-}
+import { currentCalendarYear, currentEpiWeek, formatBusinessDate, pickCurrentChannelPoint } from "@/lib/epi-week";
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -29,7 +23,9 @@ export async function GET(request: NextRequest) {
 
   try {
     const now = new Date();
-    const targetYear = ano ?? now.getFullYear();
+    const realToday = currentEpiWeek(now);
+    const calendarYear = currentCalendarYear(now);
+    const targetYear = ano ?? calendarYear;
 
     const rpcArgs = {
       p_ano: ano ?? null, p_ano_fim: null as null,
@@ -54,13 +50,8 @@ export async function GET(request: NextRequest) {
       report = summarizeNotificationRows(rows.rows, rows.total);
     }
 
-    // ── determine current SE ───────────────────────────────────────────────
-    const lastWeek = report.indicators.weeklySeries.at(-1);
-    let se = dateToSe(now);
-    if (lastWeek) {
-      const m = lastWeek.week.match(/SE(\d+)$/);
-      if (m) se = parseInt(m[1], 10);
-    }
+    // Use the real current epidemiological week, not the latest bucket found in data.
+    const se = seFim ?? realToday.se;
 
     // ── build canal endêmico section ───────────────────────────────────────
     let canalEndemico: CanalEndemicoInput | undefined;
@@ -85,9 +76,9 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const endLabel = ano && ano < now.getFullYear()
+    const endLabel = ano && ano < calendarYear
       ? `31 Dez ${ano}`
-      : now.toLocaleDateString("pt-BR");
+      : formatBusinessDate(now);
     const period = `1 Jan ${targetYear} a ${endLabel}`;
 
     const bulletinInput = {

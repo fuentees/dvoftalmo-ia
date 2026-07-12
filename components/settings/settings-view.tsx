@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 type Provider = "openai" | "anthropic" | "gemini";
+type UserRole = "admin" | "coordenador" | "supervisor" | "usuario";
 
 interface Settings {
   ai_provider: Provider;
@@ -35,14 +36,14 @@ const PROVIDERS: Array<{
     id: "openai",
     name: "OpenAI",
     description: "GPT-4.1-mini — rápido e econômico. Requer créditos em platform.openai.com.",
-    models: ["gpt-4.1-mini", "gpt-4.1", "gpt-4o", "gpt-4o-mini"],
+    models: ["gpt-4.1-mini", "gpt-4.1", "o4-mini"],
     color: "border-green-500 bg-green-50"
   },
   {
     id: "anthropic",
     name: "Anthropic (Claude)",
     description: "Claude Haiku/Sonnet — excelente em português técnico. Cadastro em console.anthropic.com.",
-    models: ["claude-haiku-4-5-20251001", "claude-sonnet-4-6", "claude-opus-4-8"],
+    models: ["claude-haiku-4-5-20251001", "claude-sonnet-4-5", "claude-opus-4-8"],
     color: "border-orange-500 bg-orange-50",
     note: "Melhor qualidade em PT-BR"
   },
@@ -50,11 +51,15 @@ const PROVIDERS: Array<{
     id: "gemini",
     name: "Google Gemini",
     description: "Gemini 2.0 Flash — plano gratuito generoso (1.500 req/dia). Chave em aistudio.google.com.",
-    models: ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-2.5-pro"],
+    models: ["gemini-2.5-flash", "gemini-2.5-pro"],
     color: "border-blue-500 bg-blue-50",
     note: "Plano gratuito disponível"
   }
 ];
+
+function canManageSystemSettings(role?: UserRole) {
+  return role === "admin" || role === "coordenador";
+}
 
 export function SettingsView() {
   const queryClient = useQueryClient();
@@ -75,8 +80,18 @@ export function SettingsView() {
     }
   });
 
+  const profile = useQuery<{ role: UserRole }>({
+    queryKey: ["user-profile"],
+    queryFn: async () => {
+      const res = await fetch("/api/user/profile");
+      if (!res.ok) throw new Error("Erro ao carregar perfil.");
+      return res.json();
+    }
+  });
+
   const [form, setForm] = useState<Partial<Settings>>({});
   const current = { ...settings.data, ...form } as Settings;
+  const canEdit = canManageSystemSettings(profile.data?.role);
 
   const save = useMutation({
     mutationFn: async () => {
@@ -85,7 +100,7 @@ export function SettingsView() {
         ai_provider:     current.ai_provider     ?? "openai",
         openai_model:    current.openai_model    ?? "gpt-4.1-mini",
         anthropic_model: current.anthropic_model ?? "claude-haiku-4-5-20251001",
-        gemini_model:    current.gemini_model    ?? "gemini-3.5-flash"
+        gemini_model:    current.gemini_model    ?? "gemini-2.5-flash"
       };
       if (keys.openai)     payload.openai_api_key    = keys.openai;
       if (keys.anthropic)  payload.anthropic_api_key = keys.anthropic;
@@ -128,7 +143,7 @@ export function SettingsView() {
             Escolha o provedor de inteligência artificial e gerencie as chaves de API.
           </p>
         </div>
-        <Button onClick={() => save.mutate()} disabled={save.isPending}>
+        <Button onClick={() => save.mutate()} disabled={save.isPending || !canEdit}>
           {save.isPending ? (
             <><Loader2 className="h-4 w-4 animate-spin" />Salvando...</>
           ) : saved ? (
@@ -140,6 +155,12 @@ export function SettingsView() {
       </div>
 
       <div className="space-y-6 p-6">
+        {!canEdit && !profile.isLoading && (
+          <p className="rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+            Somente coordenadores e administradores podem alterar configurações de IA.
+          </p>
+        )}
+
         {settings.data && !(settings.data as Settings & { table_ready?: boolean }).table_ready && (
           <div className="rounded-md border border-yellow-300 bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
             <p className="font-semibold">Migration pendente</p>
@@ -158,7 +179,7 @@ create policy "app_config_admin" on public.app_config
   with check (public.current_role() in ('admin','coordenador'));
 insert into public.app_config (key,value) values
   ('ai_provider','gemini'),('openai_model','gpt-4.1-mini'),
-  ('anthropic_model','claude-haiku-4-5-20251001'),('gemini_model','gemini-3.5-flash')
+  ('anthropic_model','claude-haiku-4-5-20251001'),('gemini_model','gemini-2.5-flash')
 on conflict (key) do nothing;`}
             </pre>
           </div>
@@ -185,6 +206,7 @@ on conflict (key) do nothing;`}
                 <button
                   key={provider.id}
                   onClick={() => setForm((prev) => ({ ...prev, ai_provider: provider.id }))}
+                  disabled={!canEdit}
                   className={`rounded-xl border-2 p-4 text-left transition-all ${
                     isActive
                       ? provider.color + " ring-2 ring-offset-1 ring-primary/40"
@@ -254,6 +276,7 @@ on conflict (key) do nothing;`}
                         onChange={(e) => setKeys((prev) => ({ ...prev, [provider.id]: e.target.value }))}
                         placeholder={keyHint || "Cole a chave aqui..."}
                         className="h-8 text-xs font-mono"
+                        disabled={!canEdit}
                       />
                       <Button
                         variant="outline"
@@ -261,6 +284,7 @@ on conflict (key) do nothing;`}
                         className="h-8 w-8 shrink-0"
                         onClick={() => setShowKeys((prev) => ({ ...prev, [provider.id]: !prev[provider.id] }))}
                         type="button"
+                        disabled={!canEdit}
                       >
                         {showKeys[provider.id]
                           ? <EyeOff className="h-3.5 w-3.5" />
@@ -277,6 +301,7 @@ on conflict (key) do nothing;`}
                     <select
                       className="h-8 w-full rounded-md border bg-background px-2 text-xs"
                       value={currentModel}
+                      disabled={!canEdit}
                       onChange={(e) =>
                         setForm((prev) => ({ ...prev, [modelKey]: e.target.value }))
                       }

@@ -12,6 +12,7 @@ import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChoroplethMap } from "@/components/epidemiology/choropleth-map";
+import { currentCalendarYear, currentEpiWeek, shiftEpiWeek } from "@/lib/epi-week";
 
 type Agravo = "conjuntivite" | "tracoma";
 type AccentColor = "blue" | "teal";
@@ -1137,18 +1138,17 @@ function BulletinDetail({ id, onBack }: { id: string; onBack: () => void }) {
 // ──── ConjuntiviteGenerateSection ─────────────────────────────────────────────
 function ConjuntiviteGenerateSection({ onSuccess }: { onSuccess: (id: string) => void }) {
   const queryClient = useQueryClient();
-  const currentYear = new Date().getFullYear();
+  const currentYear = currentCalendarYear();
 
   // Default: 2 weeks back (notifications from this week refer to last/2-weeks-ago SE)
-  const defaultSE = useMemo(() => {
-    const week = Math.ceil(
-      (Date.now() - new Date(currentYear, 0, 1).getTime()) / (7 * 864e5)
-    );
-    return Math.max(1, week - 2);
-  }, [currentYear]);
+  const defaultPeriod = useMemo(() => {
+    const current = currentEpiWeek();
+    return shiftEpiWeek(current.year, current.se, -2);
+  }, []);
+  const defaultSE = defaultPeriod.se;
 
   const [se, setSe]   = useState(defaultSE);
-  const [ano, setAno] = useState(currentYear);
+  const [ano, setAno] = useState(defaultPeriod.year);
   const [skipped, setSkipped] = useState(false);
 
   const years = useMemo(() => Array.from({ length: 10 }, (_, i) => currentYear - i), [currentYear]);
@@ -1217,7 +1217,7 @@ function ConjuntiviteGenerateSection({ onSuccess }: { onSuccess: (id: string) =>
 // ──── TracomaGenerateSection ──────────────────────────────────────────────────
 function TracomaGenerateSection({ onSuccess }: { onSuccess: (id: string) => void }) {
   const queryClient = useQueryClient();
-  const currentYear = new Date().getFullYear();
+  const currentYear = currentCalendarYear();
   const [tipo, setTipo] = useState<"anual" | "periodo">("anual");
   const [ano, setAno]         = useState(currentYear);
   const [anoInicio, setAnoInicio] = useState(currentYear - 2);

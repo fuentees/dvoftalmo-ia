@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { requireCevespSyncPermission } from "@/lib/admin-guard";
+import { currentCalendarYear } from "@/lib/epi-week";
 import { createNotificationConnection, getNotificationTableName } from "@/lib/external/notification-db";
 import { cleanRow } from "@/lib/cevesp-clean";
 
@@ -30,7 +31,7 @@ export async function GET(request: NextRequest) {
 
   const full      = request.nextUrl.searchParams.get("full") === "true";
   const yearParam = request.nextUrl.searchParams.get("year");
-  const currentYear = new Date().getFullYear();
+  const currentYear = currentCalendarYear();
 
   const year     = yearParam ? parseInt(yearParam, 10) : (full ? null : currentYear);
   const sql      = year != null ? `SELECT * FROM \`${table}\` WHERE ANO = ?` : `SELECT * FROM \`${table}\``;

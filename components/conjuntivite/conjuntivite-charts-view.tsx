@@ -56,7 +56,8 @@ export function ConjuntiviteChartsView({ filters }: Props) {
   function toggleYear(year: string) {
     setExcludedYears((prev) => {
       const next = new Set(prev);
-      next.has(year) ? next.delete(year) : next.add(year);
+      if (next.has(year)) next.delete(year);
+      else next.add(year);
       return next;
     });
   }

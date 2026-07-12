@@ -314,7 +314,7 @@ export function TracomaConsultaView({ externalFilters, hideFilters = false }: Tr
             )}
           </div>
 
-          {(gve || municipio || yearStart || yearEnd) && (
+          {!hideFilters && (gve || municipio || yearStart || yearEnd) && (
             <div className="flex flex-wrap gap-2">
               {gve && <Badge className="bg-muted text-foreground">GVE: {gve}</Badge>}
               {municipio && <Badge className="bg-muted text-foreground">Município: {municipio}</Badge>}

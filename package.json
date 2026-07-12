@@ -14,7 +14,8 @@
     "test:sinan": "tsx tests/sinan-normalizacao.test.ts",
     "test:sinan-age": "tsx tests/sinan-age.test.ts",
     "test:cevesp-validacao": "tsx tests/cevesp-validacao.test.ts",
-    "test": "npm run test:cevesp && npm run test:rates && npm run test:report && npm run test:sinan && npm run test:sinan-age && npm run test:cevesp-validacao",
+    "test:epi-week": "tsx tests/epi-week.test.ts",
+    "test": "npm run test:cevesp && npm run test:rates && npm run test:report && npm run test:sinan && npm run test:sinan-age && npm run test:cevesp-validacao && npm run test:epi-week",
     "db:types": "supabase gen types typescript --local > lib/database.types.ts",
     "sync-cevesp": "tsx scripts/sync-cevesp.ts",
     "sync-export": "tsx scripts/sync-cevesp.ts --export",
@@ -51,7 +52,7 @@
     "lucide-react": "^0.468.0",
     "mammoth": "^1.9.0",
     "mysql2": "^3.22.5",
-    "next": "15.5.19",
+    "next": "16.2.10",
     "openai": "^5.3.0",
     "pdf-lib": "^1.17.1",
     "pdf-parse": "^1.1.1",
@@ -75,10 +76,16 @@
     "@types/react-dom": "^19.0.4",
     "autoprefixer": "^10.4.21",
     "eslint": "^9.28.0",
-    "eslint-config-next": "15.5.19",
-    "postcss": "^8.5.6",
+    "eslint-config-next": "16.2.10",
+    "postcss": "^8.5.15",
     "tailwindcss": "^3.4.17",
     "tsx": "^4.22.4",
     "typescript": "^5.8.3"
+  },
+  "overrides": {
+    "postcss": "^8.5.15",
+    "exceljs": {
+      "uuid": "^11.1.1"
+    }
   }
 }

@@ -9,7 +9,6 @@ import {
   ComposedChart,
   Legend,
   Line,
-  LineChart,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -21,12 +20,6 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { exportChartSvg } from "@/lib/chart-export";
 import type { TracomaOverview } from "@/services/sinan-tracoma";
-
-const PALETTE = [
-  "#2563eb", "#16a34a", "#dc2626", "#d97706", "#7c3aed",
-  "#0891b2", "#be185d", "#059669", "#ea580c", "#4f46e5",
-  "#b45309", "#0f766e",
-];
 
 const FORM_COLORS: Record<string, string> = {
   TF: "#f59e0b",
@@ -108,7 +101,8 @@ export function TracomaChartsView({ filters }: Props) {
   function toggleYear(year: string) {
     setExcludedYears((prev) => {
       const next = new Set(prev);
-      next.has(year) ? next.delete(year) : next.add(year);
+      if (next.has(year)) next.delete(year);
+      else next.add(year);
       return next;
     });
   }
@@ -116,7 +110,8 @@ export function TracomaChartsView({ filters }: Props) {
   function toggleForm(form: string) {
     setHiddenForms((prev) => {
       const next = new Set(prev);
-      next.has(form) ? next.delete(form) : next.add(form);
+      if (next.has(form)) next.delete(form);
+      else next.add(form);
       return next;
     });
   }

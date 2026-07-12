@@ -15,6 +15,10 @@ export function canManageKnowledgeBase(role?: UserRole) {
   return Boolean(role && roleRank[role] >= roleRank.supervisor);
 }
 
+export function canManageSystemSettings(role?: UserRole) {
+  return Boolean(role && roleRank[role] >= roleRank.coordenador);
+}
+
 export function canUseAdminReports(role?: UserRole) {
   return Boolean(role && roleRank[role] >= roleRank.coordenador);
 }

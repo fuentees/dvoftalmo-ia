@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { requireSystemSettingsPermission } from "@/lib/admin-guard";
 import { invalidateConfigCache } from "@/services/ai/provider";
 import { encryptValue, decryptValue, isApiKey } from "@/lib/crypto";
 
@@ -53,9 +54,9 @@ export async function GET() {
 
   return NextResponse.json({
     ai_provider:        raw.ai_provider       ?? (process.env.AI_PROVIDER ?? "openai"),
-    openai_model:       raw.openai_model      ?? "gpt-4.1-mini",
-    anthropic_model:    raw.anthropic_model   ?? "claude-haiku-4-5-20251001",
-    gemini_model:       raw.gemini_model      ?? "gemini-3.5-flash",
+    openai_model:       raw.openai_model      ?? process.env.OPENAI_MODEL    ?? "gpt-4.1-mini",
+    anthropic_model:    raw.anthropic_model   ?? process.env.ANTHROPIC_MODEL ?? "claude-haiku-4-5-20251001",
+    gemini_model:       raw.gemini_model      ?? process.env.GEMINI_MODEL    ?? "gemini-2.5-flash",
     openai_key_set:     !!(raw.openai_api_key    || process.env.OPENAI_API_KEY),
     anthropic_key_set:  !!(raw.anthropic_api_key || process.env.ANTHROPIC_API_KEY),
     gemini_key_set:     !!(raw.gemini_api_key    || process.env.GEMINI_API_KEY),
@@ -70,6 +71,8 @@ export async function PATCH(request: NextRequest) {
   const supabase = await createClient();
   const user = await getCurrentUser(supabase);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const forbidden = await requireSystemSettingsPermission(supabase, user.id);
+  if (forbidden) return forbidden;
 
   const body = await request.json() as Record<string, string>;
   const admin = createAdminClient();

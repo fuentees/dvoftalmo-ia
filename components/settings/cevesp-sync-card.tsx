@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { AlertCircle, CheckCircle2, Database, Download, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { currentCalendarYear } from "@/lib/epi-week";
 
 function parseCsvClient(text: string): Record<string, unknown>[] {
   const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
@@ -52,8 +53,9 @@ interface SyncStatus {
 }
 
 type Msg = { type: "success" | "error"; text: string };
+type UserRole = "admin" | "coordenador" | "supervisor" | "usuario";
 
-const currentYear = new Date().getFullYear();
+const currentYear = currentCalendarYear();
 const EXPORT_YEARS = Array.from({ length: currentYear - 1999 }, (_, i) => currentYear - i);
 
 export function CevespSyncCard() {
@@ -65,10 +67,19 @@ export function CevespSyncCard() {
   const [msg, setMsg] = useState<Msg | null>(null);
   const [exportYear, setExportYear] = useState<string>(String(currentYear));
   const [downloadYear, setDownloadYear] = useState<string>("all");
+  const [role, setRole] = useState<UserRole | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const canSync = role === "admin" || role === "coordenador" || role === "supervisor";
 
   useEffect(() => {
     void loadStatus();
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/user/profile")
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => setRole((data?.role ?? null) as UserRole | null))
+      .catch(() => setRole(null));
   }, []);
 
   async function loadStatus() {
@@ -245,6 +256,12 @@ export function CevespSyncCard() {
           )}
         </div>
 
+        {!canSync && role && (
+          <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Somente supervisores, coordenadores e administradores podem sincronizar os bancos de dados.
+          </p>
+        )}
+
         {status?.hasData && (
           <div className="grid gap-2 rounded-md border bg-background p-3 text-xs sm:grid-cols-2">
             <StatusItem label="Período do cache" value={cachePeriod} />
@@ -270,18 +287,18 @@ export function CevespSyncCard() {
             <select
               value={exportYear}
               onChange={e => setExportYear(e.target.value)}
-              disabled={exporting || importing}
+              disabled={exporting || importing || !canSync}
               className="h-8 rounded-md border bg-background px-2 text-xs"
             >
               {EXPORT_YEARS.map(y => (
                 <option key={y} value={y}>{y}</option>
               ))}
             </select>
-            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => handleExport("year")} disabled={exporting || importing}>
+            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => handleExport("year")} disabled={exporting || importing || !canSync}>
               <Download className="mr-1.5 h-3.5 w-3.5" />
               {exporting ? "Exportando..." : `Exportar ${exportYear}`}
             </Button>
-            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => handleExport("full")} disabled={exporting || importing}>
+            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => handleExport("full")} disabled={exporting || importing || !canSync}>
               <Download className="mr-1.5 h-3.5 w-3.5" />
               Todos os anos
             </Button>
@@ -306,7 +323,7 @@ export function CevespSyncCard() {
               if (file) void handleImport(file);
             }}
           />
-          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => fileRef.current?.click()} disabled={importing || exporting}>
+          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => fileRef.current?.click()} disabled={importing || exporting || !canSync}>
             <Upload className="mr-1.5 h-3.5 w-3.5" />
             {importing ? "Importando..." : "Selecionar arquivo (.json ou .csv)"}
           </Button>
@@ -335,7 +352,7 @@ export function CevespSyncCard() {
             <select
               value={downloadYear}
               onChange={e => setDownloadYear(e.target.value)}
-              disabled={downloading || importing || exporting}
+              disabled={downloading || importing || exporting || !canSync}
               className="h-8 min-w-0 rounded-md border bg-background px-2 text-xs"
             >
               <option value="all">Todos os anos</option>
@@ -343,7 +360,7 @@ export function CevespSyncCard() {
                 <option key={y} value={String(y)}>{y}</option>
               ))}
             </select>
-            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => void handleDownloadCache()} disabled={downloading || importing || exporting}>
+            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => void handleDownloadCache()} disabled={downloading || importing || exporting || !canSync}>
               <Download className="mr-1.5 h-3.5 w-3.5" />
               {downloading ? "Exportando..." : "Baixar CSV"}
             </Button>

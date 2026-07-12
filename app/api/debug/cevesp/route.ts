@@ -1,11 +1,20 @@
 import { NextResponse } from "next/server";
+import { requireCevespSyncPermission } from "@/lib/admin-guard";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getCurrentUser } from "@/lib/supabase/auth";
+import { createClient } from "@/lib/supabase/server";
 import { runCevespAnalysis } from "@/services/cevesp-analytics";
 import { getAIConfig } from "@/services/ai/provider";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const supabase = await createClient();
+  const user = await getCurrentUser(supabase);
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const forbidden = await requireCevespSyncPermission(supabase, user.id);
+  if (forbidden) return forbidden;
+
   const results: Record<string, unknown> = {};
 
   // 1. Check Supabase connection and row count

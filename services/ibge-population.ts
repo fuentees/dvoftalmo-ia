@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { currentCalendarYear } from "@/lib/epi-week";
 
 type SidraPopulationRow = {
   V: string;
@@ -20,7 +21,7 @@ export type IbgePopulationRecord = {
 const SIDRA_TABLE = "6579";
 const SIDRA_VARIABLE = "9324";
 
-export function ibgePopulationSidraUrl(ufCode = "35", year = new Date().getFullYear() - 1) {
+export function ibgePopulationSidraUrl(ufCode = "35", year = currentCalendarYear() - 1) {
   return `https://apisidra.ibge.gov.br/values/t/${SIDRA_TABLE}/n6/in%20n3%20${ufCode}/v/${SIDRA_VARIABLE}/p/${year}?formato=json`;
 }
 
@@ -32,7 +33,7 @@ function parseMunicipalityName(value: string) {
   };
 }
 
-export async function fetchIbgePopulationFromSidra(ufCode = "35", year = new Date().getFullYear() - 1) {
+export async function fetchIbgePopulationFromSidra(ufCode = "35", year = currentCalendarYear() - 1) {
   const fonteUrl = ibgePopulationSidraUrl(ufCode, year);
   const response = await fetch(fonteUrl);
   if (!response.ok) {
@@ -66,7 +67,7 @@ export async function upsertIbgePopulation(records: IbgePopulationRecord[]) {
   return { upserted: records.length };
 }
 
-export async function syncIbgePopulation(ufCode = "35", year = new Date().getFullYear() - 1) {
+export async function syncIbgePopulation(ufCode = "35", year = currentCalendarYear() - 1) {
   const records = await fetchIbgePopulationFromSidra(ufCode, year);
   const result = await upsertIbgePopulation(records);
   return {

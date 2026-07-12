@@ -4,8 +4,10 @@ import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, Database, DownloadCloud, Info, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { currentCalendarYear } from "@/lib/epi-week";
 
 type Message = { type: "success" | "error" | "info"; text: string };
+type UserRole = "admin" | "coordenador" | "supervisor" | "usuario";
 
 type PopulationStatus = {
   totalRows: number;
@@ -15,12 +17,14 @@ type PopulationStatus = {
 };
 
 export function IbgePopulationCard() {
-  const currentYear = new Date().getFullYear();
+  const currentYear = currentCalendarYear();
   const [yearStart, setYearStart] = useState("2007");
   const [yearEnd, setYearEnd] = useState(String(currentYear - 1));
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState<Message | null>(null);
   const [status, setStatus] = useState<PopulationStatus | null>(null);
+  const [role, setRole] = useState<UserRole | null>(null);
+  const canSync = role === "admin" || role === "coordenador" || role === "supervisor";
 
   const loadStatus = useCallback(async () => {
     try {
@@ -29,6 +33,13 @@ export function IbgePopulationCard() {
     } catch {
       // Status is informational; sync can still be attempted.
     }
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/user/profile")
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => setRole((data?.role ?? null) as UserRole | null))
+      .catch(() => setRole(null));
   }, []);
 
   useEffect(() => {
@@ -107,6 +118,7 @@ export function IbgePopulationCard() {
               type="number"
               value={yearStart}
               onChange={event => setYearStart(event.target.value)}
+              disabled={!canSync}
               className="h-8 rounded-md border bg-background px-2 text-sm text-foreground"
             />
           </label>
@@ -116,14 +128,21 @@ export function IbgePopulationCard() {
               type="number"
               value={yearEnd}
               onChange={event => setYearEnd(event.target.value)}
+              disabled={!canSync}
               className="h-8 rounded-md border bg-background px-2 text-sm text-foreground"
             />
           </label>
-          <Button size="sm" variant="outline" className="self-end" onClick={syncPopulation} disabled={syncing}>
+          <Button size="sm" variant="outline" className="self-end" onClick={syncPopulation} disabled={syncing || !canSync}>
             <DownloadCloud className="mr-1.5 h-3.5 w-3.5" />
             {syncing ? "Sincronizando..." : "Sincronizar"}
           </Button>
         </div>
+
+        {!canSync && role && (
+          <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Somente supervisores, coordenadores e administradores podem sincronizar a população IBGE.
+          </p>
+        )}
 
         {message && (
           <div className={`flex items-start gap-2 rounded-md border px-3 py-2 text-xs ${

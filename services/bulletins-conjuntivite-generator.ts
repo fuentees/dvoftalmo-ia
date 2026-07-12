@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { BUSINESS_TIME_ZONE, dateToEpiWeekYear, shiftEpiWeek } from "@/lib/epi-week";
 import { generateCompletion } from "@/services/ai/provider";
 
 export interface ConjuntiviteBulletinOptions {
@@ -19,9 +20,9 @@ export interface ConjuntiviteBulletinResult {
 }
 
 function lastCompleteWeek(now = new Date()) {
-  const ano = now.getFullYear();
-  const week = Math.ceil((now.getTime() - new Date(ano, 0, 1).getTime()) / (7 * 864e5));
-  return { ano, se: Math.max(1, week - 1) };
+  const current = dateToEpiWeekYear(now, BUSINESS_TIME_ZONE);
+  const previous = shiftEpiWeek(current.year, current.se, -1);
+  return { ano: previous.year, se: previous.se };
 }
 
 function pct(num: number, den: number) {
@@ -211,8 +212,9 @@ export async function generateConjuntiviteBulletin(
   }
 
   // Fetch data for current SE, previous SE, and same SE last year
-  const sePrev = se > 1 ? se - 1 : 52;
-  const anoPrev = se > 1 ? ano : ano - 1;
+  const previous = shiftEpiWeek(ano, se, -1);
+  const sePrev = previous.se;
+  const anoPrev = previous.year;
   const [current, prev, yearAgo] = await Promise.all([
     fetchCevespWeek(supabase, se, ano),
     fetchCevespWeek(supabase, sePrev, anoPrev),

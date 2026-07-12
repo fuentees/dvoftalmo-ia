@@ -21,7 +21,7 @@ const AI_PATHS     = ["/api/chat", "/api/export", "/api/dados/analyze"];
 const UPLOAD_PATHS = ["/api/documents/upload"];
 const CEVESP_PATHS = ["/api/cevesp"];
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";

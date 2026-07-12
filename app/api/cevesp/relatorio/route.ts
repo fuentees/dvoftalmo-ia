@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { runEndemicChannel } from "@/services/cevesp-endemic";
-import { pickCurrentChannelPoint } from "@/lib/epi-week";
+import { currentCalendarYear, formatBusinessDate, pickCurrentChannelPoint } from "@/lib/epi-week";
 
 function seZone(atual: number | null, q1: number, q3: number): string {
   if (atual === null) return "sem dado";
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
   const gve          = request.nextUrl.searchParams.get("gve")          ?? undefined;
   const municipality = request.nextUrl.searchParams.get("municipality") ?? undefined;
   const yearParam    = request.nextUrl.searchParams.get("year");
-  const year         = yearParam ? Number(yearParam) : new Date().getFullYear();
+  const year         = yearParam ? Number(yearParam) : currentCalendarYear();
 
   try {
     const data = await runEndemicChannel({ gve, municipality, year });
@@ -38,8 +38,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Sem dados para gerar relatório." }, { status: 404 });
     }
 
-    const now      = new Date();
-    const dateStr  = now.toLocaleDateString("pt-BR");
+    const dateStr  = formatBusinessDate();
     const lastPt = pickCurrentChannelPoint(data);
     const lastSE = lastPt?.se ?? null;
     const zona   = lastPt ? seZone(lastPt.currentIncidence, lastPt.q1, lastPt.q3) : "sem dado";

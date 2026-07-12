@@ -1,30 +1,16 @@
-# Centro de Oftalmologia Sanitária
+# Centro de Oftalmologia Sanitaria
 
-Agente inteligente independente para documentos, treinamentos, trabalho de campo, base de conhecimento e vigilancia epidemiologica.
+Aplicacao de vigilancia em oftalmologia sanitaria com dashboards, chat com IA, boletins, qualidade de dados, sincronizacao CEVESP/SINAN e analises de tracoma.
 
 ## Stack
 
-- Next.js 15, React 19 e TypeScript
-- Tailwind CSS e componentes no estilo Shadcn/UI
-- Supabase Auth, Storage, PostgreSQL, RLS e pgvector
-- OpenAI API para chat, embeddings e RAG
-- React Hook Form, Zod, TanStack Query e Recharts
+- Next.js, React 19 e TypeScript
+- Tailwind CSS, TanStack Query e Recharts
+- Supabase Auth, PostgreSQL, Storage, RLS e pgvector
+- OpenAI, Anthropic ou Gemini para chat; OpenAI para embeddings
+- Integrações CEVESP, SINAN/Tracoma, IBGE/SIDRA e MySQL local
 
-## Modulos implementados
-
-- Autenticacao: login, cadastro e recuperacao de senha com Supabase Auth.
-- Perfis e permissoes: administrador, coordenador, supervisor e usuario.
-- Dashboard: cards, graficos e atividades recentes.
-- Chat IA: conversas salvas, busca, historico, agentes e respostas com fontes.
-- Base de conhecimento: upload, categorias, tags, indexacao e busca semantica por pgvector.
-- Agentes especializados: documentos, e-mail, treinamentos, campo e epidemiologico.
-- Biblioteca documental: pesquisa, filtros, versionamento, favoritos e metadados.
-- Templates: criar, listar, duplicar, copiar e usar como modelo.
-- Exportacao: PDF, DOCX e TXT via rota REST.
-- Banco: migrations completas com tabelas, RLS, buckets e seeds.
-- Futuras integracoes: contratos preparados para sistema de gestao, Google Drive, Gmail, Calendar, REDCap e Supabase externo.
-
-## Como rodar
+## Como Rodar
 
 ```bash
 npm install
@@ -32,62 +18,52 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Configure `.env.local` com as chaves do Supabase e OpenAI.
+Configure `.env.local` com Supabase, chaves de IA e, quando necessário, credenciais MySQL/REDCap. Para desenvolvimento local, `DISABLE_AUTH=true` só funciona fora de produção.
 
-## Banco de dados
+## Variáveis Principais
 
-As migrations estao em `supabase/migrations`.
+- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `AI_PROVIDER`, `OPENAI_API_KEY`, `OPENAI_MODEL`
+- `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`
+- `GEMINI_API_KEY`, `GEMINI_MODEL`
+- `OPENAI_EMBEDDING_MODEL`
+- `NOTIFY_DB_HOST`, `NOTIFY_DB_PORT`, `NOTIFY_DB_NAME`, `NOTIFY_DB_USER`, `NOTIFY_DB_PASSWORD`, `NOTIFY_DB_TABLE`
+- `CRON_SECRET`, `RESEND_API_KEY`, `NOTIFY_EMAIL`
+- `REDCAP_API_URL`, `REDCAP_API_TOKEN`, `REDCAP_TRACOMA_FORM`
 
-Para ambiente local com Supabase CLI:
+## Permissões
+
+- `admin`: gerencia usuários, configurações, sincronizações e relatórios.
+- `coordenador`: gerencia configurações, sincronizações e relatórios.
+- `supervisor`: executa sincronizações e rotinas de base.
+- `usuario`: consulta dados e usa as áreas operacionais permitidas.
+
+As rotas sensíveis fazem validação no servidor; a interface apenas espelha essas permissões.
+
+## Rotinas
+
+```bash
+npm run lint
+npm run typecheck
+npm test
+npm run build
+```
+
+Scripts úteis:
+
+- `npm run sync-cevesp`
+- `npm run sync-export`
+- `npm run sync-import`
+- `npm run sync-ibge-population`
+
+## Banco
+
+As migrations ficam em `supabase/migrations`.
 
 ```bash
 supabase start
 supabase db reset
 ```
 
-A migration cria:
-
-- `profiles`
-- `conversations`
-- `messages`
-- `documents`
-- `document_versions`
-- `document_chunks`
-- `categories`
-- `templates`
-- `trainings`
-- `reports`
-- `files`
-- `settings`
-- `audit_logs`
-
-Tambem ativa RLS e cria a RPC `match_document_chunks` para RAG.
-
-## RAG
-
-O fluxo de RAG fica em `services/ai`:
-
-1. Upload em `/api/documents/upload`.
-2. Extracao de texto em `document-parser.ts`.
-3. Quebra em chunks.
-4. Embeddings com OpenAI.
-5. Armazenamento em `document_chunks`.
-6. Consulta por similaridade via `match_document_chunks`.
-7. Resposta no chat com fontes.
-
-Para producao, recomenda-se mover parsing pesado de PDF/DOCX/OCR para worker assíncrono.
-
-## Deploy Vercel
-
-O projeto inclui `vercel.json`. Configure as variaveis:
-
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `OPENAI_API_KEY`
-- `OPENAI_MODEL`
-- `OPENAI_EMBEDDING_MODEL`
-
-## Observacoes de arquitetura
-
-O sistema foi criado como aplicacao independente. Nenhuma integracao com sistema principal foi implementada agora. A pasta `lib/api/future-integrations.ts` deixa os adaptadores planejados para a futura camada de integracao.
+Depois de criar/atualizar o banco, confira a tela de sincronização e a tela de configurações para validar permissões, modelos e status das tabelas.

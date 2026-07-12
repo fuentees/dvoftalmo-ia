@@ -1717,9 +1717,10 @@ type SinanQualidadeViewProps = {
     gve?: string;
     municipio?: string;
   };
+  embedded?: boolean;
 };
 
-export function SinanQualidadeView({ externalFilters }: SinanQualidadeViewProps = {}) {
+export function SinanQualidadeView({ externalFilters, embedded = false }: SinanQualidadeViewProps = {}) {
   const [filters,   setFilters]   = useState<Record<string, string>>({});
   const [pageTab,   setPageTab]   = useState<PageTab>("situacao");
 
@@ -1779,11 +1780,11 @@ export function SinanQualidadeView({ externalFilters }: SinanQualidadeViewProps 
   ];
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-6">
+    <div className={`${embedded ? "space-y-6 p-0" : "mx-auto max-w-7xl space-y-6 p-6"}`}>
 
       {/* ── Cabeçalho ──────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
+      <div className={`flex items-center gap-4 ${embedded ? "justify-end" : "justify-between"}`}>
+        {!embedded && <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
             <ClipboardList className="h-5 w-5 text-primary" />
           </div>
@@ -1796,7 +1797,7 @@ export function SinanQualidadeView({ externalFilters }: SinanQualidadeViewProps 
               Voltar para a Sala de Situação
             </Link>
           </div>
-        </div>
+        </div>}
         <div className="flex flex-wrap gap-2">
           {data && (
             <>

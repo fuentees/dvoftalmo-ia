@@ -20,7 +20,7 @@ export interface ChatMessage {
 const DEFAULT_MODELS: Record<AIProvider, string> = {
   openai:    "gpt-4.1-mini",
   anthropic: "claude-haiku-4-5-20251001",
-  gemini:    "gemini-3.5-flash"
+  gemini:    "gemini-2.5-flash"
 };
 
 // Simple 60s in-memory cache to avoid a Supabase round-trip on every request
@@ -33,7 +33,10 @@ function configFromEnv(): AIConfig {
     provider === "anthropic" ? (process.env.ANTHROPIC_API_KEY ?? "") :
     provider === "gemini"    ? (process.env.GEMINI_API_KEY    ?? "") :
                                (process.env.OPENAI_API_KEY    ?? "");
-  const model = DEFAULT_MODELS[provider];
+  const model =
+    provider === "anthropic" ? (process.env.ANTHROPIC_MODEL ?? DEFAULT_MODELS.anthropic) :
+    provider === "gemini"    ? (process.env.GEMINI_MODEL    ?? DEFAULT_MODELS.gemini) :
+                               (process.env.OPENAI_MODEL    ?? DEFAULT_MODELS.openai);
   return { provider, model, apiKey };
 }
 
@@ -63,9 +66,9 @@ export async function getAIConfig(userModel?: string | null): Promise<AIConfig> 
     const apiKey = decryptValue(rawKey);
 
     const model =
-      provider === "openai"    ? (cfg.openai_model    ?? DEFAULT_MODELS.openai) :
-      provider === "anthropic" ? (cfg.anthropic_model ?? DEFAULT_MODELS.anthropic) :
-                                 (cfg.gemini_model    ?? DEFAULT_MODELS.gemini);
+      provider === "openai"    ? (cfg.openai_model    ?? process.env.OPENAI_MODEL    ?? DEFAULT_MODELS.openai) :
+      provider === "anthropic" ? (cfg.anthropic_model ?? process.env.ANTHROPIC_MODEL ?? DEFAULT_MODELS.anthropic) :
+                                 (cfg.gemini_model    ?? process.env.GEMINI_MODEL    ?? DEFAULT_MODELS.gemini);
 
     cachedConfig = { provider, model, apiKey };
     cacheExpiry = Date.now() + 60_000;

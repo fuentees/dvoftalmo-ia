@@ -1,5 +1,6 @@
 import { createNotificationConnection, getNotificationTableName } from "@/lib/external/notification-db";
 import { getCacheSyncInfo } from "@/lib/external/supabase-cevesp";
+import { currentCalendarYear } from "@/lib/epi-week";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const identifierPattern = /^[a-zA-Z0-9_]+$/;
@@ -29,7 +30,7 @@ export interface CevespKpis {
 
 async function fetchKpisFromCache(): Promise<CevespKpis> {
   const supabase = createAdminClient();
-  const year = new Date().getFullYear();
+  const year = currentCalendarYear();
 
   const { data: kpisData } = await supabase.rpc("cevesp_kpis_cache", {
     p_ano: year,
