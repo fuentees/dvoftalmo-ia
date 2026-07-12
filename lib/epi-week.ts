@@ -18,15 +18,34 @@ function localDateFromParts(parts: { year: number; month: number; day: number })
   return new Date(parts.year, parts.month - 1, parts.day);
 }
 
-/** Converte uma data qualquer na semana epidemiologica (SE 1-53) do ano dela. */
+function startOfEpiWeek(date: Date): Date {
+  const start = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  start.setDate(start.getDate() - start.getDay());
+  return start;
+}
+
+function startOfFirstEpiWeek(year: number): Date {
+  return startOfEpiWeek(new Date(year, 0, 4));
+}
+
+function epiWeekYear(date: Date): number {
+  const weekStart = startOfEpiWeek(date);
+  const majorityDay = new Date(weekStart);
+  majorityDay.setDate(weekStart.getDate() + 3);
+  return majorityDay.getFullYear();
+}
+
+/** Converte uma data qualquer na semana epidemiologica oficial (domingo a sabado). */
 export function dateToEpiWeek(date: Date): number {
-  const start = new Date(date.getFullYear(), 0, 1);
-  return Math.ceil(((date.getTime() - start.getTime()) / 86_400_000 + start.getDay() + 1) / 7);
+  const year = epiWeekYear(date);
+  const weekStart = startOfEpiWeek(date);
+  const firstWeekStart = startOfFirstEpiWeek(year);
+  return Math.round((weekStart.getTime() - firstWeekStart.getTime()) / (7 * 86_400_000)) + 1;
 }
 
 export function dateToEpiWeekYear(date: Date, timeZone = BUSINESS_TIME_ZONE): { year: number; se: number } {
   const businessDate = localDateFromParts(datePartsInTimeZone(date, timeZone));
-  return { year: businessDate.getFullYear(), se: dateToEpiWeek(businessDate) };
+  return { year: epiWeekYear(businessDate), se: dateToEpiWeek(businessDate) };
 }
 
 export function currentCalendarYear(date = new Date(), timeZone = BUSINESS_TIME_ZONE): number {
@@ -47,7 +66,7 @@ export function formatBusinessDate(date = new Date(), timeZone = BUSINESS_TIME_Z
 }
 
 export function weeksInEpiYear(year: number): number {
-  return dateToEpiWeek(new Date(year, 11, 31));
+  return Math.round((startOfFirstEpiWeek(year + 1).getTime() - startOfFirstEpiWeek(year).getTime()) / (7 * 86_400_000));
 }
 
 export function shiftEpiWeek(year: number, se: number, offset: number): { year: number; se: number } {
