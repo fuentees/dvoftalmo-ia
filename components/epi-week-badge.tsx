@@ -1,11 +1,21 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { currentEpiWeek } from "@/lib/epi-week";
 import { cn } from "@/lib/utils";
 
 /** Selo compacto com a semana epidemiológica atual, fixo em qualquer página do app. */
 export function EpiWeekBadge({ className }: { className?: string }) {
-  const { se, year } = currentEpiWeek();
+  const [epiWeek, setEpiWeek] = useState(() => currentEpiWeek());
+  const { se, year } = epiWeek;
+
+  useEffect(() => {
+    const update = () => setEpiWeek(currentEpiWeek());
+    update();
+    const interval = window.setInterval(update, 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
+
   return (
     <span
       title={`Semana epidemiológica atual: SE ${se} de ${year}`}
