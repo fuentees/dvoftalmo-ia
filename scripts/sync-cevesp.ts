@@ -135,9 +135,12 @@ async function doExport(args: string[]) {
 
   await conn.end();
 
-  console.log(`\n💾  Salvando ${allRows.length} registros em ${outFile}...`);
-  writeFileSync(outFile, JSON.stringify(allRows), "utf8");
-  const sizeMb = (Buffer.byteLength(JSON.stringify(allRows)) / 1024 / 1024).toFixed(1);
+  // Um registro pode vir em dois anos (ANO e ano de digitação); a chave é o ID
+  const unique = dedupByKey(allRows);
+  const json = JSON.stringify(unique);
+  console.log(`\n💾  Salvando ${unique.length} registros em ${outFile}...`);
+  writeFileSync(outFile, json, "utf8");
+  const sizeMb = (Buffer.byteLength(json) / 1024 / 1024).toFixed(1);
   console.log(`✅  Arquivo salvo: ${outFile} (${sizeMb} MB)`);
   console.log(`\nAgora leve o arquivo para casa e rode:`);
   console.log(`  npm run sync-cevesp -- --import --file ${outFile}`);
