@@ -10,7 +10,6 @@ type AuthUser = {
 type SupabaseLike = {
   auth: {
     getUser: () => Promise<{ data: { user: AuthUser | null }; error?: unknown }>;
-    getSession: () => Promise<{ data: { session: { user: AuthUser } | null }; error?: unknown }>;
   };
 };
 
@@ -30,16 +29,10 @@ function devUser(): AuthUser {
 export async function getCurrentUser(supabase: SupabaseLike) {
   if (isAuthDisabledForDev()) return devUser();
 
-  // getSession reads from the cookie first, avoiding a network call when possible.
+  // Validate identity with Auth before authorizing server operations.
   try {
-    const { data } = await supabase.auth.getSession();
-    if (data.session?.user) return data.session.user;
-  } catch { /* fall through */ }
-
-  // Only try getUser (network call) if session had no user
-  try {
-    const { data } = await supabase.auth.getUser();
-    if (data.user) return data.user;
+    const { data, error } = await supabase.auth.getUser();
+    if (!error && data.user) return data.user;
   } catch { /* network unavailable */ }
 
   return null;

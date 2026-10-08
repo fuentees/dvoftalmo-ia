@@ -13,7 +13,7 @@ Aplicacao de vigilancia em oftalmologia sanitaria com dashboards, chat com IA, b
 ## Como Rodar
 
 ```bash
-npm install
+npm ci
 cp .env.example .env.local
 npm run dev
 ```
@@ -67,3 +67,15 @@ supabase db reset
 ```
 
 Depois de criar/atualizar o banco, confira a tela de sincronização e a tela de configurações para validar permissões, modelos e status das tabelas.
+
+## Confiabilidade dos indicadores
+
+- REDCap não configurado gera indisponibilidade explícita, sem dados fictícios.
+- Registros REDCap com contagens ou anos inválidos impedem a interpretação dos indicadores.
+- Cobertura não informada e quantidade de doses sem dados de origem são retornadas como `null`.
+- As proporções agregadas de TF/TT não comprovam eliminação. Os critérios OMS exigem denominadores etários específicos e outros requisitos: https://www.who.int/en/news-room/fact-sheets/detail/trachoma.
+- A estimativa de azitromicina é uma simulação logística com hipóteses fixas. Não fornece prescrição individual nem cálculo pediátrico validado por peso.
+- Prioridades informam `partial` e `unavailableSources` quando alguma consulta falha.
+- Autorização no servidor valida o usuário via Supabase Auth; falhas de validação não concedem acesso.
+
+Veja [REVISAO-PAINEIS.md](REVISAO-PAINEIS.md) para a revisão de tracoma/conjuntivite, testes e pendências da base real. [REVISAO.md](REVISAO.md) registra a primeira rodada de confiabilidade e integrações.

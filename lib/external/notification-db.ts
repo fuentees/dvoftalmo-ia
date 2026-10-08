@@ -1,6 +1,7 @@
 import mysql from "mysql2/promise";
 import type { RowDataPacket } from "mysql2/promise";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { excluidoFlag } from "@/lib/cevesp-clean";
 
 const identifierPattern = /^[a-zA-Z0-9_]+$/;
 
@@ -27,6 +28,7 @@ export async function createNotificationConnection() {
     user: requireEnv("NOTIFY_DB_USER"),
     password: requireEnv("NOTIFY_DB_PASSWORD"),
     charset: "utf8mb4",
+    dateStrings: true,
     connectTimeout: 10000,
     supportBigNumbers: true,
     bigNumberStrings: true
@@ -64,10 +66,10 @@ function applyAnoFilter<T extends object>(q: T, ano?: number, anoFim?: number): 
 async function readNotificationRowsFromCache(filter: NotificationRowsFilter = {}) {
   const { ano, anoFim, gve, municipio, seInicio, seFim, limit } = filter;
   const supabase = createAdminClient();
-  let q = supabase.from("cevesp_notificacoes").select("id", { count: "exact", head: true });
+  let q = supabase.from("cevesp_notificacoes").select("id", { count: "exact", head: true }).or("Excluido.is.null,Excluido.eq.0");
   q = applyAnoFilter(q, ano, anoFim);
   if (gve) q = q.eq('"GVE_NOME"', gve) as typeof q;
-  if (municipio) q = q.ilike('"MunicipioNotificacao"', `%${municipio}%`) as typeof q;
+  if (municipio) q = q.ilike('"MunicipioNotificacao"', municipio) as typeof q;
   if (seInicio != null) q = q.gte('"SemEpidemio"', seInicio) as typeof q;
   if (seFim != null) q = q.lte('"SemEpidemio"', seFim) as typeof q;
   const { count, error: countError } = await q;
@@ -79,10 +81,10 @@ async function readNotificationRowsFromCache(filter: NotificationRowsFilter = {}
 
   for (let from = 0; from < maxRows; from += pageSize) {
     const to = Math.min(from + pageSize - 1, maxRows - 1);
-    let dq = supabase.from("cevesp_notificacoes").select("*").range(from, to);
+    let dq = supabase.from("cevesp_notificacoes").select("*").or("Excluido.is.null,Excluido.eq.0").order("id").range(from, to);
     dq = applyAnoFilter(dq, ano, anoFim);
     if (gve) dq = dq.eq('"GVE_NOME"', gve) as typeof dq;
-    if (municipio) dq = dq.ilike('"MunicipioNotificacao"', `%${municipio}%`) as typeof dq;
+    if (municipio) dq = dq.ilike('"MunicipioNotificacao"', municipio) as typeof dq;
     if (seInicio != null) dq = dq.gte('"SemEpidemio"', seInicio) as typeof dq;
     if (seFim != null) dq = dq.lte('"SemEpidemio"', seFim) as typeof dq;
     const { data, error } = await dq;
@@ -114,7 +116,8 @@ export async function readNotificationRows(filter: NotificationRowsFilter = {}) 
     throw error;
   }
 
-  const conditions: string[] = [];
+  // Excluido é 'S'/'N' no MySQL; `Excluido = 0` aceitaria 'S' (string vira 0 na comparação)
+  const conditions: string[] = ["(Excluido IS NULL OR UPPER(Excluido) NOT IN ('S', '1'))"];
   const params: unknown[] = [];
   if (ano && anoFim && anoFim > ano) {
     conditions.push("ANO >= ?"); params.push(ano);
@@ -125,7 +128,7 @@ export async function readNotificationRows(filter: NotificationRowsFilter = {}) 
     conditions.push("ANO <= ?"); params.push(anoFim);
   }
   if (gve) { conditions.push("GVE_NOME = ?"); params.push(gve); }
-  if (municipio) { conditions.push("MunicipioNotificacao LIKE ?"); params.push(`%${municipio}%`); }
+  if (municipio) { conditions.push("MunicipioNotificacao = ?"); params.push(municipio); }
   if (seInicio != null) { conditions.push("SemEpidemio >= ?"); params.push(seInicio); }
   if (seFim != null) { conditions.push("SemEpidemio <= ?"); params.push(seFim); }
   const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -139,10 +142,17 @@ export async function readNotificationRows(filter: NotificationRowsFilter = {}) 
       : await connection.query(`SELECT * FROM ${table} ${whereClause}`, params);
     const total = Number(countRows[0]?.total ?? 0);
 
+    // Mesmo formato do cache: Excluido/editable como 0/1
+    const normalized = (rows as Array<Record<string, unknown>>).map((row): Record<string, unknown> => ({
+      ...row,
+      Excluido: excluidoFlag(row.Excluido),
+      editable: excluidoFlag(row.editable)
+    }));
+
     return {
       total,
       limit,
-      rows: rows as Array<Record<string, unknown>>,
+      rows: normalized,
       source: "mysql" as const
     };
   } catch (error) {

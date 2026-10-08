@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line,
@@ -12,17 +12,6 @@ import { exportChartSvg } from "@/lib/chart-export";
 import type { CevespHistorico } from "@/lib/external/supabase-cevesp";
 
 function num(v: unknown) { return Number(v ?? 0).toLocaleString("pt-BR"); }
-
-// Gera ticks igualmente espaçados (0, 200, 400, ...), como no gráfico do CVE, em vez de
-// depender do cálculo automático de "nice ticks" do recharts (que pode degenerar com
-// poucos pontos ou valores repetidos).
-function niceTicks(max: number, step = 200): number[] {
-  if (!Number.isFinite(max) || max <= 0) return [0, step];
-  const ticks: number[] = [];
-  for (let v = 0; v <= max + step; v += step) ticks.push(v);
-  return ticks;
-}
-
 
 type Props = {
   filters?: { gve?: string; municipio?: string; yearStart?: string; yearEnd?: string };
@@ -51,6 +40,7 @@ export function ConjuntiviteChartsView({ filters }: Props) {
 
   const refAnual = useRef<HTMLDivElement>(null);
   const [excludedYears, setExcludedYears] = useState<Set<string>>(new Set());
+  useEffect(() => { setExcludedYears(new Set()); }, [qs]);
   const [metricAnual, setMetricAnual] = useState<"casos" | "municipios">("casos");
 
   function toggleYear(year: string) {
@@ -92,24 +82,13 @@ export function ConjuntiviteChartsView({ filters }: Props) {
     Casos: r.casos,
     "Municípios notificantes": r.municipiosNotificadores,
     "Incidência/100k": r.incidencia100k,
+    populationYear: r.populationYear,
+    populationFallback: r.populationFallback,
   }));
   const filteredAnual = anualData.filter((r) => !excludedYears.has(r.ano));
   const hasIncidencia = data.byYear.some((r) => r.incidencia100k != null);
   const activeKey = metricAnual === "municipios" ? "Municípios notificantes" : "Casos";
   const activeColor = metricAnual === "municipios" ? "#16a34a" : "#2563eb";
-  // Eixo único (igual ao gráfico do CVE) quando a métrica é "Municípios notificantes"
-  // (escala 0–~650, compatível com a incidência/100k) ou quando a página já está filtrada
-  // por um município específico (casos também ficam pequenos nesse caso). "Casos" na visão
-  // estadual pode chegar a centenas de milhares num ano de epidemia, então mantém o eixo
-  // secundário para a linha de incidência não sumir achatada.
-  const singleAxis = metricAnual === "municipios" || Boolean(filters?.municipio);
-  const singleAxisMax = Math.max(
-    0,
-    ...filteredAnual.map((r) => Number(r[activeKey] ?? 0)),
-    ...filteredAnual.map((r) => Number(r["Incidência/100k"] ?? 0))
-  );
-  const singleAxisTicks = niceTicks(singleAxisMax);
-
   const fmt = (v: unknown) => num(v);
 
   return (
@@ -122,7 +101,7 @@ export function ConjuntiviteChartsView({ filters }: Props) {
               <CardTitle className="text-sm">Série histórica anual — Conjuntivites CEVESP</CardTitle>
               <CardDescription className="text-xs">
                 Clique em um ano para ocultá-lo da análise. Linha vermelha = coef. de incidência/100 mil hab.
-                {singleAxis ? " (mesma escala do eixo à esquerda, como no gráfico do CVE)." : " (eixo direito)."} Requer tabela IBGE.
+                (eixo direito). Taxas usam a população IBGE do território; anos substitutos aparecem no tooltip.
               </CardDescription>
               {/* eixo único só quando a página já está filtrada por um município específico */}
             </div>
@@ -150,38 +129,25 @@ export function ConjuntiviteChartsView({ filters }: Props) {
           </div>
         </CardHeader>
         <CardContent>
+          {filteredAnual.length === 0 && <p className="p-4 text-center text-sm text-muted-foreground">Todos os anos estão ocultos. Restaure um ano abaixo para visualizar a série.</p>}
           <div ref={refAnual} className={hasIncidencia ? "h-[28rem]" : "h-96"}>
             <ResponsiveContainer width="100%" height="100%">
               {hasIncidencia ? (
                 <ComposedChart
-                  key={singleAxis ? "chart-single-axis" : "chart-dual-axis"}
+                  key="chart-dual-axis"
                   data={filteredAnual}
                   onClick={(d) => { if (d?.activeLabel) toggleYear(String(d.activeLabel)); }}
                   style={{ cursor: "pointer" }}
-                  margin={{ top: 4, right: singleAxis ? 16 : 48, left: 4, bottom: 4 }}
+                  margin={{ top: 4, right: 48, left: 4, bottom: 4 }}
                 >
                   <CartesianGrid vertical={false} stroke="#e5e7eb" />
                   <XAxis dataKey="ano" tick={{ fontSize: 11 }} />
-                  {singleAxis && (
-                    <YAxis
-                      yAxisId="single"
-                      tick={{ fontSize: 11 }}
-                      width={56}
-                      tickFormatter={fmt}
-                      ticks={singleAxisTicks}
-                      domain={[0, singleAxisTicks[singleAxisTicks.length - 1]]}
-                    />
-                  )}
-                  {!singleAxis && (
-                    <YAxis yAxisId="left" tick={{ fontSize: 11 }} width={60} tickFormatter={fmt} />
-                  )}
-                  {!singleAxis && (
-                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} width={44} tickFormatter={(v) => `${Number(v).toFixed(1)}`} domain={[0, "auto"]} />
-                  )}
-                  <Tooltip formatter={(v, name) => name === "Incidência/100k" ? `${Number(v).toFixed(1)} /100k` : fmt(v)} />
+                  <YAxis yAxisId="left" tick={{ fontSize: 11 }} width={60} tickFormatter={fmt} />
+                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} width={44} tickFormatter={(v) => `${Number(v).toFixed(1)}`} domain={[0, "auto"]} />
+                  <Tooltip formatter={(v, name) => name === "Incidência/100k" ? `${Number(v).toFixed(1)} /100k` : fmt(v)} labelFormatter={(label, payload) => { const row = payload[0]?.payload; return `Ano ${label}${row?.populationYear ? ` · População IBGE ${row.populationYear}${row.populationFallback ? " (substituta)" : ""}` : " · população indisponível"}`; }} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar yAxisId={singleAxis ? "single" : "left"} dataKey={activeKey} fill={activeColor} radius={[3, 3, 0, 0]} />
-                  <Line yAxisId={singleAxis ? "single" : "right"} type="monotone" dataKey="Incidência/100k" stroke="#dc2626" strokeWidth={2} dot={filteredAnual.length <= 15} connectNulls />
+                  <Bar yAxisId="left" dataKey={activeKey} fill={activeColor} radius={[3, 3, 0, 0]} />
+                  <Line yAxisId="right" type="monotone" dataKey="Incidência/100k" stroke="#dc2626" strokeWidth={2} dot={filteredAnual.length <= 15} />
                 </ComposedChart>
               ) : (
                 <BarChart

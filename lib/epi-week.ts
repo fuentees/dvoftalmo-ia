@@ -102,8 +102,8 @@ export function pickCurrentPoint<T extends { se: number; currentYear: number | n
   const withData = points.filter((p) => p.currentYear !== null);
   if (!withData.length) return null;
   const upToNow = withData.filter((p) => p.se <= currentBucket);
-  const pool = upToNow.length ? upToNow : withData;
-  return pool.reduce((a, b) => (b.se > a.se ? b : a));
+  if (!upToNow.length) return null;
+  return upToNow.reduce((a, b) => (b.se > a.se ? b : a));
 }
 
 /** Variante de `pickCurrentPoint` fixada na semana epidemiologica real de hoje. */

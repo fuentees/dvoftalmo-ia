@@ -1,3 +1,4 @@
+import { parseCevespFilters } from "@/lib/cevesp-filters";
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -8,11 +9,10 @@ export async function GET(request: NextRequest) {
   const user = await getCurrentUser(supabase);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const sp = request.nextUrl.searchParams;
-  const gve = sp.get("gve") ?? undefined;
-  const municipio = sp.get("municipio") ?? undefined;
-  const yearStart = sp.get("yearStart") ? Number(sp.get("yearStart")) : undefined;
-  const yearEnd = sp.get("yearEnd") ? Number(sp.get("yearEnd")) : undefined;
+  let filters;
+  try { filters = parseCevespFilters(request.nextUrl.searchParams); }
+  catch (error) { return NextResponse.json({ error: (error as Error).message }, { status: 400 }); }
+  const { ano: yearStart, anoFim: yearEnd, gve, municipio } = filters;
 
   try {
     const data = await getCevespHistorico({ gve, municipio, yearStart, yearEnd });

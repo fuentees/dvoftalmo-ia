@@ -7,6 +7,7 @@ import { TracomaAnaliseView } from "@/components/tracoma/tracoma-analise-view";
 import { TracomaConsultaView } from "@/components/tracoma/tracoma-consulta-view";
 import { SinanQualidadeView } from "@/components/sinan/sinan-qualidade-view";
 import { listarGvesSp, listarMunicipiosPorGve } from "@/lib/municipios-sp";
+import { validateTracomaFilters } from "@/lib/tracoma-data";
 
 type OuterTab = "situacao" | "qualidade" | "consulta";
 
@@ -28,20 +29,27 @@ export function TracomaHubView() {
   const gveOptions = useMemo(() => listarGvesSp(), []);
   const municipioOptions = useMemo(() => listarMunicipiosPorGve(gve), [gve]);
   const filters = useMemo(() => ({ yearStart, yearEnd, gve, municipio }), [yearStart, yearEnd, gve, municipio]);
+  const filterError = useMemo(() => {
+    try { validateTracomaFilters(filters); return ""; } catch (error) { return (error as Error).message; }
+  }, [filters]);
 
   return (
     <div className="flex flex-col">
-      <div className="sticky top-0 z-30 flex items-center gap-3 border-b bg-background/95 px-6 py-2 backdrop-blur-sm">
+      <div className="sticky top-0 z-30 flex flex-wrap items-center gap-3 border-b bg-background/95 px-4 py-3 backdrop-blur-sm sm:px-6">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
           Tracoma · SINAN / NOTTRACONET
         </span>
-        <div className="flex gap-0.5 rounded-lg bg-muted/60 p-0.5">
+        <div role="tablist" aria-label="Seções do painel de tracoma" className="flex max-w-full flex-wrap gap-0.5 rounded-lg bg-muted/60 p-0.5">
           {outerTabs.map((t) => {
             const Icon = t.icon;
             const active = tab === t.id;
             return (
               <button
                 key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                aria-controls="tracoma-panel"
                 onClick={() => setTab(t.id)}
                 className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                   active
@@ -55,9 +63,12 @@ export function TracomaHubView() {
             );
           })}
         </div>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
+        <div className="flex w-full flex-wrap items-center gap-2 lg:ml-auto lg:w-auto">
           <input
             type="number"
+            min={1975}
+            max={new Date().getFullYear()}
+            aria-label="Ano inicial do tracoma"
             value={yearStart}
             onChange={(event) => setYearStart(event.target.value)}
             placeholder="Ano início"
@@ -65,6 +76,9 @@ export function TracomaHubView() {
           />
           <input
             type="number"
+            min={1975}
+            max={new Date().getFullYear()}
+            aria-label="Ano final do tracoma"
             value={yearEnd}
             onChange={(event) => setYearEnd(event.target.value)}
             placeholder="Ano fim"
@@ -72,16 +86,18 @@ export function TracomaHubView() {
           />
           <select
             value={gve}
+            aria-label="GVE do tracoma"
             onChange={(event) => { setGve(event.target.value); setMunicipio(""); }}
-            className="h-8 min-w-40 rounded-md border bg-background px-2 text-xs"
+            className="h-8 min-w-0 max-w-full flex-1 rounded-md border bg-background px-2 text-xs sm:min-w-40 sm:flex-none"
           >
             <option value="">Todos os GVEs</option>
             {gveOptions.map((item) => <option key={item} value={item}>{item}</option>)}
           </select>
           <select
             value={municipio}
+            aria-label="Município do tracoma"
             onChange={(event) => setMunicipio(event.target.value)}
-            className="h-8 min-w-40 rounded-md border bg-background px-2 text-xs"
+            className="h-8 min-w-0 max-w-full flex-1 rounded-md border bg-background px-2 text-xs sm:min-w-40 sm:flex-none"
           >
             <option value="">Todos os municípios</option>
             {municipioOptions.map((item) => <option key={item.codigo} value={item.nome}>{item.nome}</option>)}
@@ -98,10 +114,12 @@ export function TracomaHubView() {
         </div>
       </div>
 
-      <div className="flex-1">
-        {tab === "situacao"  && <TracomaAnaliseView externalFilters={filters} />}
-        {tab === "qualidade" && <SinanQualidadeView externalFilters={filters} embedded />}
-        {tab === "consulta"  && <TracomaConsultaView externalFilters={filters} hideFilters />}
+      <div id="tracoma-panel" role="tabpanel" className="min-w-0 flex-1">
+        {filterError ? <p role="alert" className="m-4 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">{filterError}</p> : <>
+          {tab === "situacao" && <TracomaAnaliseView externalFilters={filters} />}
+          {tab === "qualidade" && <SinanQualidadeView externalFilters={filters} embedded />}
+          {tab === "consulta" && <TracomaConsultaView externalFilters={filters} hideFilters />}
+        </>}
       </div>
     </div>
   );

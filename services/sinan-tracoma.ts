@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { nomeMunicipio, gvePorCodigo, gvePorNomeMunicipio, listarMunicipiosSp } from "@/lib/municipios-sp";
+import { nomeMunicipio, gvePorCodigo } from "@/lib/municipios-sp";
+import { matchesTracomaGeography, tracomaCount, tracomaMunicipality, tracomaYear, tracomaPositivity, validateTracomaFilters, TRACOMA_EXAMINED_FIELDS, type TracomaFilter } from "@/lib/tracoma-data";
 
 export type SinanTracomaBank = "traconet" | "nottraconet";
 
@@ -43,7 +44,7 @@ const fieldCandidates = {
   criterio: ["CRITERIO", "CRITERIO_CONF", "TP_CRITERIO"],
   evolucao: ["EVOLUCAO", "EVOL_CASO", "TP_EVOLUCAO"],
   // ENCAMINHA = encaminhamento para cirurgia (1=Sim) — usado na detecção TT sem cirurgia
-  tratamento: ["TRATAMENTO", "TRAT", "ID_TRATAM", "ANTIBIOTIC", "AZITROMIC", "MEDICAMENTO", "DOSE", "DT_TRAT", "ENCAMINHA", "ST_ENCAMINHA"],
+  tratamento: ["TRATAMENTO", "TRAT", "ID_TRATAM", "ANTIBIOTIC", "AZITROMIC", "MEDICAMENTO", "DOSE", "DT_TRAT"],
   conclusao: ["CONCLUSAO", "DT_CONCLUSAO", "SIT_CONCLU", "CLASSI_FIN", "CLASSIFICACAO"]
 };
 
@@ -113,13 +114,13 @@ function normalizeDate(value: unknown) {
   return `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 }
 
-function rowKey(row: RawRow, bank: SinanTracomaBank) {
+function rowKey(row: RawRow, bank: SinanTracomaBank, legacy = false) {
   const seed = [
     bank,
     getValue(row, ["NU_NOTIFIC", "ID", "ID_NOTIFIC", "NUM_NOTIFIC"]) ?? "",
     getValue(row, fieldCandidates.date) ?? "",
     getValue(row, fieldCandidates.municipio) ?? "",
-    JSON.stringify(row).slice(0, 500)
+    legacy ? JSON.stringify(row).slice(0, 500) : JSON.stringify(Object.fromEntries(Object.entries(row).sort(([a], [b]) => a.localeCompare(b))))
   ].join("|");
   return createHash("sha256").update(seed).digest("hex");
 }
@@ -225,21 +226,12 @@ function normalizeText(value: string) {
   return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
-function resolveMunicipioAuditFilter(value: string | null | undefined) {
-  const raw = String(value ?? "").trim();
-  if (!raw) return "";
-  const digits = raw.replace(/\D/g, "");
-  if (digits.length >= 6) return digits.slice(0, 6);
-  const normalized = normalizeText(raw);
-  return listarMunicipiosSp().find((municipio) => normalizeText(municipio.nome) === normalized)?.codigo ?? raw;
-}
-
-function parseQuestion(question: string) {
+export function parseTracomaQuestion(question: string) {
   const lower = normalizeText(question);
   // TRACONET = casos individuais (sexo, idade, TF/TT); NOTTRACONET = consolidado/agregados
   const bank: SinanTracomaBank | undefined =
-    /traconet|casos?|individual|notificacao|sexo|idade|forma clinica/.test(lower) ? "traconet" :
     /nottraconet|nottraconect|ntracoma|consolidado|consolidada|agregado/.test(lower) ? "nottraconet" :
+    /\btraconet\b|casos?|individual|notificacao|sexo|idade|forma clinica/.test(lower) ? "traconet" :
     undefined;
   const metric =
     /municipios?/.test(lower) && /quantos|total|numero/.test(lower) ? "municipios" :
@@ -269,15 +261,18 @@ function parseQuestion(question: string) {
   const gve = dimension !== "gve"
     ? lower.match(/\bgve\s+(?:de\s+)?([a-z0-9\s]+?)(?=\s+(?:em|no|na|por|de|entre|ano|anos|municipio|munic)\b|$)/)?.[1]?.trim()
     : undefined;
-  const agravo = lower.match(/agravo\s+(?:de\s+)?([a-z0-9\s]+?)(?=\s+(?:em|no|na|por|de|entre|ano|anos|banco)\b|$)/)?.[1]?.trim()
-    ?? (lower.includes("tracoma") ? "tracoma" : undefined);
+  const agravo = lower.match(/agravo\s+(?:de\s+)?([a-z0-9\s]+?)(?=\s+(?:em|no|na|por|de|entre|ano|anos|banco)\b|$)/)?.[1]?.trim();
 
   const yearStart = yearBetween ? Number(yearBetween[1])
     : relativeYears ? currentYear - Number(relativeYears[1]) + 1
+    : /ano passado/.test(lower) ? currentYear - 1
+    : /este ano/.test(lower) ? currentYear
     : singleYear ? Number(singleYear[1])
     : undefined;
   const yearEnd = yearBetween ? Number(yearBetween[2])
     : relativeYears ? currentYear
+    : /ano passado/.test(lower) ? currentYear - 1
+    : /este ano/.test(lower) ? currentYear
     : singleYear ? Number(singleYear[1])
     : undefined;
 
@@ -304,9 +299,24 @@ export async function importSinanTracomaRows(opts: {
 }) {
   const supabase = createAdminClient();
   const normalized = opts.rows.map((row) => normalizeSinanTracomaRow(row, opts.bank));
+  // Migrate an identical legacy row before upserting the complete hash. Do not
+  // change a colliding legacy row with different raw data, or silently duplicate it.
+  const legacyKeys = [...new Set(opts.rows.map((row) => rowKey(row, opts.bank, true)))];
+  for (let from = 0; from < legacyKeys.length; from += 250) {
+    const { data: existing, error: lookupError } = await supabase.from("sinan_tracoma_rows").select("row_key, raw").in("row_key", legacyKeys.slice(from, from + 250));
+    if (lookupError) throw new Error(`Não foi possível verificar a compatibilidade da importação: ${lookupError.message}`);
+    for (const old of existing ?? []) {
+      const oldRaw = old.raw as RawRow;
+      const completeKey = rowKey(oldRaw, opts.bank);
+      if (!normalized.some((row) => row.row_key === completeKey) || completeKey === old.row_key) continue;
+      const { error: migrationError } = await supabase.from("sinan_tracoma_rows").update({ row_key: completeKey }).eq("row_key", old.row_key);
+      if (migrationError) throw new Error(`A importação foi interrompida para evitar duplicidade com uma chave antiga: ${migrationError.message}`);
+    }
+  }
+  const distinctRows = [...new Map(normalized.map((row) => [row.row_key, row])).values()];
   const { error } = await supabase
     .from("sinan_tracoma_rows")
-    .upsert(normalized, { onConflict: "row_key", ignoreDuplicates: false });
+    .upsert(distinctRows, { onConflict: "row_key", ignoreDuplicates: false });
   if (error) throw new Error(error.message);
 
   if (opts.isLastBatch ?? true) {
@@ -339,14 +349,14 @@ export async function getSinanTracomaStatus() {
     .limit(5);
   if (logsError) throw new Error(`Erro ao consultar historico de importacao SINAN: ${logsError.message}`);
 
-  const { data, error: sampleError } = await supabase
-    .from("sinan_tracoma_rows")
-    .select("source_bank, agravo, ano, municipio")
-    .limit(20000);
-  if (sampleError) throw new Error(`Erro ao ler amostra SINAN Tracoma: ${sampleError.message}`);
-
-  const rows = (data ?? []) as Array<Record<string, unknown>>;
-  const years = Array.from(new Set(rows.map((row) => Number(row.ano)).filter(Number.isFinite))).sort((a, b) => a - b);
+  const rows: Array<Record<string, unknown>> = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase.from("sinan_tracoma_rows").select("source_bank, agravo, ano, municipio").order("id").range(from, from + 999);
+    if (error) throw new Error(`Erro ao ler status SINAN Tracoma: ${error.message}`);
+    rows.push(...((data ?? []) as Array<Record<string, unknown>>));
+    if (!data || data.length < 1000) break;
+  }
+  const years = Array.from(new Set(rows.map((row) => tracomaYear(row.ano)).filter((year): year is number => year != null))).sort((a, b) => a - b);
   const banks = Array.from(new Set(rows.map((row) => String(row.source_bank ?? "")).filter(Boolean))).sort();
   const agravos = Array.from(new Set(rows.map((row) => String(row.agravo ?? "")).filter(Boolean))).slice(0, 20);
   const municipalities = new Set(rows.map((row) => String(row.municipio ?? "")).filter(Boolean)).size;
@@ -377,34 +387,37 @@ async function fetchSinanRows(params: {
   for (let from = 0; ; from += pageSize) {
     let q = supabase
       .from("sinan_tracoma_rows")
-      .select("source_bank, agravo, ano, dt_notificacao, municipio, gve, drs, unidade, classificacao, criterio, evolucao, tratamento, conclusao, raw");
+      .select("source_bank, agravo, ano, dt_notificacao, municipio, ibge, gve, drs, unidade, classificacao, criterio, evolucao, tratamento, conclusao, raw")
+      .order("id");
     if (params.bank) q = q.eq("source_bank", params.bank);
     if (params.agravo) q = q.ilike("agravo", `%${params.agravo}%`);
-    if (params.municipio) q = q.ilike("municipio", `%${params.municipio}%`);
-    if (params.gve) q = q.ilike("gve", `%${params.gve}%`);
     const { data, error } = await q.range(from, from + pageSize - 1);
     if (error) throw new Error(`SINAN Tracoma: ${error.message}`);
     const page = (data ?? []) as Array<Record<string, unknown>>;
     rows.push(...page);
     if (page.length < pageSize) break;
   }
-  // Filtro de ano em JS: inclui linhas sem ano (null) e rejeita apenas anos fora do intervalo
-  if (params.yearStart || params.yearEnd) {
-    return rows.filter((row) => {
-      const ano = Number(row.ano);
-      if (!Number.isFinite(ano) || ano === 0) return true; // sem ano → sempre inclui
-      if (params.yearStart && ano < params.yearStart) return false;
-      if (params.yearEnd && ano > params.yearEnd) return false;
-      return true;
-    });
-  }
-  return rows;
+  return rows.filter((row) => {
+    if (!matchesTracomaGeography(row, params)) return false;
+    if (params.yearStart != null || params.yearEnd != null) {
+      const ano = tracomaYear(row.ano);
+      if (ano == null || (params.yearStart != null && ano < params.yearStart) || (params.yearEnd != null && ano > params.yearEnd)) return false;
+    }
+    return true;
+  });
 }
 
-export async function runSinanTracomaAnalysis(question: string) {
-  const parsed = parseQuestion(question);
+export async function runSinanTracomaAnalysis(question: string, filters?: TracomaFilter) {
+  const parsed = { ...parseTracomaQuestion(question), ...Object.fromEntries(Object.entries(filters ?? {}).filter(([, value]) => value !== undefined)) };
+  if (filters?.yearStart != null || filters?.yearEnd != null) {
+    parsed.yearStart = filters.yearStart;
+    parsed.yearEnd = filters.yearEnd;
+  }
+  validateTracomaFilters(parsed);
+  if (!parsed.bank) throw new Error("Especifique TRACONET ou NOTTRACONET na pergunta para manter as fontes separadas.");
+  if (/qualidade|forma clinica|examinados|tratados|prevalencia|positividade/i.test(normalizeText(question))) throw new Error("Esta consulta monta contagens de registros individuais ou positivos consolidados. Consulte formas clínicas e taxas em Situação Epidemiológica e inconsistências em Qualidade dos Dados.");
 
-  let rows = await fetchSinanRows({
+  const rows = await fetchSinanRows({
     bank: parsed.bank,
     agravo: parsed.agravo,
     yearStart: parsed.yearStart,
@@ -413,21 +426,12 @@ export async function runSinanTracomaAnalysis(question: string) {
     gve: parsed.gve,
   });
 
-  // Fallback: banco não encontrado → busca sem filtro de banco
-  if (rows.length === 0 && parsed.bank) {
-    rows = await fetchSinanRows({
-      agravo: parsed.agravo,
-      yearStart: parsed.yearStart,
-      yearEnd: parsed.yearEnd,
-      municipio: parsed.municipio,
-      gve: parsed.gve,
-    });
-  }
-
   const groupField = parsed.dimension;
   const banks2 = Array.from(new Set(rows.map((row) => String(row.source_bank ?? "")))).join(", ") || "nao identificado";
   const agravos = Array.from(new Set(rows.map((row) => String(row.agravo ?? "")).filter(Boolean))).slice(0, 5).join(", ") || "nao informado";
   const quality = buildQualityFindings(rows);
+  const unknownPositiveRows = rows.filter((row) => row.source_bank === "nottraconet" && toNonNegativeNumber(getRawValue(row, consolidatedPositiveFieldCandidates)?.value) == null).length;
+  if (unknownPositiveRows) throw new Error(`${unknownPositiveRows} linha(s) do NOTTRACONET sem quantidade válida de positivos. Revise o mapeamento na aba Qualidade dos Dados antes de somar casos.`);
   const timeLabel = parsed.yearStart ? `${parsed.yearStart} a ${parsed.yearEnd ?? parsed.yearStart}` : "todo o cache";
 
   // Pivot table: dimension (rows) × year (columns)
@@ -441,7 +445,7 @@ export async function runSinanTracomaAnalysis(question: string) {
     for (const row of rows) {
       const label = resolveGroupLabel(row, groupField);
       const rawAno = Number(row.ano ?? 0);
-      const ano = (rawAno > 2000 && rawAno <= curYear + 1) ? rawAno : NULL_YEAR;
+      const ano = tracomaYear(rawAno, curYear) ?? NULL_YEAR;
       if (!yearGroups.has(label)) yearGroups.set(label, new Map());
       yearGroups.get(label)!.set(ano, (yearGroups.get(label)!.get(ano) ?? 0) + sinanCaseWeight(row));
       if (ano !== NULL_YEAR) allYears.add(ano);
@@ -480,10 +484,10 @@ export async function runSinanTracomaAnalysis(question: string) {
     return {
       question,
       parsed,
-      metricLabel: "Casos SINAN Tracoma",
+      metricLabel: parsed.bank === "traconet" ? "Registros individuais TRACONET" : "Positivos consolidados NOTTRACONET",
       timeLabel,
       columns: [dimLabel, ...yearColKeys.map(String), "Total"],
-      rows: pivotRows,
+      rows: rows.length ? pivotRows : [],
       quality,
       interpretation: [
         `Tabela cruzada: ${dimLabel} nas linhas, anos nas colunas. Total no período: ${grandTotal} caso(s).`,
@@ -509,10 +513,10 @@ export async function runSinanTracomaAnalysis(question: string) {
   return {
     question,
     parsed,
-    metricLabel: "Casos SINAN Tracoma",
+    metricLabel: parsed.bank === "traconet" ? "Registros individuais TRACONET" : "Positivos consolidados NOTTRACONET",
     timeLabel,
     columns: [labelForDimension(groupField), "Valor"],
-    rows: [...resultRows, totalRow],
+    rows: rows.length ? [...resultRows, totalRow] : [],
     quality,
     interpretation: [
       `Foram considerados ${totalCases} caso(s) SINAN Tracoma em ${rows.length} linha(s) do cache.`,
@@ -579,10 +583,9 @@ function labelForDimension(dimension: string) {
 // GVE não vem no DBF do SINAN — deriva sempre pela tabela autorizada (código IBGE ou nome)
 // O campo row.gve bruto pode conter nome de município (dado incorreto do DBF) — ignorado
 function resolveGroupLabel(row: Record<string, unknown>, groupField: string): string {
+  if (groupField === "municipio") return tracomaMunicipality(row).nome;
   if (groupField === "gve") {
-    const mun = String(row.municipio ?? "");
-    const derived = gvePorCodigo(mun) ?? gvePorNomeMunicipio(mun);
-    return derived ?? "Nao informado";
+    return tracomaMunicipality(row).gve;
   }
   const direct = row[groupField];
   if (direct != null && String(direct).trim()) return String(direct).trim();
@@ -592,6 +595,8 @@ function resolveGroupLabel(row: Record<string, unknown>, groupField: string): st
 // ── Cross-bank divergence + deep quality audit ────────────────────────────────
 
 export interface SinanAuditResult {
+  missingData?: boolean;
+  message?: string;
   totalTraconet: number;
   totalNottraconetRows: number;
   totalNottraconet: number;
@@ -709,7 +714,7 @@ function rawObject(row: Record<string, unknown>): Record<string, unknown> {
   return row.raw && typeof row.raw === "object" ? row.raw as Record<string, unknown> : {};
 }
 
-function clinicalFormsFromAuditRow(row: Record<string, unknown>): ClinicalForm[] {
+export function clinicalFormsFromAuditRow(row: Record<string, unknown>): ClinicalForm[] {
   if (row.source_bank === "traconet") {
     const clinical = deriveTraconetClinicalForms(rawObject(row));
     if (clinical.fieldsSeen) return clinical.forms;
@@ -729,9 +734,7 @@ function getRawValue(row: Record<string, unknown>, candidates: string[]) {
   for (const key of keys) {
     const normalizedKey = normalize(key);
     const match = normalizedCandidates.find((candidate) => (
-      normalizedKey === candidate ||
-      normalizedKey.startsWith(candidate) ||
-      candidate.startsWith(normalizedKey)
+      normalizedKey === candidate
     ));
     if (match && raw[key] != null && String(raw[key]).trim() !== "") return { key, value: raw[key] };
   }
@@ -739,13 +742,7 @@ function getRawValue(row: Record<string, unknown>, candidates: string[]) {
 }
 
 function toNonNegativeNumber(value: unknown): number | null {
-  if (value == null) return null;
-  const text = String(value).trim();
-  const normalized = text.includes(",")
-    ? text.replace(/\./g, "").replace(",", ".")
-    : text.replace(/(?<=\d)\.(?=\d{3}(\D|$))/g, "");
-  const n = Number(normalized);
-  return Number.isFinite(n) && n >= 0 ? n : null;
+  return tracomaCount(value);
 }
 
 function scorePossibleExaminedField(key: string) {
@@ -761,18 +758,11 @@ function scorePossibleExaminedField(key: string) {
 }
 
 function getPossibleExaminedValue(row: Record<string, unknown>) {
-  const direct = getRawValue(row, consolidatedMetricCandidates.examinados);
+  const direct = getRawValue(row, [...TRACOMA_EXAMINED_FIELDS]);
   const directValue = direct ? toNonNegativeNumber(direct.value) : null;
   if (direct && directValue != null) return { key: direct.key, value: directValue, inferred: false };
 
-  const raw = rawObject(row);
-  const candidates = Object.entries(raw)
-    .map(([key, value]) => ({ key, value: toNonNegativeNumber(value), score: scorePossibleExaminedField(key) }))
-    .filter((item): item is { key: string; value: number; score: number } => item.value != null && item.value > 0 && item.score >= 60)
-    .sort((a, b) => b.score - a.score || b.value - a.value);
-
-  const found = candidates[0];
-  return found ? { key: `${found.key} (inferido)`, value: found.value, inferred: true } : null;
+  return null;
 }
 
 function sinanCaseWeight(row: Record<string, unknown>): number {
@@ -792,7 +782,7 @@ function resolveAuditYear(row: Record<string, unknown>): number | null {
 
 function isValidAuditYear(row: Record<string, unknown>, currentYear: number) {
   const ano = resolveAuditYear(row);
-  return ano != null && Number.isFinite(ano) && ano >= 1975 && ano <= currentYear + 1;
+  return tracomaYear(ano, currentYear) != null;
 }
 
 function isPositiveTraconetCase(row: Record<string, unknown>) {
@@ -867,7 +857,7 @@ export async function auditarSinanTracoma(opts?: {
   yearEnd?: number;
 }): Promise<SinanAuditResult> {
   const supabase = createAdminClient();
-  const municipioFilter = resolveMunicipioAuditFilter(opts?.municipio);
+  validateTracomaFilters(opts ?? {});
 
   async function fetchAuditRows(bank: SinanTracomaBank, columns: string) {
     const pageSize = 1000;
@@ -878,9 +868,9 @@ export async function auditarSinanTracoma(opts?: {
         .from("sinan_tracoma_rows")
         .select(columns)
         .eq("source_bank", bank)
+        .order("id")
         .range(from, from + pageSize - 1);
 
-      if (municipioFilter) query = query.ilike("municipio", `%${municipioFilter}%`);
       if (opts?.yearStart) query = query.gte("ano", opts.yearStart);
       if (opts?.yearEnd) query = query.lte("ano", opts.yearEnd);
 
@@ -892,53 +882,13 @@ export async function auditarSinanTracoma(opts?: {
       if (page.length < pageSize) break;
     }
 
-    return rows;
+    return rows.filter((row) => matchesTracomaGeography(row, opts));
   }
 
-  // Queries separadas por banco para evitar truncamento por max_rows do PostgREST.
-  // TRACONET = casos individuais (TF/TT/sexo/idade/tratamento)
-  // NOTTRACONET = consolidado/agregados (nº examinados e positivos por localidade)
-  let tcQ = supabase
-    .from("sinan_tracoma_rows")
-    .select("row_key, source_bank, agravo, ano, municipio, gve, drs, classificacao, criterio, evolucao, tratamento, conclusao, raw")
-    .eq("source_bank", "traconet");
-  if (municipioFilter) tcQ = tcQ.ilike("municipio", `%${municipioFilter}%`);
-  if (opts?.yearStart) tcQ = tcQ.gte("ano", opts.yearStart);
-  if (opts?.yearEnd)   tcQ = tcQ.lte("ano", opts.yearEnd);
-
-  let ntcQ = supabase
-    .from("sinan_tracoma_rows")
-    .select("row_key, source_bank, ano, municipio, gve, raw")
-    .eq("source_bank", "nottraconet");
-  if (municipioFilter) ntcQ = ntcQ.ilike("municipio", `%${municipioFilter}%`);
-  if (opts?.yearStart) ntcQ = ntcQ.gte("ano", opts.yearStart);
-  if (opts?.yearEnd)   ntcQ = ntcQ.lte("ano", opts.yearEnd);
-
-  const [tcResult, ntcResult] = await Promise.all([
-    tcQ.limit(200000),
-    ntcQ.limit(200000),
-  ]);
-
-  if (tcResult.error) throw new Error(`SINAN auditoria (TRACONET): ${tcResult.error.message}`);
-  if (ntcResult.error) throw new Error(`SINAN auditoria (NOTTRACONET): ${ntcResult.error.message}`);
-
-  let traconetRows    = (tcResult.data  ?? []) as Array<Record<string, unknown>>;
-  let nottraconetRows = (ntcResult.data ?? []) as Array<Record<string, unknown>>;
-
-  [traconetRows, nottraconetRows] = await Promise.all([
+  const [traconetRows, nottraconetRows] = await Promise.all([
     fetchAuditRows("traconet", "row_key, source_bank, agravo, ano, municipio, gve, drs, classificacao, criterio, evolucao, tratamento, conclusao, raw"),
     fetchAuditRows("nottraconet", "row_key, source_bank, ano, municipio, gve, raw")
   ]);
-
-  if (opts?.gve) {
-    const selectedGve = opts.gve;
-    const inGve = (row: Record<string, unknown>) => {
-      const rowGve = toStringOrNull(row.gve) ?? gvePorCodigo(row.municipio as string);
-      return rowGve === selectedGve;
-    };
-    traconetRows = traconetRows.filter(inGve);
-    nottraconetRows = nottraconetRows.filter(inGve);
-  }
 
   // Extrai o total de casos positivos de uma linha do NOTTRACONET (campo NU_CASOPOS do raw).
   // Cada linha NOTTRACONET é um relatório consolidado — NU_CASOPOS = nº de casos positivos.
@@ -963,15 +913,7 @@ export async function auditarSinanTracoma(opts?: {
   }
 
   function resolveGveBasic(r: Record<string, unknown>): string {
-    return (r.gve ? String(r.gve).trim() : null)
-      ?? gvePorCodigo(r.municipio as string)
-      ?? "";
-  }
-
-  if (opts?.gve) {
-    const wantedGve = normalizeText(opts.gve);
-    traconetRows = traconetRows.filter((row) => normalizeText(resolveGveBasic(row)).includes(wantedGve));
-    nottraconetRows = nottraconetRows.filter((row) => normalizeText(resolveGveBasic(row)).includes(wantedGve));
+    return tracomaMunicipality(r).gve;
   }
 
   const currentYear = new Date().getFullYear();
@@ -1160,7 +1102,7 @@ export async function auditarSinanTracoma(opts?: {
   function countTraconetByKey(rs: Array<Record<string, unknown>>) {
     const m = new Map<string, number>();
     for (const r of rs) {
-      const key = `${normMunicipio(r.municipio)}|${resolveAuditYear(r) ?? "?"}`;
+      const key = `${tracomaMunicipality(r).codigo || normMunicipio(r.municipio)}|${resolveAuditYear(r) ?? "?"}`;
       m.set(key, (m.get(key) ?? 0) + 1);
     }
     return m;
@@ -1168,7 +1110,7 @@ export async function auditarSinanTracoma(opts?: {
   function countNottraconetByKey(rs: Array<Record<string, unknown>>) {
     const m = new Map<string, number>();
     for (const r of rs) {
-      const key = `${normMunicipio(r.municipio)}|${resolveAuditYear(r) ?? "?"}`;
+      const key = `${tracomaMunicipality(r).codigo || normMunicipio(r.municipio)}|${resolveAuditYear(r) ?? "?"}`;
       m.set(key, (m.get(key) ?? 0) + ntcCasoPos(r));
     }
     return m;
@@ -1179,16 +1121,17 @@ export async function auditarSinanTracoma(opts?: {
   // por isso usa lookup estático pelo código IBGE armazenado em r.municipio.
   const gvePorMunicipio = new Map<string, string>();
   for (const r of [...traconetComparableRows, ...nottraconetComparableRows]) {
-    const mun = normMunicipio(r.municipio);
+    const mun = tracomaMunicipality(r).codigo || normMunicipio(r.municipio);
     if (!gvePorMunicipio.has(mun)) {
-      const gve = (r.gve ? String(r.gve).trim() : null)
-        ?? gvePorCodigo(r.municipio as string);
+      const gve = tracomaMunicipality(r).gve;
       if (gve) gvePorMunicipio.set(mun, gve);
     }
   }
 
   const traconetMap    = countTraconetByKey(traconetComparableRows);
   const nottraconetMap = countNottraconetByKey(nottraconetComparableRows);
+  const incompleteKeys = new Set(nottraconetComparableRows.filter((row) => toNonNegativeNumber(getRawValue(row, consolidatedPositiveFieldCandidates)?.value) == null).map((row) => `${tracomaMunicipality(row).codigo || normMunicipio(row.municipio)}|${resolveAuditYear(row) ?? "?"}`));
+  for (const key of incompleteKeys) { traconetMap.delete(key); nottraconetMap.delete(key); }
   const allKeys = new Set([...traconetMap.keys(), ...nottraconetMap.keys()]);
 
   const comparisonsByMunicipalityYear: SinanAuditResult["comparisonsByMunicipalityYear"] = [];
@@ -1239,10 +1182,7 @@ export async function auditarSinanTracoma(opts?: {
   // ── Por GVE ───────────────────────────────────────────────────────────────
   // r.gve é null em ambos os bancos; usar lookup estático pelo código IBGE em r.municipio
   function resolveGve(r: Record<string, unknown>): string {
-    return (r.gve ? String(r.gve).trim() : null)
-      ?? gvePorCodigo(r.municipio as string)
-      ?? gvePorMunicipio.get(normMunicipio(r.municipio))
-      ?? "Não informado";
+    return tracomaMunicipality(r).gve;
   }
   function countByGve(rs: Array<Record<string, unknown>>, increment: (r: Record<string, unknown>) => number) {
     const m = new Map<string, number>();
@@ -1252,8 +1192,9 @@ export async function auditarSinanTracoma(opts?: {
     }
     return m;
   }
-  const tcGveMap  = countByGve(traconetComparableRows, () => 1);
-  const ntcGveMap = countByGve(nottraconetComparableRows, ntcCasoPos);
+  const comparableKey = (row: Record<string, unknown>) => !incompleteKeys.has(`${tracomaMunicipality(row).codigo || normMunicipio(row.municipio)}|${resolveAuditYear(row) ?? "?"}`);
+  const tcGveMap = countByGve(traconetComparableRows.filter(comparableKey), () => 1);
+  const ntcGveMap = countByGve(nottraconetComparableRows.filter(comparableKey), ntcCasoPos);
   const allGves   = new Set([...tcGveMap.keys(), ...ntcGveMap.keys()]);
   const divergencesByGve: SinanAuditResult["divergencesByGve"] = Array.from(allGves).map((gve) => {
     const tc   = tcGveMap.get(gve)  ?? 0;
@@ -1270,7 +1211,7 @@ export async function auditarSinanTracoma(opts?: {
     "classificacao", "criterio", "tratamento", "conclusao", "evolucao",
   ];
   const fieldCompleteness: SinanAuditResult["fieldCompleteness"] = {};
-  const baseRows = traconetRows.length > 0 ? traconetRows : nottraconetRows; // fallback se só houver um banco
+  const baseRows = traconetRows;
   for (const f of fieldsTraconet) {
     const filled = baseRows.filter((r) => (
       f === "classificacao"
@@ -1405,14 +1346,14 @@ export async function auditarSinanTracoma(opts?: {
       "Sem forma clinica positiva",
       "Critica",
       "FORMA_TF/FORMA_TI/FORMA_TS/FORMA_TT/FORMA_CO",
-      "Corrigir forma clinica ou remover da base de casos se todas as formas forem negativas."
+      "Conferir preenchimento e classificação com a equipe responsável na fonte; ausência de forma mapeada não autoriza excluir um registro."
     )),
     ...ttSemTsRows.map((row) => correctionRecord(
       row,
       "TT sem TS associado",
-      "Critica",
+      "Media",
       "FORMA_TT/FORMA_TS",
-      "Revisar classificacao clinica: TT isolado sugere erro ou preenchimento incompleto."
+      "Conferir graduação e contexto clínico com a equipe responsável; TT sem TS mapeado não confirma erro de classificação."
     )),
     ...tfRows.filter((r) => isBlank(r.tratamento)).map((row) => correctionRecord(
       row,
@@ -1472,7 +1413,7 @@ export async function auditarSinanTracoma(opts?: {
   if (altoDivergencia.length > 0) {
     const top3 = altoDivergencia.slice(0, 3).map((d) => {
       const tipo = d.diff > 0
-        ? `positivos consolidados(${d.nottraconet}) > individuais(${d.traconet}): subregistro de casos individuais`
+        ? `positivos consolidados(${d.nottraconet}) > individuais(${d.traconet}): conferir critérios de inclusão, período e completude`
         : `individuais(${d.traconet}) > positivos consolidados(${d.nottraconet}): possivel duplicidade ou ausencia no consolidado`;
       return `${d.municipio} ${d.ano}: ${tipo}`;
     }).join("; ");
@@ -1498,13 +1439,13 @@ export async function auditarSinanTracoma(opts?: {
   }
   if (casosSemFormaPositiva > 0) {
     const pct = traconetRows.length ? Math.round((casosSemFormaPositiva / traconetRows.length) * 100) : 0;
-    rec.push(`${casosSemFormaPositiva} caso(s) individual(is) (${pct}%) sem TF/TI/TS/TT/CO positivo. Caso de tracoma sem nenhuma forma clinica compativel deve ser revisado na fonte; se todas as formas forem negativas, nao deveria permanecer como caso notificado de tracoma.`);
+    rec.push(`${casosSemFormaPositiva} registro(s) individual(is) (${pct}%) sem TF/TI/TS/TT/CO positivo mapeado. Conferir os campos na fonte e a classificação com a equipe responsável; o painel não determina exclusão ou diagnóstico.`);
   }
-  if (ttSemTs > 0) rec.push(`${ttSemTs} caso(s) TRACONET com TT sem TS associado. Pela regra de qualidade adotada, TT isolado deve ser revisado como possivel erro de classificacao/digitacao clinica.`);
-    if (tfSemTratamento > 0) rec.push(`${tfSemTratamento} caso(s) TRACONET classificado(s) como TF sem tratamento registrado. TF ativo exige azitromicina — verificar se foi prescrita e registrada.`);
+  if (ttSemTs > 0) rec.push(`${ttSemTs} registro(s) TRACONET com TT sem TS mapeado. Conferir graduação e contexto clínico; o cruzamento isolado não confirma erro de classificação.`);
+    if (tfSemTratamento > 0) rec.push(`${tfSemTratamento} registro(s) TRACONET com TF sem tratamento mapeado. Confirmar a informação e a conduta com a equipe responsável conforme o protocolo vigente; ausência de campo não prova ausência de tratamento.`);
   if (ttSemCircurgia > 0)  rec.push(`${ttSemCircurgia} caso(s) TRACONET com TT confirmado sem encaminhamento para cirurgia/epilation. TT requer referencia oftalmologica — risco de progressao para cegueira.`);
   if (semConclusao > 0)    rec.push(`${semConclusao} caso(s) individual(is) sem conclusao/encerramento preenchido.`);
-  if (anoImpossivel > 0)   rec.push(`${anoImpossivel} registro(s) com ano impossível (< 1975 ou > ${currentYear + 1}) foram retirados das tabelas comparativas e devem ser corrigidos na fonte.`);
+  if (anoImpossivel > 0) rec.push(`${anoImpossivel} registro(s) com ano ausente, inválido, anterior a 1975 ou posterior a ${currentYear} foram retirados das tabelas comparativas e devem ser revisados na fonte.`);
   const camposCriticos = Object.entries(fieldCompleteness)
     .filter(([, v]) => v.pct < 50 && v.total > 0)
     .map(([k, v]) => `${k}: ${v.pct}%`);
@@ -1570,9 +1511,10 @@ export async function auditarSinanTracoma(opts?: {
   if (!traconetTemForma && nottraconetTemForma && traconetRows.length > 0 && nottraconetRows.length > 0) {
     // Bancos invertidos: bloqueia análise para evitar resultados com dados errados.
     // Retorna apenas o diagnóstico + aviso — todas as métricas ficam zeradas.
-    const aviso = "ATENÇÃO: Os bancos parecem estar INVERTIDOS na importação. TRACONET não tem campos FORMA_TF/TT mas NOTTRACONET tem. Execute o SQL de correção no Supabase para trocar os labels antes de prosseguir.";
+    const aviso = "As colunas de uma amostra sugerem possível troca dos bancos na importação. A análise foi suspensa. Revise os arquivos originais e o mapeamento antes de reimportar; a amostra isolada não confirma inversão.";
     const emptyMetrics = { value: 0, field: null, rowsMissing: 0 };
     return {
+      missingData: true, message: aviso,
       totalTraconet: 0, totalNottraconetRows: 0, totalNottraconet: 0,
       totalTraconetComparable: 0, totalTraconetPositive: 0,
       totalTraconetInvalidYear: 0, totalNottraconetInvalidYear: 0,
@@ -1636,167 +1578,90 @@ export async function auditarSinanTracoma(opts?: {
   };
 }
 
-// ── Overview aggregado para dashboard de gráficos ────────────────────────────
-
+// Série histórica: mantém os bancos separados para evitar contar a mesma pessoa duas vezes.
 export type TracomaOverviewYear = {
   ano: number;
-  traconet: number;
-  positivos: number;
-  examinados: number;
-  tratados: number;
+  traconet: number | null;
+  positivos: number | null;
+  examinados: number | null;
+  tratados: number | null;
   positividade: number | null;
-  tf: number;
-  ti: number;
-  ts: number;
-  tt: number;
-  co: number;
+  tf: number; ti: number; ts: number; tt: number; co: number;
 };
-
 export type TracomaOverview = {
   byYear: TracomaOverviewYear[];
   byGveYear: Array<{ gve: string; ano: number; casos: number }>;
   totalTraconet: number;
-  totalPositivos: number;
-  totalExaminados: number;
+  totalPositivos: number | null;
+  totalExaminados: number | null;
   positividade: number | null;
   anosComDados: number[];
+  warnings: string[];
 };
 
-export async function getTracomaOverview(opts?: {
-  gve?: string;
-  municipio?: string;
-  yearStart?: number;
-  yearEnd?: number;
-}): Promise<TracomaOverview> {
-  const supabase = createAdminClient();
-  const pageSize = 1000;
-
-  async function fetchBank(bank: string, cols: string): Promise<Array<Record<string, unknown>>> {
-    const rows: Array<Record<string, unknown>> = [];
-    for (let from = 0; ; from += pageSize) {
-      let q = supabase.from("sinan_tracoma_rows").select(cols).eq("source_bank", bank).range(from, from + pageSize - 1);
-      if (opts?.municipio) q = q.ilike("municipio", `%${opts.municipio}%`);
-      if (opts?.yearStart) q = q.gte("ano", opts.yearStart);
-      if (opts?.yearEnd) q = q.lte("ano", opts.yearEnd);
-      const { data, error } = await q;
-      if (error) throw new Error(`SINAN overview (${bank}): ${error.message}`);
-      const page = (data ?? []) as unknown as Array<Record<string, unknown>>;
-      rows.push(...page);
-      if (page.length < pageSize) break;
-    }
-    return rows;
-  }
-
-  const [tcRaw, ntcRaw] = await Promise.all([
-    fetchBank("traconet", "source_bank, ano, municipio, gve, classificacao, raw"),
-    fetchBank("nottraconet", "source_bank, ano, municipio, gve, raw"),
-  ]);
-
-  const currentYear = new Date().getFullYear();
-
-  // Filtro GVE client-side (campo derivado, não está no DB)
-  const inGve = (r: Record<string, unknown>) => {
-    if (!opts?.gve) return true;
-    return resolveGroupLabel(r, "gve").toUpperCase() === opts.gve.trim().toUpperCase();
-  };
-  const tcRows = tcRaw.filter(inGve);
-  const ntcRows = ntcRaw.filter(inGve);
-
-  // ── Agregação TRACONET por ano ──
-  type TcAgg = { casos: number; tf: number; ti: number; ts: number; tt: number; co: number };
-  const tcByYear = new Map<number, TcAgg>();
-  const tcByGveYear = new Map<string, Map<number, number>>();
-
-  for (const row of tcRows) {
-    if (!isValidAuditYear(row, currentYear)) continue;
-    const ano = resolveAuditYear(row)!;
-
-    const agg = tcByYear.get(ano) ?? { casos: 0, tf: 0, ti: 0, ts: 0, tt: 0, co: 0 };
-    agg.casos += 1;
-    for (const f of clinicalFormsFromAuditRow(row)) {
-      agg[f.toLowerCase() as "tf" | "ti" | "ts" | "tt" | "co"] += 1;
-    }
-    tcByYear.set(ano, agg);
-
-    const gve = resolveGroupLabel(row, "gve");
-    if (!tcByGveYear.has(gve)) tcByGveYear.set(gve, new Map());
-    const gveMap = tcByGveYear.get(gve)!;
-    gveMap.set(ano, (gveMap.get(ano) ?? 0) + 1);
-  }
-
-  // ── Agregação NOTTRACONET por ano ──
-  type NtcAgg = { positivos: number; examinados: number; tratados: number; tf: number; ti: number; ts: number; tt: number; co: number };
-  const ntcByYear = new Map<number, NtcAgg>();
-
-  for (const row of ntcRows) {
-    if (!isValidAuditYear(row, currentYear)) continue;
-    const ano = resolveAuditYear(row)!;
-
-    const agg = ntcByYear.get(ano) ?? { positivos: 0, examinados: 0, tratados: 0, tf: 0, ti: 0, ts: 0, tt: 0, co: 0 };
-
-    const posFound = getRawValue(row, consolidatedPositiveFieldCandidates);
-    agg.positivos += posFound ? toNonNegativeNumber(posFound.value) ?? 0 : 0;
-
-    const examFound = getPossibleExaminedValue(row);
-    agg.examinados += examFound?.value ?? 0;
-
-    const tratFound = getRawValue(row, consolidatedMetricCandidates.tratados);
-    agg.tratados += tratFound ? toNonNegativeNumber(tratFound.value) ?? 0 : 0;
-
-    for (const f of ["tf", "ti", "ts", "tt", "co"] as const) {
-      const fFound = getRawValue(row, consolidatedMetricCandidates[f]);
-      agg[f] += fFound ? toNonNegativeNumber(fFound.value) ?? 0 : 0;
-    }
-
-    ntcByYear.set(ano, agg);
-  }
-
-  // ── Merge por ano ──
-  const allYears = Array.from(new Set([...tcByYear.keys(), ...ntcByYear.keys()])).sort((a, b) => a - b);
-  const byYear: TracomaOverviewYear[] = allYears.map((ano) => {
-    const tc = tcByYear.get(ano);
-    const ntc = ntcByYear.get(ano);
-    const examinados = ntc?.examinados ?? 0;
-    const positivos = ntc?.positivos ?? 0;
+export function aggregateTracomaOverview(tcRows: Array<Record<string, unknown>>, ntcRows: Array<Record<string, unknown>>): TracomaOverview {
+  const validTc = tcRows.filter((row) => isValidAuditYear(row, new Date().getFullYear()));
+  const validNtc = ntcRows.filter((row) => isValidAuditYear(row, new Date().getFullYear()));
+  const years = [...new Set([...validTc, ...validNtc].map((row) => resolveAuditYear(row)!))].sort((a, b) => a - b);
+  const warnings: string[] = [];
+  const invalidYears = tcRows.length + ntcRows.length - validTc.length - validNtc.length;
+  if (invalidYears) warnings.push(`${invalidYears} registro(s) com ano ausente, inválido ou futuro foram excluídos da série.`);
+  let invalidPairs = 0;
+  const byYear = years.map((ano): TracomaOverviewYear => {
+    const tc = validTc.filter((row) => resolveAuditYear(row) === ano);
+    const ntc = validNtc.filter((row) => resolveAuditYear(row) === ano);
+    const sum = (candidates: string[]) => {
+      const metric = sumConsolidatedMetric(ntc, candidates);
+      return ntc.length && !metric.rowsMissing ? metric.value : null;
+    };
+    const positivos = sum(consolidatedPositiveFieldCandidates);
+    const examinados = sum([...TRACOMA_EXAMINED_FIELDS]);
+    const invalidPair = ntc.some((row) => {
+      const pos = toNonNegativeNumber(getRawValue(row, consolidatedPositiveFieldCandidates)?.value);
+      const exam = toNonNegativeNumber(getRawValue(row, [...TRACOMA_EXAMINED_FIELDS])?.value);
+      return pos != null && exam != null && pos > exam;
+    });
+    if (invalidPair) invalidPairs += 1;
+    const forms = { tf: 0, ti: 0, ts: 0, tt: 0, co: 0 };
+    for (const row of tc) for (const form of clinicalFormsFromAuditRow(row)) forms[form.toLowerCase() as keyof typeof forms] += 1;
     return {
-      ano,
-      traconet: tc?.casos ?? 0,
-      positivos,
-      examinados,
-      tratados: ntc?.tratados ?? 0,
-      positividade: examinados > 0 ? (positivos / examinados) * 100 : null,
-      tf: (tc?.tf ?? 0) + (ntc?.tf ?? 0),
-      ti: (tc?.ti ?? 0) + (ntc?.ti ?? 0),
-      ts: (tc?.ts ?? 0) + (ntc?.ts ?? 0),
-      tt: (tc?.tt ?? 0) + (ntc?.tt ?? 0),
-      co: (tc?.co ?? 0) + (ntc?.co ?? 0),
+      ano, traconet: tc.length ? tc.length : null, positivos, examinados,
+      tratados: sum(consolidatedMetricCandidates.tratados),
+      positividade: invalidPair ? null : tracomaPositivity(positivos, examinados),
+      ...forms
     };
   });
-
-  // Top 10 GVEs por total de casos TRACONET
-  const gveTotals = Array.from(tcByGveYear.entries())
-    .map(([gve, m]) => ({ gve, total: Array.from(m.values()).reduce((s, v) => s + v, 0) }))
-    .sort((a, b) => b.total - a.total)
-    .slice(0, 10);
-  const topGveSet = new Set(gveTotals.map((g) => g.gve));
-
-  const byGveYear: Array<{ gve: string; ano: number; casos: number }> = [];
-  for (const [gve, yearMap] of tcByGveYear.entries()) {
-    if (!topGveSet.has(gve)) continue;
-    for (const [ano, casos] of yearMap.entries()) byGveYear.push({ gve, ano, casos });
-  }
-
-  const totalTraconet = tcRows.filter((r) => isValidAuditYear(r, currentYear)).length;
-  const totalPositivos = byYear.reduce((s, r) => s + r.positivos, 0);
-  const totalExaminados = byYear.reduce((s, r) => s + r.examinados, 0);
-
-  return {
-    byYear,
-    byGveYear,
-    totalTraconet,
-    totalPositivos,
-    totalExaminados,
-    positividade: totalExaminados > 0 ? (totalPositivos / totalExaminados) * 100 : null,
-    anosComDados: allYears,
+  const sumTotal = (key: "positivos" | "examinados") => {
+    const metric = sumConsolidatedMetric(validNtc, key === "positivos" ? consolidatedPositiveFieldCandidates : [...TRACOMA_EXAMINED_FIELDS]);
+    return validNtc.length && !metric.rowsMissing ? metric.value : null;
   };
+  const totalPositivos = sumTotal("positivos");
+  const totalExaminados = sumTotal("examinados");
+  if (validNtc.length && (totalPositivos == null || totalExaminados == null)) warnings.push("Totais e taxas incompletos são apresentados como indisponíveis; campos ausentes ou inválidos não são convertidos em zero.");
+  if (invalidPairs) warnings.push(`${invalidPairs} ano(s) contêm consolidado com positivos superiores aos examinados; a positividade foi bloqueada nesses anos e no total.`);
+  warnings.push("As formas clínicas usam somente TRACONET. Um registro pode ter várias formas; a soma das formas pode superar o número de registros.");
+  const gveCounts = new Map<string, { gve: string; ano: number; casos: number }>();
+  for (const row of validTc) {
+    const ano = resolveAuditYear(row)!;
+    const gve = resolveGroupLabel(row, "gve");
+    const key = `${gve}:${ano}`;
+    const current = gveCounts.get(key) ?? { gve, ano, casos: 0 };
+    current.casos += 1;
+    gveCounts.set(key, current);
+  }
+  return {
+    byYear, byGveYear: [...gveCounts.values()], totalTraconet: validTc.length,
+    totalPositivos, totalExaminados,
+    positividade: invalidPairs ? null : tracomaPositivity(totalPositivos, totalExaminados),
+    anosComDados: years, warnings
+  };
+}
+
+export async function getTracomaOverview(opts?: TracomaFilter): Promise<TracomaOverview> {
+  validateTracomaFilters(opts ?? {});
+  const [tcRows, ntcRows] = await Promise.all([
+    fetchSinanRows({ ...opts, bank: "traconet" }),
+    fetchSinanRows({ ...opts, bank: "nottraconet" })
+  ]);
+  return aggregateTracomaOverview(tcRows, ntcRows);
 }

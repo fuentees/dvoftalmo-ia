@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Database, Download, MessageSquareText, RefreshCw, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -9,8 +9,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Textarea } from "@/components/ui/textarea";
 import { listarGvesSp, listarMunicipiosPorGve } from "@/lib/municipios-sp";
 import { AnalysisChart } from "@/components/analysis-chart";
+import { validateTracomaFilters } from "@/lib/tracoma-data";
 
 type AskData = {
+  querySignature?: string;
   question?: string;
   parsed?: Record<string, unknown>;
   metricLabel?: string;
@@ -28,9 +30,7 @@ const guidedQuestions = [
   "Total de casos por GVE no TRACONET dos últimos 5 anos separado por ano",
   "Total de casos por município no NOTTRACONET dos últimos 5 anos separado por ano",
   "Total de casos por ano no TRACONET",
-  "Total de positivos por município no NOTTRACONET",
-  "Casos com forma clínica por ano",
-  "Qualidade dos registros individuais por município"
+  "Total de positivos por município no NOTTRACONET"
 ];
 
 const banks = [
@@ -38,18 +38,10 @@ const banks = [
   { value: "NOTTRACONET", label: "NOTTRACONET consolidado" }
 ];
 
-const indicators = [
-  { value: "Total de casos", label: "Total de casos" },
-  { value: "Total de positivos", label: "Positivos" },
-  { value: "Registros individuais", label: "Registros individuais" },
-  { value: "Qualidade dos registros", label: "Qualidade" }
-];
-
 const dimensions = [
   { value: "por GVE", label: "GVE" },
   { value: "por município", label: "Município" },
-  { value: "por ano", label: "Ano" },
-  { value: "por banco", label: "Banco" }
+  { value: "por ano", label: "Ano" }
 ];
 
 const periods = [
@@ -61,16 +53,6 @@ const periods = [
 ];
 
 const spatialDimensions = new Set(["por GVE", "por município"]);
-
-function buildQuestion(question: string, filters: { gve: string; municipio: string; yearStart: string; yearEnd: string }) {
-  const parts = [question.trim()];
-  if (filters.yearStart && filters.yearEnd) parts.push(`entre ${filters.yearStart} e ${filters.yearEnd}`);
-  else if (filters.yearStart) parts.push(`ano ${filters.yearStart}`);
-  else if (filters.yearEnd) parts.push(`até ${filters.yearEnd}`);
-  if (filters.gve) parts.push(`GVE ${filters.gve}`);
-  if (filters.municipio) parts.push(`município ${filters.municipio}`);
-  return parts.filter(Boolean).join(" ");
-}
 
 function downloadCsv(columns: string[], rows: Array<Record<string, unknown>>) {
   const escape = (value: unknown) => {
@@ -87,31 +69,6 @@ function downloadCsv(columns: string[], rows: Array<Record<string, unknown>>) {
   link.download = `tracoma-consulta-${new Date().toISOString().slice(0, 10)}.csv`;
   link.click();
   URL.revokeObjectURL(link.href);
-}
-
-const POSITIVOS_COLS = ["positivos", "nu_casopos", "nu_cas_pos", "casopos"];
-const EXAMINADOS_COLS = ["examinados", "nu_casoexa", "nu_examina", "casoexa"];
-
-function findCol(columns: string[], candidates: string[]) {
-  return columns.find((c) => candidates.includes(c.toLowerCase().replace(/[^a-z0-9]/g, "")));
-}
-
-function enrichWithPrevalence(
-  columns: string[],
-  rows: Array<Record<string, unknown>>,
-): { columns: string[]; rows: Array<Record<string, unknown>> } {
-  const posCol = findCol(columns, POSITIVOS_COLS);
-  const exaCol = findCol(columns, EXAMINADOS_COLS);
-  if (!posCol || !exaCol || columns.includes("Prevalência (%)")) return { columns, rows };
-
-  const enrichedCols = [...columns, "Prevalência (%)"];
-  const enrichedRows = rows.map((row) => {
-    const pos = Number(row[posCol] ?? 0);
-    const exa = Number(row[exaCol] ?? 0);
-    const prev = exa > 0 ? Number(((pos / exa) * 100).toFixed(1)) : null;
-    return { ...row, "Prevalência (%)": prev != null ? `${prev}%` : "—" };
-  });
-  return { columns: enrichedCols, rows: enrichedRows };
 }
 
 function ResultTable({ columns, rows }: { columns: string[]; rows: Array<Record<string, unknown>> }) {
@@ -151,26 +108,26 @@ type TracomaConsultaViewProps = {
 export function TracomaConsultaView({ externalFilters, hideFilters = false }: TracomaConsultaViewProps = {}) {
   const [question, setQuestion] = useState("Total de casos por GVE no TRACONET dos últimos 5 anos separado por ano");
   const [bank, setBank] = useState("TRACONET");
-  const [indicator, setIndicator] = useState("Total de casos");
   const [dimension, setDimension] = useState("por GVE");
   const [period, setPeriod] = useState("últimos 5 anos");
-  const [gve, setGve] = useState("");
-  const [municipio, setMunicipio] = useState("");
-  const [yearStart, setYearStart] = useState("");
-  const [yearEnd, setYearEnd] = useState("");
+  const [localGve, setGve] = useState("");
+  const [localMunicipio, setMunicipio] = useState("");
+  const [localYearStart, setYearStart] = useState("");
+  const [localYearEnd, setYearEnd] = useState("");
+  const gve = externalFilters?.gve ?? localGve;
+  const municipio = externalFilters?.municipio ?? localMunicipio;
+  const yearStart = externalFilters?.yearStart ?? localYearStart;
+  const yearEnd = externalFilters?.yearEnd ?? localYearEnd;
+  const filters = { gve, municipio, yearStart, yearEnd };
+  const signature = JSON.stringify({ question: question.trim(), filters });
+  let filterError = "";
+  try { validateTracomaFilters(filters); } catch (error) { filterError = (error as Error).message; }
 
   const gveOptions = useMemo(() => listarGvesSp(), []);
   const municipioOptions = useMemo(() => listarMunicipiosPorGve(gve), [gve]);
 
-  useEffect(() => {
-    if (!externalFilters) return;
-    setGve(externalFilters.gve ?? "");
-    setMunicipio(externalFilters.municipio ?? "");
-    setYearStart(externalFilters.yearStart ?? "");
-    setYearEnd(externalFilters.yearEnd ?? "");
-  }, [externalFilters]);
-
   function applyStructuredQuestion() {
+    const indicator = bank === "TRACONET" ? "Registros individuais" : "Total de positivos";
     const isSpatial = spatialDimensions.has(dimension);
     const isMultiYear = period.startsWith("últimos");
     if (isSpatial && isMultiYear) {
@@ -182,25 +139,25 @@ export function TracomaConsultaView({ externalFilters, hideFilters = false }: Tr
     }
   }
 
-  const ask = useMutation<AskData>({
-    mutationFn: async () => {
+  const ask = useMutation<AskData, Error, { question: string; filters: typeof filters; signature: string }>({
+    mutationFn: async (snapshot) => {
       const response = await fetch("/api/sinan-tracoma/pergunta", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: buildQuestion(question, { gve, municipio, yearStart, yearEnd }) })
+        body: JSON.stringify({ question: snapshot.question, filters: snapshot.filters })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Erro ao consultar banco SINAN Tracoma");
-      return data as AskData;
+      return { ...data, querySignature: snapshot.signature } as AskData;
     }
   });
 
-  const rawRows = ask.data?.rows ?? [];
-  const rawColumns = ask.data?.columns ?? Object.keys(rawRows[0] ?? {});
-  const { columns, rows } = enrichWithPrevalence(rawColumns, rawRows);
+  const matchesCurrentQuery = ask.data?.querySignature === signature;
+  const rows = matchesCurrentQuery ? ask.data?.rows ?? [] : [];
+  const columns = ask.data?.columns ?? Object.keys(rows[0] ?? {});
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="min-w-0 space-y-6 p-4 sm:p-6">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
@@ -208,13 +165,14 @@ export function TracomaConsultaView({ externalFilters, hideFilters = false }: Tr
             Consulta ao banco Tracoma
           </CardTitle>
           <CardDescription>
-            Use para montar tabelas por ano, GVE, município, banco, forma clínica, qualidade ou período.
+            Monte contagens de registros individuais do TRACONET ou positivos consolidados do NOTTRACONET por ano, GVE ou município. Os filtros do painel prevalecem sobre o período escrito na pergunta.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {!hideFilters && <div className="grid gap-3 md:grid-cols-4">
             <select
               value={gve}
+              aria-label="GVE da consulta de tracoma"
               onChange={(event) => { setGve(event.target.value); setMunicipio(""); }}
               className="h-9 rounded-md border bg-background px-2 text-sm"
             >
@@ -223,6 +181,7 @@ export function TracomaConsultaView({ externalFilters, hideFilters = false }: Tr
             </select>
             <select
               value={municipio}
+              aria-label="Município da consulta de tracoma"
               onChange={(event) => setMunicipio(event.target.value)}
               className="h-9 rounded-md border bg-background px-2 text-sm"
             >
@@ -232,6 +191,9 @@ export function TracomaConsultaView({ externalFilters, hideFilters = false }: Tr
             <input
               type="number"
               placeholder="Ano início"
+              aria-label="Ano inicial da consulta"
+              min={1975}
+              max={new Date().getFullYear()}
               value={yearStart}
               onChange={(event) => setYearStart(event.target.value)}
               className="h-9 rounded-md border bg-background px-2 text-sm"
@@ -239,29 +201,27 @@ export function TracomaConsultaView({ externalFilters, hideFilters = false }: Tr
             <input
               type="number"
               placeholder="Ano fim"
+              aria-label="Ano final da consulta"
+              min={1975}
+              max={new Date().getFullYear()}
               value={yearEnd}
               onChange={(event) => setYearEnd(event.target.value)}
               className="h-9 rounded-md border bg-background px-2 text-sm"
             />
           </div>}
 
-          <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_1fr_auto]">
+          <div className="grid min-w-0 gap-3 md:grid-cols-[1fr_1fr_1fr_auto]">
             <select
               value={bank}
+              aria-label="Banco da consulta"
               onChange={(event) => setBank(event.target.value)}
               className="h-9 rounded-md border bg-background px-2 text-sm"
             >
               {banks.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
             </select>
             <select
-              value={indicator}
-              onChange={(event) => setIndicator(event.target.value)}
-              className="h-9 rounded-md border bg-background px-2 text-sm"
-            >
-              {indicators.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-            </select>
-            <select
               value={dimension}
+              aria-label="Agrupamento da consulta"
               onChange={(event) => setDimension(event.target.value)}
               className="h-9 rounded-md border bg-background px-2 text-sm"
             >
@@ -269,17 +229,20 @@ export function TracomaConsultaView({ externalFilters, hideFilters = false }: Tr
             </select>
             <select
               value={period}
+              aria-label="Período da consulta"
+              disabled={Boolean(yearStart || yearEnd)}
               onChange={(event) => setPeriod(event.target.value)}
               className="h-9 rounded-md border bg-background px-2 text-sm"
             >
               {periods.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
             </select>
             <Button type="button" variant="outline" onClick={applyStructuredQuestion}>
-              Montar tabela 2×2
+              Montar pergunta
             </Button>
           </div>
 
           <Textarea
+            aria-label="Pergunta sobre os registros de tracoma"
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
             placeholder="Ex.: Total de casos por município no TRACONET"
@@ -302,17 +265,19 @@ export function TracomaConsultaView({ externalFilters, hideFilters = false }: Tr
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Button onClick={() => ask.mutate()} disabled={ask.isPending}>
+            <Button onClick={() => ask.mutate({ question, filters, signature })} disabled={ask.isPending || Boolean(filterError) || !question.trim()}>
               {ask.isPending ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
               Consultar banco
             </Button>
             {rows.length > 0 && (
-              <Button variant="outline" onClick={() => downloadCsv(columns, rows)}>
+              <Button variant="outline" disabled={ask.isPending} onClick={() => downloadCsv(columns, rows)}>
                 <Download className="h-4 w-4" />
                 Exportar CSV
               </Button>
             )}
           </div>
+          {filterError && <p role="alert" className="text-sm text-destructive">{filterError}</p>}
+          {ask.data && !matchesCurrentQuery && <p role="status" className="text-sm text-muted-foreground">Os filtros ou a pergunta mudaram. Consulte novamente para atualizar os resultados.</p>}
 
           {!hideFilters && (gve || municipio || yearStart || yearEnd) && (
             <div className="flex flex-wrap gap-2">
@@ -334,7 +299,7 @@ export function TracomaConsultaView({ externalFilters, hideFilters = false }: Tr
         </Card>
       )}
 
-      {ask.data && (
+      {ask.data && matchesCurrentQuery && !ask.isPending && !ask.isError && (
         <div className="space-y-4">
           <div className="flex flex-wrap gap-2">
             {ask.data.metricLabel && <Badge>{ask.data.metricLabel}</Badge>}

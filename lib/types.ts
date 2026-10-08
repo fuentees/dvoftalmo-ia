@@ -57,10 +57,10 @@ export interface TracomaSurveyResult {
   ttPrevalence: number;
   whoTfThreshold: number;
   whoTtThreshold: number;
-  tfEliminated: boolean;
-  ttEliminated: boolean;
-  azithromycinDoses: number;
-  populationCoverage: number;
+  tfEliminated: boolean | null;
+  ttEliminated: boolean | null;
+  azithromycinDoses: number | null;
+  populationCoverage: number | null;
 }
 
 // Data analysis types

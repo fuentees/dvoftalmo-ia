@@ -154,6 +154,11 @@ export function CevespSyncCard() {
         const text = await file.text();
         const rows = parseCsvClient(text);
         if (rows.length === 0) throw new Error("Arquivo CSV vazio ou formato inválido.");
+        // Sem ID o cache volta a usar chave por hash: duplica registros e bloqueia correções
+        if (!("ID" in rows[0])) {
+          throw new Error("O CSV precisa da coluna ID (exporte a tabela OftalmoNotifica9a60 com todas as colunas).");
+        }
+        const semCreatedAt = !("created_at" in rows[0]) && !("created_at_origem" in rows[0]);
         const batchSize = 500;
         let done = 0;
         let duplicateRows = 0;
@@ -178,7 +183,8 @@ export function CevespSyncCard() {
           : "";
         setMsg({
           type: "success",
-          text: `${done.toLocaleString("pt-BR")} registros gravados de ${rows.length.toLocaleString("pt-BR")} lidos.${skippedText} O agente agora usa dados reais do CEVESP.`
+          text: `${done.toLocaleString("pt-BR")} registros gravados de ${rows.length.toLocaleString("pt-BR")} lidos.${skippedText} O agente agora usa dados reais do CEVESP.` +
+            (semCreatedAt ? " Atenção: o CSV não tem a coluna created_at; a auditoria não consegue sugerir a semana certa para semanas trocadas, em branco ou com ano errado." : "")
         });
       } else {
         const text = await file.text();

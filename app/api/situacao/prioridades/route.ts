@@ -73,7 +73,7 @@ async function loadAlerts(): Promise<AlertRow[]> {
     .eq("acknowledged", false)
     .order("created_at", { ascending: false })
     .limit(20);
-  if (error) return [];
+  if (error) throw new Error("Não foi possível consultar os alertas.");
   return (data ?? []) as AlertRow[];
 }
 
@@ -87,6 +87,9 @@ async function buildPriorities(filters: { gve?: string; municipio?: string; year
     auditarSinanTracoma(filters),
     buildSinanTracomaRates(filters)
   ]);
+  const sources = ["Alertas", "CEVESP", "Qualidade CEVESP", "SINAN", "Taxas SINAN"];
+  const unavailableSources = [alerts, kpisResult, qualityResult, sinanResult, ratesResult]
+    .flatMap((result, index) => result.status === "rejected" ? [sources[index]] : []);
 
   if (alerts.status === "fulfilled") {
     for (const alert of alerts.value.filter((item) => !filters.gve || item.gve === filters.gve)) {
@@ -237,7 +240,8 @@ async function buildPriorities(filters: { gve?: string; municipio?: string; year
 
   return {
     all: sorted,
-    priorities: sorted.slice(0, 12)
+    priorities: sorted.slice(0, 12),
+    unavailableSources
   };
 }
 
@@ -253,10 +257,12 @@ export async function GET(req: NextRequest) {
     yearStart: searchParams.get("yearStart") ? Number(searchParams.get("yearStart")) : undefined,
     yearEnd: searchParams.get("yearEnd") ? Number(searchParams.get("yearEnd")) : undefined
   };
-  const { all, priorities } = await buildPriorities(filters);
+  const { all, priorities, unavailableSources } = await buildPriorities(filters);
   return NextResponse.json({
     generatedAt: new Date().toISOString(),
     priorities,
+    partial: unavailableSources.length > 0,
+    unavailableSources,
     summary: {
       total: all.length,
       critica: all.filter((item) => item.level === "critica").length,

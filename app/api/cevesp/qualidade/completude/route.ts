@@ -1,3 +1,4 @@
+import { parseCevespFilters } from "@/lib/cevesp-filters";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/supabase/auth";
@@ -45,9 +46,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const { searchParams } = new URL(req.url);
-    const anoParam = searchParams.get("ano");
-    const ano = anoParam ? Number(anoParam) : undefined;
-    const gve = searchParams.get("gve") ?? undefined;
+    const { ano, anoFim, gve, municipio } = parseCevespFilters(searchParams);
 
     const admin = createAdminClient();
 
@@ -59,7 +58,7 @@ export async function GET(req: NextRequest) {
       admin.rpc("cevesp_completude_ano",    { p_gve: gve ?? null }),
     ]);
 
-    if (!fieldsRes.error && fieldsRes.data) {
+    if (!municipio && (!anoFim || anoFim === ano) && !fieldsRes.error && fieldsRes.data && !gveRes.error && !anoRes.error) {
       const d = fieldsRes.data as Record<string, number>;
       const total = Number(d.total ?? 0);
 
@@ -76,11 +75,13 @@ export async function GET(req: NextRequest) {
 
       const byGve = (!gveRes.error && Array.isArray(gveRes.data))
         ? (gveRes.data as Array<{ gve: string; total_rows: number; avg_pct: number; critical_fields: number }>)
+            .filter((r) => !gve || r.gve === gve)
             .map((r) => ({ gve: r.gve, totalRows: r.total_rows, avgPct: r.avg_pct, criticalFields: r.critical_fields }))
         : [];
 
       const byYear = (!anoRes.error && Array.isArray(anoRes.data))
         ? (anoRes.data as Array<{ ano: number; total_rows: number; avg_pct: number }>)
+            .filter((r) => !ano || r.ano === ano)
             .map((r) => ({ ano: r.ano, totalRows: r.total_rows, avgPct: r.avg_pct }))
         : [];
 
@@ -96,8 +97,12 @@ export async function GET(req: NextRequest) {
       let q = admin
         .from("cevesp_notificacoes")
         .select(selectCols)
+        .order("id")
         .range(from, from + pageSize - 1);
-      if (ano) q = q.eq('"ANO"', ano) as typeof q;
+      if (ano && anoFim && anoFim > ano) q = q.gte("ANO", ano).lte("ANO", anoFim) as typeof q;
+      else if (ano) q = q.eq("ANO", ano) as typeof q;
+      else if (anoFim) q = q.lte("ANO", anoFim) as typeof q;
+      if (municipio) q = q.ilike("MunicipioNotificacao", municipio) as typeof q;
       if (gve) q = q.eq('"GVE_NOME"', gve) as typeof q;
       const { data, error } = await q;
       if (error) throw new Error(`Erro de completude: ${error.message}`);
@@ -140,8 +145,7 @@ export async function GET(req: NextRequest) {
 
     const yearGroups = new Map<number, Array<Record<string, unknown>>>();
     for (const row of allRows) {
-      const raw = String(row["DtNotificacao"] ?? "");
-      const year = raw ? new Date(raw).getFullYear() : NaN;
+      const year = Number(row["ANO"]);
       const key = isNaN(year) ? 0 : year;
       if (!yearGroups.has(key)) yearGroups.set(key, []);
       yearGroups.get(key)!.push(row);
@@ -158,6 +162,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ fieldCompleteness, totalRows: total, byGve, byYear });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    if (msg.startsWith("Filtro ") || msg.startsWith("O ano ")) return NextResponse.json({ error: msg }, { status: 400 });
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

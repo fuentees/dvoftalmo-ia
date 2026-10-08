@@ -116,7 +116,7 @@ const negTotal = mapInvalidCacheRow({
 assert.ok(negTotal !== null, "TotalCaso negativo deve ser inválido");
 assert.ok(negTotal!.issue.startsWith("Total de casos negativo"), `'${negTotal!.issue}'`);
 assert.equal(negTotal!.suggestedField, "TotalCaso");
-assert.equal(negTotal!.suggestedValue, "0");
+assert.equal(negTotal!.suggestedValue, "", "Não inventa zero casos como correção de contagem negativa");
 
 // ── Divergências de faixa etária e sexo ─────────────────────────────────────
 
@@ -164,3 +164,27 @@ const validRecord = mapInvalidCacheRow({
 assert.equal(validRecord, null, "registro válido não deve ser retornado como inválido");
 
 console.log("cevesp validacao tests passed ✓");
+
+const sunday = new Date("2027-01-03T15:00:00-03:00");
+const sundayRecord = {
+  ANO: 2027,
+  DtNotificacao: "2027-01-03",
+  SemEpidemio: 1,
+  MunicipioNotificacao: "São Paulo",
+  GVE_NOME: "GVE I CAPITAL",
+  TotalCaso: 10,
+  SexMasc: 6, SexFem: 4,
+  FxMenorUmAno: 0, FxUmQuatro: 0, FxCincoNove: 10, FxDezQuatorze: 0, FxQuizeOuMais: 0
+};
+assert.equal(mapInvalidCacheRow(sundayRecord, sunday), null, "Domingo 03/01/2027 pertence à SE 1 oficial, mesmo quando ISO ainda está na SE 53");
+const futureWeek = mapInvalidCacheRow({ ...sundayRecord, SemEpidemio: 2 }, sunday);
+assert.match(futureWeek?.issue ?? "", /SE futura.*SE atual: 1/);
+assert.equal(futureWeek?.suggestedValue, "1", "Sugestão deriva da data válida, não da semana de hoje");
+assert.match(mapInvalidCacheRow({ ...sundayRecord, FxCincoNove: 9 }, sunday)?.issue ?? "", /Faixa etária diverge.*9.*10/);
+assert.match(mapInvalidCacheRow({ ...sundayRecord, SexFem: 3 }, sunday)?.issue ?? "", /Sexo diverge/);
+assert.equal(mapInvalidCacheRow({ ...sundayRecord, Excluido: 1, SexFem: 3 }, sunday), null, "Registros excluídos não entram na auditoria do painel ativo");
+assert.match(mapInvalidCacheRow({ ...sundayRecord, DtNotificacao: null, dt_notificacao_raw: "2026-02-30" }, sunday)?.issue ?? "", /Data inválida/);
+assert.match(mapInvalidCacheRow({ ...sundayRecord, DtNotificacao: "2027-01-04" }, sunday)?.issue ?? "", /Data futura/);
+assert.match(mapInvalidCacheRow({ ...sundayRecord, SemEpidemio: null }, sunday)?.issue ?? "", /SE inválida.*não informada/);
+assert.match(mapInvalidCacheRow({ ...sundayRecord, FxCincoNove: 11, FxUmQuatro: -1 }, sunday)?.issue ?? "", /Contagem inválida em FxUmQuatro/);
+console.log("CEVESP full-scope audit and official Sunday fixtures passed");

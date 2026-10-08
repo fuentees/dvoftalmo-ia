@@ -23,16 +23,23 @@ const severityIcon = {
 export function AlertsPanel() {
   const qc = useQueryClient();
 
-  const { data: alerts = [] } = useQuery<EpiAlert[]>({
+  const { data: alerts = [], isError, isLoading } = useQuery<EpiAlert[]>({
     queryKey: ["alerts-dashboard"],
-    queryFn:  () => fetch("/api/alertas").then(r => r.ok ? r.json() : []),
+    queryFn: async () => {
+      const response = await fetch("/api/alertas");
+      if (!response.ok) throw new Error("Não foi possível consultar os alertas.");
+      return response.json();
+    },
     staleTime: 2 * 60 * 1000
   });
 
   const ack = useMutation({
     mutationFn: (id: string) => fetch("/api/alertas", {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id })
-    }).then(r => r.json()),
+    }).then(async r => {
+      if (!r.ok) throw new Error("Não foi possível reconhecer o alerta.");
+      return r.json();
+    }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["alerts-dashboard"] });
       qc.invalidateQueries({ queryKey: ["alerts"] });
@@ -41,6 +48,8 @@ export function AlertsPanel() {
 
   const pending = alerts.filter(a => !a.acknowledged);
 
+  if (isError) return <p role="alert" className="rounded-md border border-amber-300 p-3 text-sm text-amber-800">Alertas indisponíveis. Tente novamente antes de concluir que não há pendências.</p>;
+  if (isLoading) return <p role="status" className="text-sm text-muted-foreground">Consultando alertas...</p>;
   if (pending.length === 0) return null;
 
   return (
@@ -55,13 +64,14 @@ export function AlertsPanel() {
         </Link>
       </div>
       <div className="space-y-2">
+        {ack.isError && <p role="alert">Não foi possível reconhecer o alerta. Tente novamente.</p>}
         {pending.slice(0, 3).map(a => (
           <div key={a.id} className="flex items-start gap-2 text-sm text-red-800 dark:text-red-300">
             {severityIcon[a.severity] ?? severityIcon.warning}
             <span className="flex-1">
               <strong>{a.gve}</strong> — SE {a.se_epidemiologica}/{a.ano} (+{a.increase_pct.toFixed(0)}%)
             </span>
-            <button onClick={() => ack.mutate(a.id)} disabled={ack.isPending}
+            <button aria-label={`Reconhecer alerta de ${a.gve}`} onClick={() => ack.mutate(a.id)} disabled={ack.isPending}
               className="shrink-0 ml-2 text-xs text-red-600 hover:text-red-700 dark:text-red-400">
               <CheckCircle className="h-4 w-4" />
             </button>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getTracomaOverview } from "@/services/sinan-tracoma";
+import { validateTracomaFilters, type TracomaFilter } from "@/lib/tracoma-data";
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -11,14 +12,18 @@ export async function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams;
   const gve = sp.get("gve") ?? undefined;
   const municipio = sp.get("municipio") ?? undefined;
-  const yearStart = sp.get("yearStart") ? Number(sp.get("yearStart")) : undefined;
-  const yearEnd = sp.get("yearEnd") ? Number(sp.get("yearEnd")) : undefined;
+  let filters: TracomaFilter;
+  try {
+    filters = validateTracomaFilters({ municipio, gve, yearStart: sp.get("yearStart"), yearEnd: sp.get("yearEnd") });
+  } catch (error) {
+    return NextResponse.json({ error: (error as Error).message }, { status: 400 });
+  }
 
   try {
-    const data = await getTracomaOverview({ gve, municipio, yearStart, yearEnd });
+    const data = await getTracomaOverview(filters);
     return NextResponse.json(data);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("Falha na série SINAN Tracoma", error);
+    return NextResponse.json({ error: "Não foi possível carregar a série histórica. Tente novamente ou verifique a sincronização." }, { status: 503 });
   }
 }

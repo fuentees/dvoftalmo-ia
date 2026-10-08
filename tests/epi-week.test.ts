@@ -5,7 +5,8 @@ import {
   dateToEpiWeek,
   dateToEpiWeekYear,
   shiftEpiWeek,
-  weeksInEpiYear
+  weeksInEpiYear,
+  pickCurrentPoint
 } from "../lib/epi-week";
 
 assert.equal(dateToEpiWeek(new Date(2026, 0, 1)), 53);
@@ -28,3 +29,5 @@ assert.deepEqual(shiftEpiWeek(2026, 1, -1), { year: 2025, se: weeksInEpiYear(202
 assert.deepEqual(shiftEpiWeek(2026, weekCount, 1), { year: 2027, se: 1 });
 
 console.log("epi week tests passed");
+assert.equal(pickCurrentPoint([{ se: 41, currentYear: 10 }], 40), null);
+assert.deepEqual(pickCurrentPoint([{ se: 40, currentYear: 0 }, { se: 41, currentYear: 10 }], 40), { se: 40, currentYear: 0 });

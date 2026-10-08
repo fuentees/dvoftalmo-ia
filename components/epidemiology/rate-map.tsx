@@ -5,16 +5,21 @@ import { AlertTriangle, Maximize2, X } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PagedTable, type PagedColumn } from "@/components/ui/paged-table";
 import { ChoroplethMap } from "@/components/epidemiology/choropleth-map";
+import { buildShapeValueMap } from "@/lib/rate-map-values";
 
 export type RateMapRow = {
   codigoIbge?: string | null;
   ano?: number;
   municipio?: string;
   gve?: string;
-  casos?: number;
-  positivos?: number;
-  examinados?: number;
-  populacao?: number;
+  casos?: number | null;
+  positivos?: number | null;
+  examinados?: number | null;
+  populacao?: number | null;
+  reportedMunicipalities?: number;
+  territoryMunicipalities?: number;
+  populationSourceYears?: number[];
+  missingYears?: number[];
   incidencia100k?: number | null;
   prevalencia?: number | null;
   taxaDeteccao100k?: number | null;
@@ -41,15 +46,6 @@ type RateMapProps = {
   message?: string;
 };
 
-function normalizeKey(value: unknown) {
-  return String(value ?? "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
 function formatNum(value: unknown, decimals = 0) {
   if (value == null || value === "") return "-";
   const n = Number(value);
@@ -58,6 +54,7 @@ function formatNum(value: unknown, decimals = 0) {
 }
 
 function formatCell(row: RateMapRow, col: RateMapProps["tableColumns"][number]) {
+  if (row[col.key] == null || row[col.key] === "") return "—";
   const base = `${formatNum(row[col.key], col.decimals ?? 0)}${col.suffix ?? ""}`;
   if (!col.percentKey) return base;
   const percentValue = row[col.percentKey];
@@ -65,50 +62,39 @@ function formatCell(row: RateMapRow, col: RateMapProps["tableColumns"][number]) 
   return `${base} (${formatNum(percentValue, col.percentDecimals ?? 1)}%)`;
 }
 
-function buildShapeValueMap(rows: RateMapRow[], valueKey: keyof RateMapRow) {
-  const valueMap: Record<string, number> = {};
-  for (const row of rows) {
-    const value = Number(row[valueKey] ?? 0);
-    if (!Number.isFinite(value)) continue;
-    const code = String(row.codigoIbge ?? "").replace(/\D/g, "");
-    if (code) { valueMap[code] = value; valueMap[code.slice(0, 6)] = value; }
-    for (const key of [row.municipio, row.gve]) {
-      if (!key) continue;
-      valueMap[key] = value;
-      valueMap[normalizeKey(key)] = value;
-    }
-  }
-  return valueMap;
+function mapThresholds(valueKey: keyof RateMapRow, direction: "higher-risk" | "higher-better"): [number, number, number] {
+  if (direction === "higher-better") return [20, 50, 80];
+  if (valueKey === "prevalencia") return [1, 5, 10];
+  if (valueKey === "incidencia100k") return [10, 50, 100];
+  return [5, 20, 50];
 }
 
-function colorFromRows(rows: RateMapRow[], valueKey: keyof RateMapRow, direction: "higher-risk" | "higher-better") {
+function colorFromRows(valueKey: keyof RateMapRow, direction: "higher-risk" | "higher-better") {
+  const [low, middle, high] = mapThresholds(valueKey, direction);
   return (value: number | null) => {
     if (value === null || value === undefined) return "#cbd5e1";
-    const match = rows.find((row) => Number(row[valueKey] ?? 0) === value);
-    if (direction === "higher-risk" && match?.riskColor && (valueKey === "prevalencia" || valueKey === "incidencia100k")) {
-      return match.riskColor;
-    }
     if (direction === "higher-better") {
-      if (value >= 80) return "#14b8a6";
-      if (value >= 50) return "#84cc16";
-      if (value >= 20) return "#f59e0b";
+      if (value >= high) return "#14b8a6";
+      if (value >= middle) return "#84cc16";
+      if (value >= low) return "#f59e0b";
       return "#dc2626";
     }
-    if (value >= 50) return "#dc2626";
-    if (value >= 20) return "#f59e0b";
-    if (value >= 5)  return "#84cc16";
+    if (value >= high) return "#dc2626";
+    if (value >= middle) return "#f59e0b";
+    if (value >= low) return "#84cc16";
     return "#14b8a6";
   };
 }
 
-function MapLegend({ direction }: { direction: "higher-risk" | "higher-better" }) {
+function MapLegend({ direction, valueKey }: { direction: "higher-risk" | "higher-better"; valueKey: keyof RateMapRow }) {
+  const [low, middle, high] = mapThresholds(valueKey, direction);
   if (direction === "higher-better") {
     return (
       <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-        <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#14b8a6]" />adequado</span>
-        <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#84cc16]" />bom</span>
-        <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#f59e0b]" />baixo</span>
-        <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#dc2626]" />crítico</span>
+        <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#14b8a6]" />≥ {high}</span>
+        <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#84cc16]" />{middle} a &lt; {high}</span>
+        <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#f59e0b]" />{low} a &lt; {middle}</span>
+        <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#dc2626]" />&lt; {low}</span>
         <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#cbd5e1]" />sem dado</span>
       </div>
     );
@@ -116,10 +102,10 @@ function MapLegend({ direction }: { direction: "higher-risk" | "higher-better" }
 
   return (
     <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-      <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#14b8a6]" />baixo</span>
-      <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#84cc16]" />atenção</span>
-      <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#f59e0b]" />médio</span>
-      <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#dc2626]" />alto</span>
+      <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#14b8a6]" />&lt; {low}</span>
+      <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#84cc16]" />{low} a &lt; {middle}</span>
+      <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#f59e0b]" />{middle} a &lt; {high}</span>
+      <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#dc2626]" />≥ {high}</span>
       <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#cbd5e1]" />sem dado</span>
     </div>
   );
@@ -140,8 +126,8 @@ export function RateMap({
 
   const shapeType  = rows.some((row) => row.municipio || row.codigoIbge) ? "municipio" : "gve";
   const valueMap   = buildShapeValueMap(rows, valueKey);
-  const colorFn    = colorFromRows(rows, valueKey, direction);
-  const mappedRows = rows.filter((row) => Number(row[valueKey] ?? 0) > 0).length;
+  const colorFn = colorFromRows(valueKey, direction);
+  const mappedRows = rows.filter((row) => row[valueKey] != null && row[valueKey] !== "" && Number.isFinite(Number(row[valueKey])) && Number(row[valueKey]) >= 0).length;
 
   if (missingPopulation) {
     return (
@@ -218,10 +204,11 @@ export function RateMap({
               valueMap={valueMap}
               colorScheme={colorFn}
               className="h-full w-full"
+              fillContainer
             />
           </div>
           <div className="flex items-center justify-between border-t px-4 py-2">
-            <MapLegend direction={direction} />
+            <MapLegend direction={direction} valueKey={valueKey} />
             <p className="text-xs text-muted-foreground">
               {mappedRows.toLocaleString("pt-BR")} territórios com valor calculado
             </p>
@@ -265,6 +252,7 @@ export function RateMap({
                 onClick={() => setExpanded(true)}
                 className="shrink-0 rounded-md border p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                 title="Expandir mapa"
+                aria-label="Expandir mapa"
               >
                 <Maximize2 className="h-4 w-4" />
               </button>
@@ -276,10 +264,10 @@ export function RateMap({
               valueMap={valueMap}
               colorScheme={colorFn}
             />
-            <MapLegend direction={direction} />
+            <MapLegend direction={direction} valueKey={valueKey} />
             <p className="text-xs text-muted-foreground">
               Unidade: <strong>{valueLabel}</strong>. Camada: {shapeType === "municipio" ? "municípios de SP" : "GVE"}.
-              {" "}{mappedRows.toLocaleString("pt-BR")} território(s) com valor calculado. Cinza = sem dado.
+              {" "}{mappedRows.toLocaleString("pt-BR")} território(s) com valor calculado. Cinza = sem dado. Faixas visuais descritivas, sem classificação clínica.
             </p>
           </CardContent>
         </Card>

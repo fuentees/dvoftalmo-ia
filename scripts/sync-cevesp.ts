@@ -12,6 +12,13 @@
  *
  * MODO DIRETO (quando ambos acessíveis):
  *   npm run sync-cevesp -- --full
+ *
+ * LIMPEZA DO CACHE ANTIGO (linhas sem ID do MySQL, chave por hash):
+ *   adicione --purge-legacy ao --import ou ao modo direto. As linhas antigas são apagadas
+ *   do cache (não do MySQL) somente depois que todos os lotes forem enviados sem erro.
+ *
+ * Cada ano inclui também os registros DIGITADOS naquele ano (created_at) com ANO errado
+ * ou vazio, para que a auditoria de qualidade consiga encontrá-los.
  */
 
 import { config } from "dotenv";
@@ -21,7 +28,7 @@ else config();
 
 import mysql from "mysql2/promise";
 import { createClient } from "@supabase/supabase-js";
-import { createHash } from "crypto";
+import { CEVESP_YEAR_WHERE, cevespYearParams, cleanRow } from "../lib/cevesp-clean";
 
 const BATCH_SIZE = 500;
 
@@ -37,76 +44,7 @@ function getSupabase() {
   return createClient(url, required("SUPABASE_SERVICE_ROLE_KEY"));
 }
 
-function rowKey(row: Record<string, unknown>): string {
-  const seed = [row.DtNotificacao ?? "", row.Unid_notificacao ?? "", row.GVE_NOME ?? "",
-                row.SemEpidemio ?? "", row.MunicipioNotificacao ?? "", row.ANO ?? ""].join("|");
-  return createHash("md5").update(seed).digest("hex");
-}
-
-function toDate(v: unknown): string | null {
-  if (!v) return null;
-  let s: string;
-  if (v instanceof Date) {
-    if (isNaN(v.getTime())) return null;
-    s = v.toISOString().slice(0, 10);
-  } else {
-    s = String(v).slice(0, 10);
-  }
-  if (!s.match(/^\d{4}-\d{2}-\d{2}$/)) return null;
-  const [y, m, d] = s.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) return null;
-  return s;
-}
-
-function clean(row: Record<string, unknown>): Record<string, unknown> {
-  const rawDate   = row.DtNotificacao instanceof Date
-    ? (isNaN(row.DtNotificacao.getTime()) ? null : row.DtNotificacao.toISOString().slice(0, 10))
-    : (row.DtNotificacao != null ? String(row.DtNotificacao).slice(0, 10) : null);
-  const validDate = toDate(row.DtNotificacao);
-  const invalidDate = rawDate !== null && validDate === null ? rawDate : null;
-
-  return {
-    row_key:              rowKey(row),
-    ANO:                  row.ANO         != null ? Number(row.ANO)         : null,
-    Mes:                  row.Mes         != null ? Number(row.Mes)         : null,
-    SemEpidemio:          row.SemEpidemio != null ? Number(row.SemEpidemio) : null,
-    DtNotificacao:        validDate,
-    dt_notificacao_raw:   invalidDate,
-    MunicipioNotificacao: row.MunicipioNotificacao  != null ? String(row.MunicipioNotificacao)  : null,
-    IbgeNotificacao:      row.IbgeNotificacao       != null ? String(row.IbgeNotificacao)       : null,
-    GVE_NOME:             row.GVE_NOME              != null ? String(row.GVE_NOME)              : null,
-    gve_numero:           row.gve_numero            != null ? Number(row.gve_numero)            : null,
-    CodMacroGVE:          row.CodMacroGVE           != null ? String(row.CodMacroGVE)           : null,
-    DRS_NOME:             row.DRS_NOME              != null ? String(row.DRS_NOME)              : null,
-    drs_numero:           row.drs_numero            != null ? Number(row.drs_numero)            : null,
-    SUBGRUPOS_VE:         row.SUBGRUPOS_VE          != null ? String(row.SUBGRUPOS_VE)          : null,
-    Unid_notificacao:     row.Unid_notificacao      != null ? String(row.Unid_notificacao)      : null,
-    nCNES:                row.nCNES                 != null ? String(row.nCNES)                 : null,
-    UVIS:                 row.UVIS                  != null ? String(row.UVIS)                  : null,
-    Nome_notificante:     row.Nome_notificante      != null ? String(row.Nome_notificante)      : null,
-    CargoFuncao:          row.CargoFuncao           != null ? String(row.CargoFuncao)           : null,
-    TotalCaso:            row.TotalCaso             != null ? Number(row.TotalCaso)             : null,
-    SexMasc:              row.SexMasc               != null ? Number(row.SexMasc)               : null,
-    SexFem:               row.SexFem                != null ? Number(row.SexFem)                : null,
-    FxMenorUmAno:         row.FxMenorUmAno          != null ? Number(row.FxMenorUmAno)          : null,
-    FxUmQuatro:           row.FxUmQuatro            != null ? Number(row.FxUmQuatro)            : null,
-    FxCincoNove:          row.FxCincoNove           != null ? Number(row.FxCincoNove)           : null,
-    FxDezQuatorze:        row.FxDezQuatorze         != null ? Number(row.FxDezQuatorze)         : null,
-    FxQuizeOuMais:        row.FxQuizeOuMais         != null ? Number(row.FxQuizeOuMais)         : null,
-    Surto:                row.Surto                 != null ? String(row.Surto)                 : null,
-    NuSurto:              row.NuSurto               != null ? Number(row.NuSurto)               : null,
-    NuColetaMaterialBio:  row.NuColetaMaterialBio   != null ? Number(row.NuColetaMaterialBio)   : null,
-    ColetaMaterialBio:    row.ColetaMaterialBio     != null ? String(row.ColetaMaterialBio)     : null,
-    NuAcaoEducativa:      row.NuAcaoEducativa       != null ? Number(row.NuAcaoEducativa)       : null,
-    NuTreinamento:        row.NuTreinamento         != null ? Number(row.NuTreinamento)         : null,
-    AfastamentoProfSintomatico: row.AfastamentoProfSintomatico != null ? String(row.AfastamentoProfSintomatico) : null,
-    NuEncamimento:        row.NuEncamimento         != null ? Number(row.NuEncamimento)         : null,
-    MedidaAdotada:        row.MedidaAdotada         != null ? String(row.MedidaAdotada)         : null,
-    Excluido:             row.Excluido              != null ? Number(row.Excluido)              : 0,
-    editable:             row.editable              != null ? Number(row.editable)              : 0,
-  };
-}
+const clean = cleanRow;
 
 async function fetchYears(conn: mysql.Connection, table: string, fullSync: boolean, targetYear: number | null, currentYear: number) {
   if (fullSync) {
@@ -119,6 +57,41 @@ async function fetchYears(conn: mysql.Connection, table: string, fullSync: boole
   if (targetYear) { console.log(`📦  Exportando ano ${targetYear}`); return [targetYear]; }
   console.log(`📦  Exportando ano atual (${currentYear})`);
   return [currentYear];
+}
+
+/** Registros do ano, incluindo os digitados no ano com ANO errado (ver CEVESP_YEAR_WHERE). */
+async function fetchRowsForYear(conn: mysql.Connection, table: string, ano: number) {
+  const [rows] = await conn.query(
+    `SELECT * FROM \`${table}\` WHERE ${CEVESP_YEAR_WHERE}`,
+    cevespYearParams(ano)
+  ) as [Array<Record<string, unknown>>, unknown];
+  return rows;
+}
+
+function dedupByKey(rows: Record<string, unknown>[]) {
+  const seen = new Set<string>();
+  return rows.filter((r) => {
+    const k = String(r.row_key ?? "");
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+/**
+ * Apaga do cache as linhas sem ID do MySQL (chave antiga por hash), só dos anos que
+ * acabaram de ser enviados — os outros anos continuam com os dados antigos até serem
+ * sincronizados de novo.
+ */
+async function purgeLegacy(supabase: ReturnType<typeof getSupabase>, years: number[]) {
+  if (!years.length) return;
+  const { count, error } = await supabase
+    .from("cevesp_notificacoes")
+    .delete({ count: "exact" })
+    .not("row_key", "like", "id:%")
+    .in("ANO", years);
+  if (error) { console.error(`❌  Falha ao limpar cache antigo: ${error.message}`); return; }
+  console.log(`🧹  ${count ?? 0} linha(s) antigas (sem ID do MySQL) removidas do cache.`);
 }
 
 async function doExport(args: string[]) {
@@ -145,6 +118,7 @@ async function doExport(args: string[]) {
     user:           required("NOTIFY_DB_USER"),
     password:       required("NOTIFY_DB_PASSWORD"),
     charset:        "utf8mb4",
+    dateStrings:    true,
     connectTimeout: 15000
   });
   console.log("✅  MySQL conectado.");
@@ -154,9 +128,9 @@ async function doExport(args: string[]) {
 
   for (const ano of years) {
     console.log(`\n  📅  Buscando ano ${ano}...`);
-    const [rows] = await conn.query(`SELECT * FROM \`${table}\` WHERE ANO = ?`, [ano]) as [Array<Record<string, unknown>>, unknown];
+    const rows = await fetchRowsForYear(conn, table, ano);
     console.log(`     ${rows.length} registros`);
-    allRows.push(...rows.map(clean));
+    for (const row of rows) allRows.push(clean(row));
   }
 
   await conn.end();
@@ -167,16 +141,6 @@ async function doExport(args: string[]) {
   console.log(`✅  Arquivo salvo: ${outFile} (${sizeMb} MB)`);
   console.log(`\nAgora leve o arquivo para casa e rode:`);
   console.log(`  npm run sync-cevesp -- --import --file ${outFile}`);
-}
-
-async function dedup(rows: Record<string, unknown>[]): Promise<Record<string, unknown>[]> {
-  const seen = new Set<string>();
-  return rows.filter(r => {
-    const k = String(r.row_key ?? "");
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
 }
 
 async function doImport(args: string[]) {
@@ -191,13 +155,15 @@ async function doImport(args: string[]) {
   }
 
   console.log(`📂  Lendo ${inFile}...`);
-  const allRows = JSON.parse(readFileSync(inFile, "utf8")) as Record<string, unknown>[];
-  const rows = await dedup(allRows);
+  // Reaplica a limpeza: arquivos exportados por versões antigas não têm ID na chave
+  const allRows = (JSON.parse(readFileSync(inFile, "utf8")) as Record<string, unknown>[]).map(clean);
+  const rows = dedupByKey(allRows);
   console.log(`   ${rows.length} registros (${allRows.length - rows.length} duplicatas removidas)`);
 
   const supabase = getSupabase();
   const startMs  = Date.now();
   let upserted   = 0;
+  let failed     = 0;
 
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
     const batch = rows.slice(i, i + BATCH_SIZE);
@@ -205,6 +171,7 @@ async function doImport(args: string[]) {
       .from("cevesp_notificacoes")
       .upsert(batch, { onConflict: "row_key", ignoreDuplicates: false });
     if (error) {
+      failed++;
       console.error(`\n❌  Batch ${Math.floor(i / BATCH_SIZE) + 1} erro: ${error.message}`);
     } else {
       upserted += batch.length;
@@ -217,6 +184,11 @@ async function doImport(args: string[]) {
     duration_ms:   Date.now() - startMs,
     mode:          "import"
   });
+
+  if (args.includes("--purge-legacy")) {
+    if (failed) console.error("⚠️  Limpeza do cache antigo ignorada: houve lotes com erro.");
+    else await purgeLegacy(supabase, [...new Set(rows.map((r) => Number(r.ANO)).filter(Number.isInteger))]);
+  }
 
   const elapsed = ((Date.now() - startMs) / 1000).toFixed(1);
   console.log(`\n\n✅  Import concluído: ${upserted} registros em ${elapsed}s`);
@@ -245,6 +217,7 @@ async function doDirectSync(args: string[]) {
     user:           required("NOTIFY_DB_USER"),
     password:       required("NOTIFY_DB_PASSWORD"),
     charset:        "utf8mb4",
+    dateStrings:    true,
     connectTimeout: 15000
   });
   console.log("✅  MySQL conectado.");
@@ -252,20 +225,22 @@ async function doDirectSync(args: string[]) {
   const years   = await fetchYears(conn, table, fullSync, targetYear, currentYear);
   const startMs = Date.now();
   let total     = 0;
+  let failed    = 0;
 
   for (const ano of years) {
     console.log(`\n  📅  Ano ${ano}...`);
-    const [rows] = await conn.query(`SELECT * FROM \`${table}\` WHERE ANO = ?`, [ano]) as [Array<Record<string, unknown>>, unknown];
+    const rows = dedupByKey((await fetchRowsForYear(conn, table, ano)).map(clean));
     console.log(`     ${rows.length} registros encontrados`);
     if (!rows.length) continue;
 
     let inserted = 0;
     for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-      const batch = rows.slice(i, i + BATCH_SIZE).map(clean);
+      const batch = rows.slice(i, i + BATCH_SIZE);
       const { error } = await supabase
         .from("cevesp_notificacoes")
         .upsert(batch, { onConflict: "row_key", ignoreDuplicates: false });
       if (error) {
+        failed++;
         console.error(`     ❌  Batch erro: ${error.message}`);
       } else {
         inserted += batch.length;
@@ -283,6 +258,11 @@ async function doDirectSync(args: string[]) {
     duration_ms:   Date.now() - startMs,
     mode:          fullSync ? "full" : targetYear ? "year" : "direct"
   });
+
+  if (args.includes("--purge-legacy")) {
+    if (failed) console.error("⚠️  Limpeza do cache antigo ignorada: houve lotes com erro.");
+    else await purgeLegacy(supabase, years);
+  }
 
   console.log(`\n✅  Sync direto concluído: ${total} registros em ${((Date.now() - startMs) / 1000).toFixed(1)}s`);
 }

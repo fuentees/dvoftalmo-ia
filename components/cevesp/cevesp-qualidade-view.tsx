@@ -20,10 +20,12 @@ interface FieldCompletenessEntry { total: number; filled: number; pct: number; l
 interface QualidadeData {
   records: InvalidRecord[];
   byType: Record<string, number>;
+  byIssueType?: Record<string, number>;
   byGve: Array<{ gve: string; count: number }>;
   byAno: Array<{ ano: number; count: number }>;
   byMunicipio: Array<{ municipio: string; gve: string | null; count: number }>;
   total: number;
+  totalRecords?: number;
   filteredTotal: number;
   limit: number;
   offset: number;
@@ -39,6 +41,11 @@ interface CompletudeCevespData {
 interface ApiError { error: string; message?: string }
 
 const ISSUE_ICON: Record<string, React.ReactNode> = {
+  "Ano errado":              <XCircle       className="h-4 w-4 text-red-500"   />,
+  "Semana trocada":          <AlertTriangle className="h-4 w-4 text-amber-500" />,
+  "Duplicata com números diferentes": <XCircle className="h-4 w-4 text-red-500" />,
+  "Duplicata":               <ClipboardCheck className="h-4 w-4 text-amber-500" />,
+  "Registro sem ID do MySQL": <XCircle      className="h-4 w-4 text-red-500"   />,
   "Data futura":             <AlertTriangle className="h-4 w-4 text-amber-500" />,
   "Ano impossível":          <XCircle       className="h-4 w-4 text-red-500"   />,
   "Dia impossível":          <XCircle       className="h-4 w-4 text-red-500"   />,
@@ -62,8 +69,11 @@ function issueIcon(issue: string) {
 
 function severity(r: InvalidRecord): "critical" | "warning" {
   if (r.issueType === "data_tempo") {
-    if (r.issue.startsWith("Ano impossível") || r.issue.startsWith("Dia impossível") || r.issue.startsWith("SE inválida")) return "critical";
+    if (r.issue.startsWith("Ano impossível") || r.issue.startsWith("Dia impossível") || r.issue.startsWith("SE inválida") || r.issue.startsWith("Ano errado")) return "critical";
     return "warning";
+  }
+  if (r.issueType === "duplicidade") {
+    return r.problem === "duplicata_conflito" || r.problem === "sem_id" ? "critical" : "warning";
   }
   if (r.issue.startsWith("Município ausente") || r.issue.startsWith("GVE ausente") || r.issue.startsWith("Total de casos negativo")) return "critical";
   return "warning";
@@ -91,11 +101,11 @@ function SortTh({ label, sortKey, currentKey, dir, onSort, className }: {
 }) {
   const active = currentKey === sortKey;
   return (
-    <th onClick={() => onSort(sortKey)} className={`cursor-pointer select-none ${className ?? ""} hover:text-foreground`}>
-      <span className="inline-flex items-center gap-1">
+    <th aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"} className={className}>
+      <button type="button" onClick={() => onSort(sortKey)} className="inline-flex items-center gap-1 hover:text-foreground">
         {label}
         <span className="text-[10px] text-muted-foreground/60">{active ? (dir === "asc" ? "↑" : "↓") : "↕"}</span>
-      </span>
+      </button>
     </th>
   );
 }
@@ -146,8 +156,9 @@ function buildCevespQualityReport(data: QualidadeData) {
     `Gerado em: ${new Date().toLocaleString("pt-BR")}`,
     "",
     "1. Síntese",
-    `Total de registros com inconsistência: ${data.total.toLocaleString("pt-BR")}`,
-    `Registros filtrados na tela: ${(data.filteredTotal ?? data.total).toLocaleString("pt-BR")}`,
+    `Total de inconsistências: ${data.total.toLocaleString("pt-BR")}`,
+    `Inconsistências no recorte filtrado: ${(data.filteredTotal ?? data.total).toLocaleString("pt-BR")}`,
+    "Um registro pode apresentar mais de uma inconsistência.",
     "",
     "2. Principais tipos de inconsistência",
     ...Object.entries(data.byType)
@@ -156,7 +167,7 @@ function buildCevespQualityReport(data: QualidadeData) {
       .map(([label, count]) => `- ${label}: ${count.toLocaleString("pt-BR")}`),
     "",
     "3. Territórios prioritários",
-    ...data.byGve.slice(0, 10).map((item) => `- ${item.gve}: ${item.count.toLocaleString("pt-BR")} registro(s)`),
+    ...data.byGve.slice(0, 10).map((item) => `- ${item.gve}: ${item.count.toLocaleString("pt-BR")} inconsistência(s)`),
     "",
     "4. Municípios prioritários",
     ...data.byMunicipio.slice(0, 15).map((item) => `- ${item.municipio}${item.gve ? ` (${item.gve})` : ""}: ${item.count.toLocaleString("pt-BR")}`),
@@ -236,7 +247,7 @@ function PorAnoPanel({ data, onSelectAno }: { data: QualidadeData; onSelectAno?:
             <thead>
               <tr className="border-b bg-muted/40">
                 <SortTh label="Ano" sortKey="ano" currentKey={sortKey} dir={sortDir} onSort={handleSort} className={thCls} />
-                <SortTh label="Registros com problema" sortKey="count" currentKey={sortKey} dir={sortDir} onSort={handleSort} className={`${thCls} text-right`} />
+                <SortTh label="Inconsistências" sortKey="count" currentKey={sortKey} dir={sortDir} onSort={handleSort} className={`${thCls} text-right`} />
                 {onSelectAno && <th className="px-4 py-2" />}
               </tr>
             </thead>
@@ -385,7 +396,7 @@ function PorMunicipioPanel({ data, externalGve, onClearGve }: { data: QualidadeD
             )}
           </div>
           <span className="text-xs text-muted-foreground">
-            {filteredRows.length.toLocaleString("pt-BR")} município(s), {totalFiltered.toLocaleString("pt-BR")} registro(s)
+            {filteredRows.length.toLocaleString("pt-BR")} município(s), {totalFiltered.toLocaleString("pt-BR")} inconsistência(s)
           </span>
         </div>
         <div className="grid gap-2 sm:grid-cols-[220px_1fr_auto]">
@@ -515,7 +526,7 @@ function CompletudeCevespPanel({ data }: { data: CompletudeCevespData }) {
           <div>
             <CardTitle className="text-base">Completude dos campos — CEVESP</CardTitle>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              % de registros com campo preenchido. Abaixo de 70% indica subnotificação ou problema de importação.
+              % de registros com campo preenchido. Abaixo de 70% sinaliza baixa completude; o motivo exige conferência da fonte.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -641,10 +652,10 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
   const [tab, setTab]             = useState<CevespTab>("registros");
   const [filterType, setFilterType] = useState<string>("todos");
   const [recordQuery, setRecordQuery] = useState("");
-  const [anoFilter, setAnoFilter] = useState("");
-  const [anoFimFilter, setAnoFimFilter] = useState("");
-  const [gveFilter, setGveFilter] = useState("");
-  const [municipioFilter, setMunicipioFilter] = useState("");
+  const [anoFilter, setAnoFilter] = useState(externalFilters?.year ? String(externalFilters.year) : "");
+  const [anoFimFilter, setAnoFimFilter] = useState(externalFilters?.yearEnd ? String(externalFilters.yearEnd) : "");
+  const [gveFilter, setGveFilter] = useState(externalFilters?.gve ?? "");
+  const [municipioFilter, setMunicipioFilter] = useState(externalFilters?.municipio ?? "");
   const [page, setPage] = useState(0);
   const [selected, setSelected]   = useState<Set<string>>(new Set());
   const [proposeMsg, setProposeMsg] = useState<{ type: "ok" | "error"; text: string } | null>(null);
@@ -672,6 +683,7 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
   function handleSelectAno(ano: number) {
     setRecordQuery(String(ano));
     setAnoFilter(String(ano));
+    setAnoFimFilter(String(ano));
     setPage(0);
     setSelected(new Set());
     setTab("registros");
@@ -684,7 +696,7 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
     setCrossGve(undefined);
   }
 
-  const { data, isLoading, isError, error, refetch } = useQuery<QualidadeData, ApiError>({
+  const { data, isLoading, isFetching, isError, error, refetch } = useQuery<QualidadeData, ApiError>({
     queryKey: ["cevesp-qualidade", filterType, recordQuery, anoFilter, anoFimFilter, gveFilter, municipioFilter, page],
     queryFn: async () => {
       const params = new URLSearchParams({
@@ -705,10 +717,15 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
     staleTime: 2 * 60 * 1000
   });
 
-  const { data: completudeData } = useQuery<CompletudeCevespData>({
-    queryKey: ["cevesp-qualidade-completude"],
+  const { data: completudeData, isError: completudeError, error: completudeErrorDetail } = useQuery<CompletudeCevespData>({
+    queryKey: ["cevesp-qualidade-completude", anoFilter, anoFimFilter, gveFilter, municipioFilter],
     queryFn: async () => {
-      const res  = await fetch("/api/cevesp/qualidade/completude");
+      const params = new URLSearchParams();
+      if (anoFilter) params.set("ano", anoFilter);
+      if (anoFimFilter) params.set("anoFim", anoFimFilter);
+      if (gveFilter) params.set("gve", gveFilter);
+      if (municipioFilter) params.set("municipio", municipioFilter);
+      const res = await fetch(`/api/cevesp/qualidade/completude?${params}`);
       const json = await res.json();
       if (!res.ok) throw new Error((json as ApiError).message ?? (json as ApiError).error);
       return json as CompletudeCevespData;
@@ -721,7 +738,7 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
       const res = await fetch("/api/cevesp/qualidade", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(recordIds ? { recordIds } : {})
+        body: JSON.stringify({ recordIds, filters: new URLSearchParams({ ano: anoFilter, anoFim: anoFimFilter, gve: gveFilter, municipio: municipioFilter, issue: filterType, q: recordQuery }).toString() })
       });
       const json = await res.json();
       if (!res.ok) throw new Error((json as ApiError).message ?? (json as ApiError).error);
@@ -762,6 +779,7 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
     setFilterType("todos");
     setRecordQuery("");
     setAnoFilter("");
+    setAnoFimFilter("");
     setGveFilter("");
     setMunicipioFilter("");
     setPage(0);
@@ -774,6 +792,7 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
       format: "csv"
     });
     if (anoFilter) params.set("ano", anoFilter);
+    if (anoFimFilter) params.set("anoFim", anoFimFilter);
     if (gveFilter) params.set("gve", gveFilter);
     if (municipioFilter) params.set("municipio", municipioFilter);
     window.location.href = `/api/cevesp/qualidade?${params.toString()}`;
@@ -810,8 +829,9 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
   const totalPages = Math.max(1, Math.ceil(filteredTotal / pageSize));
   const byType = data?.byType ?? {};
 
-  const dateTempoBased = records.filter((r) => r.issueType === "data_tempo").length;
-  const conteudoBased  = records.filter((r) => r.issueType === "conteudo").length;
+  const dateTempoBased = data?.byIssueType?.data_tempo ?? records.filter((r) => r.issueType === "data_tempo").length;
+  const conteudoBased  = data?.byIssueType?.conteudo ?? records.filter((r) => r.issueType === "conteudo").length;
+  const duplicidadeBased = data?.byIssueType?.duplicidade ?? records.filter((r) => r.issueType === "duplicidade").length;
 
   const completudeCritica = Object.values(completudeData?.fieldCompleteness ?? {}).filter((e) => e.pct < 90 && e.total > 0).length;
   const tabCounts: Record<CevespTab, number> = {
@@ -841,7 +861,7 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
         <Button size="sm" variant="outline" onClick={() => void refetch()}>
           <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Atualizar
         </Button>
-        {data && (
+        {data && !isFetching && (
           <Button
             size="sm"
             variant="outline"
@@ -902,18 +922,26 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
       </Card>
 
       {/* Summary cards */}
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryCard
           count={total}
-          label="registros com problema"
+          label="inconsistências detectadas"
           sev={total > 0 ? "warning" : "ok"}
-          detail={total === 0 ? "Nenhuma inconsistência detectada" : "Ver abas abaixo"}
+          detail={total === 0
+            ? "Nenhuma inconsistência detectada"
+            : `Em ${(data?.totalRecords ?? total).toLocaleString("pt-BR")} registro(s); um registro pode ter vários problemas`}
         />
         <SummaryCard
           count={dateTempoBased}
-          label="problemas de data/SE"
+          label="problemas de data/SE/ano"
           sev={dateTempoBased > 0 ? "critical" : "ok"}
-          detail="Data futura, dia/ano impossível, SE inválida ou futura"
+          detail="Data inválida/futura, SE em branco ou futura, ano digitado errado"
+        />
+        <SummaryCard
+          count={duplicidadeBased}
+          label="duplicidades e semanas trocadas"
+          sev={duplicidadeBased > 0 ? "critical" : "ok"}
+          detail="Mesma unidade notificando a mesma semana mais de uma vez"
         />
         <SummaryCard
           count={conteudoBased}
@@ -990,7 +1018,7 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
                     className="h-8 text-xs"
                     disabled={proposeMutation.isPending}
                     onClick={() => { setProposeMsg(null); proposeMutation.mutate(undefined); }}
-                    title="Envia todos os registros com problema para a fila de correção"
+                    title="Envia apenas os registros do recorte e dos filtros atuais para a fila de correção"
                   >
                     <ClipboardCheck className="mr-1.5 h-3.5 w-3.5" />
                     {proposeMutation.isPending ? "Enviando..." : `Propor todos (${filteredTotal.toLocaleString("pt-BR")})`}
@@ -998,7 +1026,7 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
                 )}
 
                 <span className="text-xs text-muted-foreground">
-                  {visible.length} de {filteredTotal.toLocaleString("pt-BR")} registros
+                  {visible.length} de {filteredTotal.toLocaleString("pt-BR")} inconsistências
                   {selected.size > 0 && (
                     <span className="ml-1 font-medium text-primary">· {selected.size} selecionado(s) via checkbox</span>
                   )}
@@ -1066,7 +1094,7 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
                           const sev = severity(r);
                           return (
                             <tr
-                              key={r.recordId}
+                              key={r.issueKey}
                               className={`border-b last:border-0 transition-colors ${
                                 selected.has(r.recordId) ? "bg-primary/5" : "hover:bg-muted/30"
                               }`}
@@ -1099,14 +1127,24 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
                                     {r.issue}
                                   </span>
                                 </div>
+                                {r.group && <div className="mt-0.5 pl-5 text-[11px] text-muted-foreground">Grupo: {r.group}</div>}
                               </td>
                               <td className="px-3 py-2">
-                                {r.suggestedField ? (
-                                  <span className="rounded bg-green-100 px-1.5 py-0.5 text-green-800 font-mono">
-                                    {r.suggestedField} → {r.suggestedValue}
-                                  </span>
+                                {r.suggestions?.length ? (
+                                  <div className="flex flex-wrap gap-1">
+                                    {r.suggestions.map((s) => (
+                                      <span key={s.field} className="rounded bg-green-100 px-1.5 py-0.5 text-green-800 font-mono whitespace-nowrap">
+                                        {s.field}: {s.oldValue || "vazio"} → {s.newValue}
+                                      </span>
+                                    ))}
+                                  </div>
                                 ) : (
-                                  <span className="text-muted-foreground">Verificar manualmente</span>
+                                  <span className="text-muted-foreground">
+                                    {r.problem === "duplicata" ? "Revisar: possível exclusão"
+                                      : r.problem === "duplicata_conflito" ? "Revisar: qual registro vale"
+                                      : r.problem === "sem_id" ? "Ressincronizar cache"
+                                      : "Verificar manualmente"}
+                                  </span>
                                 )}
                               </td>
                             </tr>
@@ -1120,7 +1158,7 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
 
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-card px-3 py-2 text-xs">
                 <span className="text-muted-foreground">
-                  Página {(page + 1).toLocaleString("pt-BR")} de {totalPages.toLocaleString("pt-BR")} · {filteredTotal.toLocaleString("pt-BR")} registro(s) filtrado(s)
+                  Página {(page + 1).toLocaleString("pt-BR")} de {totalPages.toLocaleString("pt-BR")} · {filteredTotal.toLocaleString("pt-BR")} inconsistência(s) filtrada(s)
                 </span>
                 <div className="flex gap-2">
                   <Button
@@ -1159,7 +1197,8 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
       )}
 
       {tab === "completude" && completudeData && <CompletudeCevespPanel data={completudeData} />}
-      {tab === "completude" && !completudeData && (
+      {tab === "completude" && completudeError && <p role="alert" className="rounded border border-destructive p-4 text-sm text-destructive">{completudeErrorDetail instanceof Error ? completudeErrorDetail.message : "Não foi possível carregar a completude."}</p>}
+      {tab === "completude" && !completudeData && !completudeError && (
         <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
           <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Carregando completude...
         </div>
@@ -1170,7 +1209,7 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
           <CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-green-500" />
           <p className="font-medium">Nenhuma inconsistência detectada</p>
           <p className="mt-1 text-xs text-green-700">
-            Todos os registros CEVESP verificados possuem dados válidos.
+            Nenhuma inconsistência foi encontrada nas regras avaliadas para este recorte. Isso não certifica a exatidão dos dados originais.
           </p>
         </div>
       )}

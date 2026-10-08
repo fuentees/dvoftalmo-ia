@@ -1,3 +1,4 @@
+import type { parseCevespFilters } from "@/lib/cevesp-filters";
 import { z } from "zod";
 import { createNotificationConnection, getNotificationTableName } from "@/lib/external/notification-db";
 import { generateCompletion } from "@/services/ai/provider";
@@ -118,7 +119,7 @@ const timeGrains = {
     label: "Ano e semana epidemiologica",
     parts: [
       { alias: "Ano", sql: "year(DtNotificacao)" },
-      { alias: "SemanaEpidemiologica", sql: "coalesce(SemEpidemio, week(DtNotificacao, 3))" }
+      { alias: "SemanaEpidemiologica", sql: "SemEpidemio" }
     ]
   },
   day: { label: "Dia", parts: [{ alias: "Dia", sql: "date(DtNotificacao)" }] }
@@ -149,6 +150,7 @@ const analysisSchema = z.object({
     operator: z.enum(["eq", "contains"]).default("eq"),
     value: z.string()
   })).default([]),
+  se_range: z.object({ start: z.number().int().min(1).max(53).optional(), end: z.number().int().min(1).max(53).optional() }).optional(),
   limit: z.number().int().positive().max(500).default(100)
 });
 
@@ -512,7 +514,7 @@ limit maximo 500. Nao gere SQL.`
 }
 
 function buildWhere(analysis: CevespAnalysis) {
-  const where: string[] = [];
+  const where: string[] = analysis.metric === "registros_excluidos" ? ["coalesce(Excluido, 0) <> 0"] : ["coalesce(Excluido, 0) = 0"];
   const params: unknown[] = [];
 
   if (analysis.date_range.type === "current_year") {
@@ -544,6 +546,9 @@ function buildWhere(analysis: CevespAnalysis) {
     params.push(analysis.date_range.start, analysis.date_range.end);
   }
 
+  if (analysis.se_range?.start != null) { where.push("SemEpidemio >= ?"); params.push(analysis.se_range.start); }
+  if (analysis.se_range?.end != null) { where.push("SemEpidemio <= ?"); params.push(analysis.se_range.end); }
+
   for (const filter of analysis.filters) {
     const column = dimensions[filter.field].column;
     if (filter.operator === "contains") {
@@ -558,8 +563,14 @@ function buildWhere(analysis: CevespAnalysis) {
   return { sql: where.length ? `where ${where.join(" and ")}` : "", params };
 }
 
-export async function runCevespAnalysis(question: string) {
+export async function runCevespAnalysis(question: string, scope?: ReturnType<typeof parseCevespFilters>) {
   const analysis = await parseCevespQuestion(question);
+  if (scope) {
+    if (scope.ano || scope.anoFim) analysis.date_range = { type: "between", start: `${scope.ano ?? 1900}-01-01`, end: `${scope.anoFim ?? scope.ano}-12-31` };
+    if (scope.gve) analysis.filters = [...analysis.filters.filter((filter) => filter.field !== "gve"), { field: "gve", operator: "eq", value: scope.gve }];
+    if (scope.municipio) analysis.filters = [...analysis.filters.filter((filter) => filter.field !== "municipio"), { field: "municipio", operator: "eq", value: scope.municipio }];
+    if (scope.seInicio != null || scope.seFim != null) analysis.se_range = { start: scope.seInicio, end: scope.seFim };
+  }
 
   // Se não há configuração de MySQL, tenta diretamente o cache Supabase
   if (!process.env.NOTIFY_DB_HOST) {
@@ -822,11 +833,11 @@ async function runWeeklyCasesByYearReport(question: string, analysis: CevespAnal
   const sql = `
     select
       year(DtNotificacao) as Ano,
-      coalesce(SemEpidemio, week(DtNotificacao, 3)) as SE,
+      SemEpidemio as SE,
       sum(coalesce(TotalCaso, 0)) as valor
     from ${table}
     ${where.sql ? `${where.sql} and` : "where"} DtNotificacao is not null
-    group by year(DtNotificacao), coalesce(SemEpidemio, week(DtNotificacao, 3))
+    group by year(DtNotificacao), SemEpidemio
     order by Ano, SE
   `;
   const connection = await createNotificationConnection();
@@ -857,7 +868,7 @@ async function runWeeklyCasesByYearReport(question: string, analysis: CevespAnal
         methodology: [
           "Fonte: banco CEVESP de Oftalmologia.",
           "Indicador: soma do campo TotalCaso.",
-          "Campo temporal: DtNotificacao (semana obtida de SemEpidemio ou week(DtNotificacao,3)).",
+          "Campo temporal: DtNotificacao (semana obtida de SemEpidemio; semanas ausentes não são inferidas por calendário ISO).",
           "Agregacao: SE nas linhas, anos nas colunas."
         ],
         pivotRows,

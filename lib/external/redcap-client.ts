@@ -37,7 +37,7 @@ export async function redcapExport(options: RedCapExportOptions = {}): Promise<R
     returnFormat: "json"
   });
 
-  if (options.records?.length) params.set("records[0]", options.records.join(","));
+  options.records?.forEach((record, index) => params.set(`records[${index}]`, record));
   if (options.fields?.length) {
     options.fields.forEach((f, i) => params.set(`fields[${i}]`, f));
   }
@@ -67,7 +67,10 @@ export async function redcapExport(options: RedCapExportOptions = {}): Promise<R
     throw new Error(`REDCap: ${(data as { error: string }).error}`);
   }
 
-  return (Array.isArray(data) ? data : []) as RedCapRecord[];
+  if (!Array.isArray(data)) {
+    throw new Error("REDCap retornou uma resposta inválida; não foi possível consultar os registros.");
+  }
+  return data as RedCapRecord[];
 }
 
 export function isRedCapConfigured(): boolean {

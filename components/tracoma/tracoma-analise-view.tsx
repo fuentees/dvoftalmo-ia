@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Download, FileText, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,23 +13,29 @@ type MuniRow = {
   codigoIbge: string;
   municipio: string;
   gve: string;
-  examinados: number;
-  positivos: number;
-  populacao: number;
+  examinados: number | null;
+  positivos: number | null;
+  populacao: number | null;
   prevalencia: number | null;
   taxaDeteccao100k: number | null;
   coberturaExame: number | null;
   riskColor: string;
+  populationSourceYears?: number[];
+  missingYears?: number[];
 };
 
 type GveRow = {
   gve: string;
-  examinados: number;
-  positivos: number;
-  populacao: number;
+  examinados: number | null;
+  positivos: number | null;
+  populacao: number | null;
   prevalencia: number | null;
   taxaDeteccao100k: number | null;
   coberturaExame: number | null;
+  populationSourceYears?: number[];
+  missingYears?: number[];
+  reportedMunicipalities?: number;
+  territoryMunicipalities?: number;
 };
 
 type TracomaRates = {
@@ -41,6 +47,8 @@ type TracomaRates = {
   periodEnd?: number | null;
   populationYear?: number | null;
   metric?: string;
+  warnings?: string[];
+  methodology?: string;
   byMunicipality?: MuniRow[];
   byGve?: GveRow[];
   mapRows?: MuniRow[];
@@ -60,6 +68,7 @@ type TracomaDemographics = {
   clinicalForms: DemographicBucket[];
   sexByForm: DemographicCross[];
   ageByForm: DemographicCross[];
+  warnings?: string[];
 };
 
 type TracomaFilters = {
@@ -70,11 +79,11 @@ type TracomaFilters = {
 };
 
 function num(value: unknown) {
-  return Number(value ?? 0).toLocaleString("pt-BR");
+  return value == null || !Number.isFinite(Number(value)) ? "—" : Number(value).toLocaleString("pt-BR");
 }
 
 function pct(value: number | null | undefined, decimals = 1) {
-  if (value == null) return "—";
+  if (value == null || !Number.isFinite(value)) return "—";
   return `${value.toLocaleString("pt-BR", { maximumFractionDigits: decimals })}%`;
 }
 
@@ -85,7 +94,7 @@ function MetricCard({
   tone = "default"
 }: {
   label: string;
-  value: string | number;
+  value: string | number | null;
   detail?: string;
   tone?: "default" | "red" | "amber" | "green";
 }) {
@@ -100,7 +109,7 @@ function MetricCard({
       <CardContent className="pt-4">
         <div className="text-xs text-muted-foreground">{label}</div>
         <div className="mt-1 text-2xl font-semibold tabular-nums">
-          {typeof value === "number" ? num(value) : value}
+          {typeof value === "number" || value == null ? num(value) : value}
         </div>
         {detail && <div className="mt-1 text-xs text-muted-foreground">{detail}</div>}
       </CardContent>
@@ -124,19 +133,14 @@ function ExecutiveSummary({
   topPriorityMuni,
   demographics
 }: {
-  totalPositivos: number;
+  totalPositivos: number | null;
   prevMedia: number | null;
   muniAcimaMeta: number;
   topPriorityMuni?: MuniRow;
   demographics?: TracomaDemographics;
 }) {
   const missingClinical = demographics ? demographics.totalRows - demographics.withClinicalForm : 0;
-  const risk = muniAcimaMeta > 0 || (prevMedia ?? 0) >= 5 ? "Atenção alta" : totalPositivos > 0 ? "Monitorar" : "Estável";
-  const nextAction = muniAcimaMeta > 0
-    ? "Priorizar municípios acima de 5% e revisar estratégia de busca ativa."
-    : missingClinical > 0
-      ? "Completar forma clínica antes de consolidar leitura epidemiológica."
-      : "Manter vigilância e registrar acompanhamento dos territórios.";
+  const nextAction = missingClinical > 0 ? "Revisar os registros sem forma clínica na aba Qualidade dos Dados." : "Conferir completude e contexto de busca ativa antes de interpretar o recorte.";
   const itemClass = "rounded-md border bg-background p-3";
   const labelClass = "text-xs font-medium uppercase text-muted-foreground";
   const valueClass = "mt-1 text-sm font-semibold leading-snug";
@@ -144,29 +148,29 @@ function ExecutiveSummary({
     <Card className="border-primary/20 bg-primary/5">
       <CardHeader className="pb-2">
         <CardTitle className="text-base">Resumo executivo</CardTitle>
-        <CardDescription>Leitura rápida para decisão do recorte selecionado.</CardDescription>
+        <CardDescription>Resumo dos registros disponíveis no recorte selecionado.</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-3 md:grid-cols-4">
         <div className={itemClass}>
-          <div className={labelClass}>Risco</div>
-          <div className={valueClass}>{risk}</div>
-          <div className="mt-1 text-xs text-muted-foreground">síntese operacional</div>
+          <div className={labelClass}>Positivos informados</div>
+          <div className={valueClass}>{num(totalPositivos)}</div>
+          <div className="mt-1 text-xs text-muted-foreground">consolidado NOTTRACONET</div>
         </div>
         <div className={itemClass}>
-          <div className={labelClass}>Onde agir</div>
+          <div className={labelClass}>Maior positividade observada</div>
           <div className={valueClass}>
             {topPriorityMuni
               ? `${topPriorityMuni.municipio} (${pct(topPriorityMuni.prevalencia)})`
-              : `${muniAcimaMeta.toLocaleString("pt-BR")} município(s)`}
+              : "Sem positividade calculável"}
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
-            {muniAcimaMeta.toLocaleString("pt-BR")} acima da meta OMS
+            {topPriorityMuni ? `${num(topPriorityMuni.examinados)} examinados; interpretar o tamanho do denominador` : `${num(muniAcimaMeta)} município(s) com indicador calculável`}
           </div>
         </div>
         <div className={itemClass}>
           <div className={labelClass}>Sinal principal</div>
           <div className={valueClass}>{prevMedia != null ? pct(prevMedia) : "—"}</div>
-          <div className="mt-1 text-xs text-muted-foreground">prevalência média TF/TI</div>
+          <div className="mt-1 text-xs text-muted-foreground">positivos / examinados no consolidado</div>
         </div>
         <div className={itemClass}>
           <div className={labelClass}>Próxima ação</div>
@@ -177,8 +181,8 @@ function ExecutiveSummary({
   );
 }
 
-function DistributionList({ title, rows }: { title: string; rows: DemographicBucket[] }) {
-  const total = rows.reduce((sum, row) => sum + row.total, 0);
+function DistributionList({ title, rows, denominator }: { title: string; rows: DemographicBucket[]; denominator?: number }) {
+  const total = denominator ?? rows.reduce((sum, row) => sum + row.total, 0);
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -315,7 +319,7 @@ function CrossTable({ title, rows }: { title: string; rows: DemographicCross[] }
   );
 }
 
-function DemographicsPanel({ data, loading }: { data?: TracomaDemographics; loading: boolean }) {
+function DemographicsPanel({ data, loading, error }: { data?: TracomaDemographics; loading: boolean; error?: Error | null }) {
   if (loading) {
     return (
       <Card>
@@ -333,12 +337,14 @@ function DemographicsPanel({ data, loading }: { data?: TracomaDemographics; load
         <CardHeader>
           <CardTitle className="text-amber-900">Perfil demográfico indisponível</CardTitle>
           <CardDescription className="text-amber-800">
-            {data?.message ?? "Importe o TRACONET para visualizar sexo, idade e forma clínica."}
+            {error?.message ?? data?.message ?? "Importe o TRACONET para visualizar sexo, idade e forma clínica."}
           </CardDescription>
         </CardHeader>
       </Card>
     );
   }
+
+  if (!data.totalRows) return <Card><CardContent className="py-6 text-sm text-muted-foreground">Nenhum registro individual TRACONET no recorte selecionado.</CardContent></Card>;
 
   const childrenOneToNine = data.ageDistribution
     .filter((row) => row.label === "1 a 4 anos" || row.label === "5 a 9 anos")
@@ -350,7 +356,7 @@ function DemographicsPanel({ data, loading }: { data?: TracomaDemographics; load
       <div className="flex flex-col gap-1">
         <h2 className="text-base font-semibold">Perfil demográfico TRACONET</h2>
         <p className="text-sm text-muted-foreground">
-          Sexo, faixa etária e forma clínica dos casos individuais. Use para orientar busca ativa, educação em saúde e revisão clínica.
+          Sexo, faixa etária e forma clínica dos registros individuais. Um registro pode ter várias formas; os percentuais de formas usam o total de registros e podem somar mais de 100%.
         </p>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
@@ -363,7 +369,7 @@ function DemographicsPanel({ data, loading }: { data?: TracomaDemographics; load
       <div className="grid gap-4 lg:grid-cols-3">
         <DistributionList title="Distribuição por sexo" rows={data.sexDistribution} />
         <DistributionList title="Distribuição por faixa etária" rows={data.ageDistribution} />
-        <DistributionList title="Forma clínica" rows={data.clinicalForms} />
+        <DistributionList title="Forma clínica" rows={data.clinicalForms} denominator={data.totalRows} />
       </div>
       <div className="grid gap-4 xl:grid-cols-2">
         <CrossTable title="Forma clínica por sexo" rows={data.sexByForm} />
@@ -374,18 +380,10 @@ function DemographicsPanel({ data, loading }: { data?: TracomaDemographics; load
 }
 
 export function TracomaAnaliseView({ externalFilters }: { externalFilters?: TracomaFilters } = {}) {
-  const [gve, setGve] = useState("");
-  const [municipio, setMunicipio] = useState("");
-  const [yearStart, setYearStart] = useState<number | undefined>(undefined);
-  const [yearEnd, setYearEnd] = useState<number | undefined>(undefined);
-
-  useEffect(() => {
-    if (!externalFilters) return;
-    setGve(externalFilters.gve ?? "");
-    setMunicipio(externalFilters.municipio ?? "");
-    setYearStart(externalFilters.yearStart ? Number(externalFilters.yearStart) : undefined);
-    setYearEnd(externalFilters.yearEnd ? Number(externalFilters.yearEnd) : undefined);
-  }, [externalFilters]);
+  const gve = externalFilters?.gve ?? "";
+  const municipio = externalFilters?.municipio ?? "";
+  const yearStart = externalFilters?.yearStart ? Number(externalFilters.yearStart) : undefined;
+  const yearEnd = externalFilters?.yearEnd ? Number(externalFilters.yearEnd) : undefined;
 
   const [taxaMapView, setTaxaMapView] = useState<"municipio" | "gve">("municipio");
   const [taxaMetric, setTaxaMetric] = useState<"prevalencia" | "taxaDeteccao100k" | "coberturaExame">("prevalencia");
@@ -428,17 +426,17 @@ export function TracomaAnaliseView({ externalFilters }: { externalFilters?: Trac
   // Derived indicators
   const byMuni = rates.data?.byMunicipality ?? [];
   const byGveData = rates.data?.byGve ?? [];
-  const totalExaminados = byMuni.reduce((s, r) => s + r.examinados, 0);
-  const totalPositivos = byMuni.reduce((s, r) => s + r.positivos, 0);
-  const prevMedia = totalExaminados > 0 ? (totalPositivos / totalExaminados) * 100 : null;
-  const muniAcimaMeta = byMuni.filter((r) => (r.prevalencia ?? 0) > 5).length;
+  const totalExaminados = byMuni.some((r) => r.examinados == null) ? null : byMuni.reduce((s, r) => s + (r.examinados ?? 0), 0);
+  const totalPositivos = byMuni.some((r) => r.positivos == null) ? null : byMuni.reduce((s, r) => s + (r.positivos ?? 0), 0);
+  const prevMedia = byMuni.some((r) => r.prevalencia == null && (r.examinados ?? 0) > 0) ? null : totalExaminados != null && totalExaminados > 0 && totalPositivos != null && totalPositivos <= totalExaminados ? (totalPositivos / totalExaminados) * 100 : null;
+  const muniAcimaMeta = byMuni.filter((r) => r.prevalencia != null).length;
   const topPriorityMuni = [...byMuni]
-    .filter((row) => (row.positivos ?? 0) > 0)
+    .filter((row) => row.prevalencia != null && (row.positivos ?? 0) > 0)
     .sort((a, b) => {
       const prevDiff = Number(b.prevalencia ?? -1) - Number(a.prevalencia ?? -1);
       return prevDiff !== 0 ? prevDiff : Number(b.positivos ?? 0) - Number(a.positivos ?? 0);
     })[0];
-  const hasData = !rates.isLoading && !rates.isError && !rates.data?.missingPopulation;
+  const hasData = Boolean(rates.data) && !rates.isLoading && !rates.isError;
 
   function downloadTracamaCsv() {
     const escape = (v: unknown) => {
@@ -447,27 +445,27 @@ export function TracomaAnaliseView({ externalFilters }: { externalFilters?: Trac
     };
     const sections: string[] = [];
     if (byMuni.length) {
-      sections.push("Prevalência por município");
-      sections.push(["Município", "GVE", "Examinados", "Positivos", "Prevalência (%)", "Cobertura (%)", "Taxa/100 mil"].map(escape).join(";"));
+      sections.push(`Positividade por município;Período ${rates.data?.periodStart ?? ""} a ${rates.data?.periodEnd ?? ""};Fonte NOTTRACONET`);
+      sections.push(["Município", "GVE", "Examinados", "Positivos", "Positividade (%)", "Exames/população anual (%)", "Detecção registrada/100 mil", "Anos IBGE usados", "Anos sem registros"].map(escape).join(";"));
       for (const r of byMuni) {
         sections.push([
           r.municipio, r.gve, r.examinados, r.positivos,
           r.prevalencia != null ? Number(r.prevalencia).toFixed(2).replace(".", ",") : "",
           r.coberturaExame != null ? Number(r.coberturaExame).toFixed(2).replace(".", ",") : "",
-          r.taxaDeteccao100k != null ? Number(r.taxaDeteccao100k).toFixed(2).replace(".", ",") : ""
+          r.taxaDeteccao100k != null ? Number(r.taxaDeteccao100k).toFixed(2).replace(".", ",") : "", r.populationSourceYears?.join(", "), r.missingYears?.join(", ")
         ].map(escape).join(";"));
       }
     }
     if (byGveData.length) {
       if (sections.length) sections.push("");
-      sections.push("Prevalência por GVE");
-      sections.push(["GVE", "Examinados", "Positivos", "Prevalência (%)", "Cobertura (%)", "Taxa/100 mil"].map(escape).join(";"));
+      sections.push("Positividade por GVE");
+      sections.push(["GVE", "Examinados", "Positivos", "Positividade (%)", "Exames/população anual (%)", "Detecção registrada/100 mil", "Anos IBGE usados", "Municípios com registros", "Municípios no território", "Anos sem registros"].map(escape).join(";"));
       for (const r of byGveData) {
         sections.push([
           r.gve, r.examinados, r.positivos,
           r.prevalencia != null ? Number(r.prevalencia).toFixed(2).replace(".", ",") : "",
           r.coberturaExame != null ? Number(r.coberturaExame).toFixed(2).replace(".", ",") : "",
-          r.taxaDeteccao100k != null ? Number(r.taxaDeteccao100k).toFixed(2).replace(".", ",") : ""
+          r.taxaDeteccao100k != null ? Number(r.taxaDeteccao100k).toFixed(2).replace(".", ",") : "", r.populationSourceYears?.join(", "), r.reportedMunicipalities, r.territoryMunicipalities, r.missingYears?.join(", ")
         ].map(escape).join(";"));
       }
     }
@@ -483,7 +481,7 @@ export function TracomaAnaliseView({ externalFilters }: { externalFilters?: Trac
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="min-w-0 space-y-6 p-4 sm:p-6">
       {/* ── Loading / Error ── */}
       {rates.isLoading && (
         <div className="flex h-32 items-center justify-center gap-2 text-sm text-muted-foreground">
@@ -515,6 +513,8 @@ export function TracomaAnaliseView({ externalFilters }: { externalFilters?: Trac
         </Card>
       )}
 
+      {rates.data?.warnings && <details className="rounded-lg border bg-muted/20 p-4 text-sm"><summary className="cursor-pointer font-medium">Como interpretar os indicadores e limitações</summary><ul className="mt-3 space-y-2 text-muted-foreground">{rates.data.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul><p className="mt-3 text-xs text-muted-foreground">{rates.data.methodology}</p><a className="mt-3 inline-block text-primary underline" href="https://www.who.int/en/news-room/fact-sheets/detail/trachoma" target="_blank" rel="noreferrer">Critérios de eliminação da OMS</a></details>}
+
       {hasData && byMuni.length > 0 && (
         <>
           {/* Period + export */}
@@ -527,7 +527,7 @@ export function TracomaAnaliseView({ externalFilters }: { externalFilters?: Trac
               {rates.data!.populationYear ? ` · Pop. IBGE ${rates.data!.populationYear}` : ""}
             </p>
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" onClick={downloadTracamaCsv} disabled={!byMuni.length && !byGveData.length}>
+              <Button variant="outline" size="sm" onClick={downloadTracamaCsv} disabled={rates.isFetching || (!byMuni.length && !byGveData.length)}>
                 <Download className="h-3.5 w-3.5" />
                 Exportar CSV
               </Button>
@@ -551,13 +551,13 @@ export function TracomaAnaliseView({ externalFilters }: { externalFilters?: Trac
           <div className="space-y-4">
             <SectionIntro
               title="Indicadores principais"
-              description="Síntese do recorte consolidado para acompanhar eliminação, carga ativa e cobertura operacional."
+              description="Contagens e positividade do NOTTRACONET no recorte. Não representam prevalência populacional nem confirmam eliminação."
             />
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
               <MetricCard
                 label="Municípios com dados"
                 value={byMuni.length}
-                detail="com pelo menos 1 exame registrado"
+                detail="com consolidado no recorte"
               />
               <MetricCard
                 label="Total examinados"
@@ -565,52 +565,27 @@ export function TracomaAnaliseView({ externalFilters }: { externalFilters?: Trac
                 detail="acumulado no período selecionado"
               />
               <MetricCard
-                label="Total positivos (TF/TI)"
+                label="Positivos informados"
                 value={totalPositivos}
-                detail="formas ativas de tracoma"
-                tone={totalPositivos > 0 ? "amber" : "green"}
+                detail="campo de positivos do consolidado"
               />
               <MetricCard
-                label="Prevalência média"
+                label="Positividade entre examinados"
                 value={prevMedia != null ? pct(prevMedia) : "—"}
-                detail="meta OMS de eliminação: < 5%"
-                tone={
-                  prevMedia == null ? "default"
-                    : prevMedia >= 5 ? "red"
-                    : prevMedia > 0 ? "amber"
-                    : "green"
-                }
+                detail="positivos / examinados × 100"
               />
               <MetricCard
-                label="Municípios acima da meta"
+                label="Indicador calculável"
                 value={muniAcimaMeta}
-                detail="com TF > 5% (threshold OMS)"
-                tone={muniAcimaMeta > 0 ? "red" : "green"}
+                detail="municípios com positividade válida"
               />
             </div>
           </div>
 
           <div className="space-y-4">
             <SectionIntro
-              title="Série histórica"
-              description="Evolução anual de casos, examinados e positividade. Ajuda a contextualizar o recorte atual na tendência de longo prazo."
-            />
-            <TracomaChartsView
-              filters={{
-                gve: gve || undefined,
-                municipio: municipio || undefined,
-                yearStart: yearStart ? String(yearStart) : undefined,
-                yearEnd: yearEnd ? String(yearEnd) : undefined,
-              }}
-            />
-          </div>
-
-          <DemographicsPanel data={demographics.data} loading={demographics.isLoading} />
-
-          <div className="space-y-4">
-            <SectionIntro
               title="Território e taxas"
-              description="Mapa e tabela para priorizar município ou GVE por prevalência, detecção e cobertura de exame."
+              description="Mapa e tabela de positividade, detecção registrada e atividade de exames. Compare considerando o número de examinados e a completude."
             />
             <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -635,21 +610,22 @@ export function TracomaAnaliseView({ externalFilters }: { externalFilters?: Trac
               </div>
               <select
                 value={taxaMetric}
+                aria-label="Indicador do mapa de tracoma"
                 onChange={(event) => setTaxaMetric(event.target.value as typeof taxaMetric)}
                 className="h-8 rounded-md border bg-background px-2 text-xs font-medium"
               >
-                <option value="prevalencia">Prevalência %</option>
-                <option value="taxaDeteccao100k">Taxa de detecção/100 mil</option>
-                <option value="coberturaExame">Cobertura de exame %</option>
+                <option value="prevalencia">Positividade entre examinados %</option>
+                <option value="taxaDeteccao100k">Detecção registrada/100 mil</option>
+                <option value="coberturaExame">Exames/população anual %</option>
               </select>
             </div>
             <RateMap
               title={`Mapa operacional de ${
                 taxaMetric === "prevalencia"
-                  ? "prevalência"
+                  ? "positividade"
                   : taxaMetric === "taxaDeteccao100k"
                     ? "taxa de detecção"
-                    : "cobertura de exame"
+                    : "atividade de exames"
               } por ${taxaMapView === "municipio" ? "município" : "GVE"}${
                 rates.data!.periodStart && rates.data!.periodEnd
                   ? ` - ${rates.data!.periodStart === rates.data!.periodEnd ? rates.data!.periodStart : `${rates.data!.periodStart} a ${rates.data!.periodEnd}`}`
@@ -657,14 +633,13 @@ export function TracomaAnaliseView({ externalFilters }: { externalFilters?: Trac
               }`}
               description={
                 rates.data!.isPeriod
-                  ? `Taxas médias anuais do período ${rates.data!.periodStart}–${rates.data!.periodEnd}. Pop. IBGE média do período.`
-                  : `Prevalência entre examinados, taxa de detecção e cobertura. Pop. IBGE: ${rates.data!.populationYear ?? "-"}.`
+                  ? `Positividade acumulada e indicadores médios anuais de ${rates.data!.periodStart}–${rates.data!.periodEnd}. População de todo o território selecionado no GVE; municípios sem registros limitam a interpretação.`
+                  : `Positividade nos registros disponíveis. Pop. IBGE efetivamente usada: ${rates.data!.populationYear ?? "consultar anos no CSV"}.`
               }
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              rows={(taxaMapView === "municipio" ? rates.data!.byMunicipality ?? [] : rates.data!.byGve ?? []) as any}
+              rows={taxaMapView === "municipio" ? rates.data!.byMunicipality ?? [] : rates.data!.byGve ?? []}
               valueKey={taxaMetric}
               valueLabel={taxaMetric === "taxaDeteccao100k" ? "por 100 mil hab." : "%"}
-              direction={taxaMetric === "coberturaExame" ? "higher-better" : "higher-risk"}
+              direction="higher-risk"
               missingPopulation={false}
               tableColumns={
                 taxaMapView === "municipio"
@@ -673,15 +648,17 @@ export function TracomaAnaliseView({ externalFilters }: { externalFilters?: Trac
                       { key: "gve", label: "GVE" },
                       { key: "examinados", label: "Examinados", percentKey: "coberturaExame", percentDecimals: 2 },
                       { key: "positivos", label: "Positivos", percentKey: "prevalencia", percentDecimals: 2 },
-                      { key: "prevalencia", label: "Prevalência", decimals: 2, suffix: "%" },
+                      { key: "prevalencia", label: "Positividade", decimals: 2, suffix: "%" },
                       { key: "taxaDeteccao100k", label: "Detecção/100 mil", decimals: 2 },
                       { key: "populacao", label: rates.data!.isPeriod ? `Pop. IBGE (média ${rates.data!.periodStart}–${rates.data!.periodEnd})` : `Pop. IBGE${rates.data!.populationYear ? ` ${rates.data!.populationYear}` : ""}` }
                     ]
                   : [
                       { key: "gve", label: "GVE" },
+                      { key: "reportedMunicipalities", label: "Municípios com registros" },
+                      { key: "territoryMunicipalities", label: "Municípios do território" },
                       { key: "examinados", label: "Examinados", percentKey: "coberturaExame", percentDecimals: 2 },
                       { key: "positivos", label: "Positivos", percentKey: "prevalencia", percentDecimals: 2 },
-                      { key: "prevalencia", label: "Prevalência", decimals: 2, suffix: "%" },
+                      { key: "prevalencia", label: "Positividade", decimals: 2, suffix: "%" },
                       { key: "taxaDeteccao100k", label: "Detecção/100 mil", decimals: 2 },
                       { key: "populacao", label: rates.data!.isPeriod ? `Pop. IBGE (média ${rates.data!.periodStart}–${rates.data!.periodEnd})` : `Pop. IBGE${rates.data!.populationYear ? ` ${rates.data!.populationYear}` : ""}` }
                     ]
@@ -698,6 +675,11 @@ export function TracomaAnaliseView({ externalFilters }: { externalFilters?: Trac
           </CardContent>
         </Card>
       )}
+      <div className="space-y-4">
+        <SectionIntro title="Série histórica" description="Cada banco conserva sua própria contagem. Lacunas representam ausência de dados disponíveis." />
+        <TracomaChartsView filters={{ gve: gve || undefined, municipio: municipio || undefined, yearStart: yearStart ? String(yearStart) : undefined, yearEnd: yearEnd ? String(yearEnd) : undefined }} />
+      </div>
+      <DemographicsPanel data={demographics.data} loading={demographics.isLoading} error={demographics.error} />
     </div>
   );
 }

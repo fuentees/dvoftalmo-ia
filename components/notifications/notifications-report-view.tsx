@@ -37,6 +37,8 @@ type NotificationsReportViewProps = {
 type ReportData = {
   generatedAt: string;
   totalRowsInDatabase: number;
+  alertsAvailable?: boolean;
+  source?: string;
   sampledRows: number;
   indicators: {
     notifications: number;
@@ -96,6 +98,8 @@ type QualityData = {
 
 type CevespRatesData = {
   missingPopulation?: boolean;
+  warnings?: string[];
+  missingYears?: number[];
   message?: string;
   analysisYear?: number;
   isPeriod?: boolean;
@@ -184,7 +188,8 @@ const structuredPeriods = [
 const spatialDimensions = new Set(["por GVE", "por município", "por unidade notificadora"]);
 
 function num(value: unknown) {
-  return Number(value ?? 0).toLocaleString("pt-BR");
+  if (value == null || value === "") return "—";
+  return Number(value).toLocaleString("pt-BR");
 }
 
 function pct(part: number, total: number) {
@@ -204,7 +209,7 @@ function riskFromReport(report?: ReportData, quality?: QualityData) {
   const qualityTotal = quality?.total ?? 0;
   if (highAlerts > 0 || qualityTotal >= 100) return { label: "Atenção alta", cls: "border-red-200 bg-red-50 text-red-700" };
   if ((report?.alerts.length ?? 0) > 0 || qualityTotal > 0) return { label: "Monitorar", cls: "border-amber-200 bg-amber-50 text-amber-700" };
-  return { label: "Estável", cls: "border-green-200 bg-green-50 text-green-700" };
+  return { label: !quality ? "Qualidade não avaliada" : report?.alertsAvailable === false ? "Alertas não avaliados" : "Sem pendências detectadas", cls: "border-slate-200 bg-slate-50 text-slate-700" };
 }
 
 function MetricCard({ label, value, detail, tone = "default", change }: {
@@ -254,7 +259,7 @@ function ExecutiveSummary({ report, quality }: { report?: ReportData; quality?: 
         <CardDescription>Leitura rápida para decisão do recorte selecionado.</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-3 md:grid-cols-4">
-        <InfoItem label="Risco" value={risk.label} />
+        <InfoItem label="Revisão dos dados" value={risk.label} />
         <InfoItem label="Onde olhar primeiro" value={topMuni?.name ?? topGve?.name ?? "Sem território predominante"} />
         <InfoItem label="Principal sinal" value={alert?.title ?? `${qualityTotal.toLocaleString("pt-BR")} pendência(s) de qualidade`} />
         <InfoItem label="Próxima ação" value={nextAction} />
@@ -379,6 +384,7 @@ function CevespRatesPanel({ data }: { data: CevespRatesData }) {
             { key: "gve", label: "GVE" },
             { key: "casos", label: "Total de casos" },
             { key: "populacao", label: data.isPeriod ? `Pop. IBGE (média ${data.periodStart}–${data.periodEnd})` : `Pop. IBGE${data.populationYear ? ` ${data.populationYear}` : ""}` },
+            { key: "populationSourceYears", label: "Ano(s) da população" },
             { key: "incidencia100k", label: data.isPeriod ? "Inc. média anual/100 mil" : "Incidência/100 mil", decimals: 2 }
           ]}
         />
@@ -404,6 +410,7 @@ function CevespRatesPanel({ data }: { data: CevespRatesData }) {
             { key: "gve", label: "GVE" },
             { key: "casos", label: "Total de casos" },
             { key: "populacao", label: data.isPeriod ? `Pop. IBGE (média ${data.periodStart}–${data.periodEnd})` : `Pop. IBGE${data.populationYear ? ` ${data.populationYear}` : ""}` },
+            { key: "populationSourceYears", label: "Ano(s) da população" },
             { key: "incidencia100k", label: data.isPeriod ? "Inc. média anual/100 mil" : "Incidência/100 mil", decimals: 2 }
           ]}
         />
@@ -469,19 +476,6 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
     return params.toString();
   }
 
-  function buildFilteredQuestion() {
-    const parts = [question.trim()];
-    if (selectedYear && selectedYearEnd && selectedYearEnd > selectedYear) {
-      parts.push(`de ${selectedYear} a ${selectedYearEnd}`);
-    } else if (selectedYear) {
-      parts.push(`ano ${selectedYear}`);
-    }
-    if (selectedGve) parts.push(`GVE ${selectedGve}`);
-    if (selectedMunicipio) parts.push(`município ${selectedMunicipio}`);
-    if (seStart != null || seEnd != null) parts.push(`semana epidemiológica ${seStart ?? 1} a ${seEnd ?? 53}`);
-    return parts.filter(Boolean).join(" ");
-  }
-
   function applyStructuredQuestion() {
     const isSpatial = spatialDimensions.has(structuredDimension);
     const isMultiYear = structuredPeriod.startsWith("últimos");
@@ -507,10 +501,11 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
   });
 
   const quality = useQuery<QualityData>({
-    queryKey: ["cevesp-qualidade-resumo", selectedYear, selectedGve, selectedMunicipio, seStart, seEnd],
+    queryKey: ["cevesp-qualidade-resumo", selectedYear, selectedYearEnd, selectedGve, selectedMunicipio, seStart, seEnd],
     queryFn: async () => {
       const params = new URLSearchParams({ limit: "200" });
       if (selectedYear) params.set("ano", String(selectedYear));
+      if (selectedYearEnd) params.set("anoFim", String(selectedYearEnd));
       if (selectedGve) params.set("gve", selectedGve);
       if (selectedMunicipio) params.set("municipio", selectedMunicipio);
       if (seStart != null) params.set("seInicio", String(seStart));
@@ -524,10 +519,11 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
   });
 
   const rates = useQuery<CevespRatesData>({
-    queryKey: ["cevesp-taxas", selectedYear, selectedGve, selectedMunicipio, seStart, seEnd],
+    queryKey: ["cevesp-taxas", selectedYear, selectedYearEnd, selectedGve, selectedMunicipio, seStart, seEnd],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (selectedYear) params.set("ano", String(selectedYear));
+      if (selectedYearEnd) params.set("anoFim", String(selectedYearEnd));
       if (selectedGve) params.set("gve", selectedGve);
       if (selectedMunicipio) params.set("municipio", selectedMunicipio);
       if (seStart != null) params.set("seInicio", String(seStart));
@@ -546,7 +542,7 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
       const response = await fetch("/api/notificacoes/pergunta", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: buildFilteredQuestion() })
+        body: JSON.stringify({ question: question.trim(), filters: buildQueryParams() })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Erro ao consultar banco");
@@ -566,7 +562,7 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
   const muniChange = prevYear && prevYear.reportingMunicipalities > 0
     ? { pct: ((reportingMunicipalities - prevYear.reportingMunicipalities) / prevYear.reportingMunicipalities) * 100, prevAno: prevYear.ano }
     : null;
-  const SP_MUNICIPIOS = 645;
+  const SP_MUNICIPIOS = selectedMunicipio ? 1 : listarMunicipiosPorGve(selectedGve).length;
   function downloadBoletim() {
     const qs = buildQueryParams();
     window.open(`/api/cevesp/boletim${qs ? `?${qs}` : ""}`, "_blank");
@@ -794,7 +790,7 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
           </div>
         )}
 
-        {(report.isError || quality.isError) && (
+        {(report.isError || quality.isError || rates.isError) && (
           <Card className="border-amber-300 bg-amber-50">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-amber-900">
@@ -802,7 +798,7 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
                 Dados CEVESP parcialmente indisponíveis
               </CardTitle>
               <CardDescription className="text-amber-800">
-                {report.error instanceof Error ? report.error.message : quality.error instanceof Error ? quality.error.message : "Verifique sincronização, cache ou conexão."}
+                {report.error instanceof Error ? report.error.message : quality.error instanceof Error ? quality.error.message : rates.error instanceof Error ? rates.error.message : "Verifique sincronização, cache ou conexão."}
               </CardDescription>
             </CardHeader>
           </Card>
@@ -838,13 +834,13 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
               <MetricCard
                 label="Municípios notificando"
                 value={`${reportingMunicipalities} de ${SP_MUNICIPIOS}`}
-                detail={`${pct(reportingMunicipalities, SP_MUNICIPIOS)} dos municípios SP`}
+                detail={`${pct(reportingMunicipalities, SP_MUNICIPIOS)} dos municípios do território`}
                 tone={reportingMunicipalities < SP_MUNICIPIOS * 0.5 ? "amber" : "green"}
                 change={muniChange ?? undefined}
               />
               <MetricCard label="Notificações com surto" value={report.data.indicators.outbreakNotifications} detail={`${outbreakRate} das notificações`} tone={report.data.indicators.outbreakNotifications > 0 ? "amber" : "green"} />
               <MetricCard label="Materiais coletados" value={report.data.indicators.biologicalCollectionTotal} detail={`${num(report.data.indicators.biologicalCollectionNotifications)} notificações com coleta`} />
-              <MetricCard label="Problemas de qualidade" value={quality.data?.total ?? 0} detail="Registros que precisam revisão" tone={(quality.data?.total ?? 0) > 0 ? "amber" : "green"} />
+              <MetricCard label="Problemas de qualidade" value={quality.data?.total ?? "Indisponível"} detail="Registros que precisam revisão" tone={(quality.data?.total ?? 0) > 0 ? "amber" : "green"} />
             </div>
 
             <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
@@ -875,7 +871,7 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
                       <p className="text-xs text-muted-foreground">{alert.description}</p>
                     </div>
                   )) : (
-                    <p className="text-sm text-muted-foreground">Nenhum alerta automático relevante na base avaliada.</p>
+                    <p className="text-sm text-muted-foreground">{report.data.alertsAvailable === false ? "Os alertas por registro não foram avaliados neste relatório agregado." : "Nenhum alerta automático detectado nos critérios avaliados."}</p>
                   )}
                 </CardContent>
               </Card>
@@ -902,10 +898,10 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
               />
               <ConjuntiviteChartsView
                 filters={{
-                  gve: externalFilters?.gve,
-                  municipio: externalFilters?.municipio,
-                  yearStart: externalFilters?.year ? String(externalFilters.year) : undefined,
-                  yearEnd: externalFilters?.yearEnd ? String(externalFilters.yearEnd) : undefined,
+                  gve: selectedGve,
+                  municipio: selectedMunicipio,
+                  yearStart: selectedYear ? String(selectedYear) : undefined,
+                  yearEnd: selectedYearEnd ? String(selectedYearEnd) : undefined,
                 }}
               />
             </div>
@@ -916,6 +912,7 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
                   title="Território e incidência"
                   description="Mapa e tabela para priorizar município ou GVE pelo volume e pela taxa populacional."
                 />
+                {rates.data.warnings?.length ? <p role="status" className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">{rates.data.warnings.join(" ")}</p> : null}
                 <CevespRatesPanel data={rates.data} />
               </div>
             )}
@@ -933,7 +930,7 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
                 title="Canal endêmico"
                 description="Série histórica para detectar semanas acima do esperado e apoiar decisão de investigação."
               />
-              <CanalEndemicoView filters={{ gve: selectedGve, municipio: selectedMunicipio }} />
+              <CanalEndemicoView filters={{ gve: selectedGve, municipio: selectedMunicipio, year: selectedYearEnd ?? selectedYear }} />
             </div>
           </div>
         )}

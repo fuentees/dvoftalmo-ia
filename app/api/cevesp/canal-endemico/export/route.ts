@@ -1,9 +1,11 @@
+import { parseChannelFilters } from "@/lib/cevesp-filters";
+import { CHANNEL_METHODOLOGY, CHANNEL_ZONE_LABELS, classifyChannelPoint } from "@/lib/cevesp-channel";
 import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { runEndemicChannel } from "@/services/cevesp-endemic";
-import { currentCalendarYear, formatBusinessDate, pickCurrentChannelPoint } from "@/lib/epi-week";
+import { currentCalendarYear, currentCalendarMonth, currentEpiWeek, formatBusinessDate, pickCurrentPoint } from "@/lib/epi-week";
 
 // Zone fill colours (ARGB, no #)
 const FILL_SUCESSO  = "FFD1FAE5"; // green-100
@@ -12,18 +14,9 @@ const FILL_EPIDEMIA = "FFFEE2E2"; // red-100
 const FILL_HEADER   = "FF0F766E"; // teal-700
 const FILL_SUMMARY  = "FFE0F2FE"; // sky-100
 
-function zoneFill(atual: number | null, q1: number, q3: number) {
-  if (atual === null) return undefined;
-  if (atual > q3) return FILL_EPIDEMIA;
-  if (atual >= q1) return FILL_ALERTA;
-  return FILL_SUCESSO;
-}
-
-function zonaLabel(atual: number | null, q1: number, q3: number) {
-  if (atual === null) return "sem dado";
-  if (atual > q3) return "Epidemia";
-  if (atual >= q1) return "Alerta";
-  return "Sucesso";
+function zoneFill(point: Parameters<typeof classifyChannelPoint>[0]) {
+  const zone = classifyChannelPoint(point);
+  return zone === "acima" ? FILL_EPIDEMIA : zone === "esperado" ? FILL_ALERTA : zone === "abaixo" ? FILL_SUCESSO : undefined;
 }
 
 export async function GET(request: NextRequest) {
@@ -31,13 +24,15 @@ export async function GET(request: NextRequest) {
   const user = await getCurrentUser(supabase);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const gve          = request.nextUrl.searchParams.get("gve")          ?? undefined;
-  const municipality = request.nextUrl.searchParams.get("municipality") ?? undefined;
-  const yearParam    = request.nextUrl.searchParams.get("year");
-  const year         = yearParam ? Number(yearParam) : currentCalendarYear();
+  let filters;
+  try { filters = parseChannelFilters(request.nextUrl.searchParams); }
+  catch (error) { return NextResponse.json({ error: (error as Error).message }, { status: 400 }); }
+  const { gve, municipality, grain } = filters;
+  const year = filters.year ?? currentCalendarYear();
+  const bucketLabel = grain === "month" ? "Mês" : "SE";
 
   try {
-    const data = await runEndemicChannel({ gve, municipality, year });
+    const data = await runEndemicChannel({ gve, municipality, year, grain });
     if (!data.length) {
       return NextResponse.json({ error: "Sem dados para exportar." }, { status: 404 });
     }
@@ -46,8 +41,8 @@ export async function GET(request: NextRequest) {
     const scope  = [gve && `GVE: ${gve}`, municipality && `Município: ${municipality}`]
       .filter(Boolean).join(" | ") || "Estado de São Paulo";
 
-    const lastPt     = pickCurrentChannelPoint(data);
-    const zonaAtual  = lastPt ? zonaLabel(lastPt.currentIncidence, lastPt.q1, lastPt.q3) : "—";
+    const lastPt     = pickCurrentPoint(data, year < currentCalendarYear() ? (grain === "month" ? 12 : 53) : year > currentCalendarYear() ? 0 : grain === "month" ? currentCalendarMonth() : currentEpiWeek().se);
+    const zonaAtual  = lastPt ? CHANNEL_ZONE_LABELS[classifyChannelPoint(lastPt)] : "—";
 
     // ── Workbook ────────────────────────────────────────────────────────────
     const wb = new ExcelJS.Workbook();
@@ -60,7 +55,7 @@ export async function GET(request: NextRequest) {
     ws.properties.defaultRowHeight = 16;
 
     // Title rows
-    ws.mergeCells("A1:I1");
+    ws.mergeCells("A1:M1");
     const t1 = ws.getCell("A1");
     t1.value = "CANAL ENDÊMICO — VIGILÂNCIA DAS CONJUNTIVITES — CEVESP/SP";
     t1.font  = { bold: true, size: 13, color: { argb: "FFFFFFFF" } };
@@ -68,7 +63,7 @@ export async function GET(request: NextRequest) {
     t1.alignment = { horizontal: "center", vertical: "middle" };
     ws.getRow(1).height = 22;
 
-    ws.mergeCells("A2:I2");
+    ws.mergeCells("A2:M2");
     const t2 = ws.getCell("A2");
     t2.value = `Gerado em: ${formatBusinessDate(now)}  |  Abrangência: ${scope}  |  Ano de referência: ${year}`;
     t2.font  = { size: 10, italic: true, color: { argb: "FF374151" } };
@@ -79,13 +74,13 @@ export async function GET(request: NextRequest) {
     ws.addRow([]); // spacer
 
     // Summary row
-    ws.mergeCells("A4:I4");
+    ws.mergeCells("A4:M4");
     const summary = ws.getCell("A4");
     summary.value = lastPt
-      ? `Última SE observada: ${lastPt.se}  |  Casos: ${lastPt.currentYear}  |  Incidência: ${lastPt.currentIncidence} por 100 mil hab.  |  Zona: ${zonaAtual}  |  Limite inferior=${lastPt.q1}  |  Média=${lastPt.median}  |  Limite superior=${lastPt.q3}`
+      ? `Último período observado: ${lastPt.se}  |  Casos: ${lastPt.currentYear ?? "—"}  |  Incidência: ${lastPt.currentIncidence ?? "—"} por 100 mil hab.  |  Zona: ${zonaAtual}  |  Limite inferior=${lastPt.baselineValid ? lastPt.q1 : "—"}  |  Média=${lastPt.baselineValid ? lastPt.median : "—"}  |  Limite superior=${lastPt.baselineValid ? lastPt.q3 : "—"}`
       : "Sem dados do ano atual disponíveis.";
     summary.font = { bold: true, size: 10 };
-    const sumFill = lastPt ? zoneFill(lastPt.currentIncidence, lastPt.q1, lastPt.q3) : FILL_SUMMARY;
+    const sumFill = lastPt ? zoneFill(lastPt) : FILL_SUMMARY;
     summary.fill = { type: "pattern", pattern: "solid", fgColor: { argb: sumFill ?? FILL_SUMMARY } };
     summary.alignment = { horizontal: "center" };
     ws.getRow(4).height = 18;
@@ -94,7 +89,7 @@ export async function GET(request: NextRequest) {
 
     // Header row
     const headerRow = ws.addRow([
-      "SE",
+      bucketLabel,
       `Casos ${year}`,
       `Incidência ${year} por 100 mil hab.`,
       "Limite inferior incidência (média − 2 DP)",
@@ -102,7 +97,11 @@ export async function GET(request: NextRequest) {
       "Limite superior incidência (média + 2 DP)",
       "Mín histórico incidência",
       "Máx histórico incidência",
-      `Zona ${year}`
+      `Zona ${year}`,
+      "Anos históricos válidos",
+      "Anos com contagem inválida",
+      "Registros atuais com contagem inválida",
+      "Ano da população atual"
     ]);
     headerRow.eachCell((cell) => {
       cell.font  = { bold: true, color: { argb: "FFFFFFFF" }, size: 10 };
@@ -116,17 +115,21 @@ export async function GET(request: NextRequest) {
 
     // Data rows
     for (const pt of data) {
-      const fill = zoneFill(pt.currentIncidence, pt.q1, pt.q3);
+      const fill = zoneFill(pt);
       const row = ws.addRow([
         pt.se,
         pt.currentYear ?? null,
         pt.currentIncidence ?? null,
-        pt.q1,
-        pt.median,
-        pt.q3,
-        pt.min,
-        pt.max,
-        zonaLabel(pt.currentIncidence, pt.q1, pt.q3)
+        pt.baselineValid ? pt.q1 : null,
+        pt.baselineValid ? pt.median : null,
+        pt.baselineValid ? pt.q3 : null,
+        pt.baselineValid ? pt.min : null,
+        pt.baselineValid ? pt.max : null,
+        CHANNEL_ZONE_LABELS[classifyChannelPoint(pt)],
+        pt.baselineCount,
+        pt.invalidBaselineYears,
+        pt.invalidCurrentCaseRecords,
+        pt.populationYear
       ]);
       if (fill) {
         const dataCell = row.getCell(2); // "Casos" column
@@ -150,6 +153,10 @@ export async function GET(request: NextRequest) {
     ws.getColumn(7).width = 20;  // Min
     ws.getColumn(8).width = 20;  // Max
     ws.getColumn(9).width = 14;  // Zona
+    ws.getColumn(10).width = 24;
+    ws.getColumn(11).width = 28;
+    ws.getColumn(12).width = 34;
+    ws.getColumn(13).width = 24;
 
     // ── Sheet 2: Legenda ─────────────────────────────────────────────────────
     const wl = wb.addWorksheet("Legenda");
@@ -168,18 +175,20 @@ export async function GET(request: NextRequest) {
     wl.addRow(["LEGENDA DAS ZONAS DO CANAL ENDÊMICO"]).getCell(1).font = { bold: true, size: 12 };
     wl.addRow([]);
     wl.addRow(["Zona", "Descrição"]).eachCell((c) => { c.font = { bold: true }; });
-    addLegendRow("Sucesso", "Incidência abaixo do limite inferior (média − 2 desvios-padrão) — transmissão baixa, controle bem-sucedido.", FILL_SUCESSO);
-    addLegendRow("Alerta",  "Incidência entre o limite inferior e o limite superior (média ± 2 desvios-padrão) — monitorar GVEs.", FILL_ALERTA);
-    addLegendRow("Epidemia","Incidência acima do limite superior (média + 2 desvios-padrão) — zona epidêmica confirmada, acionar protocolos.", FILL_EPIDEMIA);
+    addLegendRow("Abaixo", "Incidência abaixo da faixa histórica. Pode refletir subnotificação; não confirma sucesso do controle.", FILL_SUCESSO);
+    addLegendRow("Dentro", "Incidência dentro da faixa histórica.", FILL_ALERTA);
+    addLegendRow("Acima", "Incidência acima da faixa histórica; requer investigação e não confirma epidemia.", FILL_EPIDEMIA);
     wl.addRow([]);
-    wl.addRow(["Metodologia", "Canal endêmico calculado sobre coeficiente de incidência por 100 mil habitantes, com média histórica ± 2 desvios-padrão dos últimos 10 anos por semana epidemiológica, excluindo 2011, 2021 e 2022 e considerando apenas anos com casos registrados."]);
+    wl.addRow(["Metodologia", CHANNEL_METHODOLOGY]);
+    wl.addRow(["Qualidade", "Contagem ausente, negativa ou fracionária invalida o período antes da soma. Esses grupos não compõem o histórico; zero informado permanece válido."]);
+    wl.addRow(["População", "O ano efetivo do denominador atual aparece na primeira aba. Pode ser substituto quando não há população do ano solicitado."]);
     wl.addRow(["Fonte", "CEVESP — Centro de Vigilância Epidemiológica / Centro de Oftalmologia Sanitária — SES-SP"]);
     wl.addRow(["Exportado em", formatBusinessDate(now)]);
 
     // ── Serialize ────────────────────────────────────────────────────────────
     const buffer = await wb.xlsx.writeBuffer();
-    const slug   = [gve, municipality].filter(Boolean).join("-").replace(/\s+/g, "_") || "SP";
-    const filename = `canal-endemico-conjuntivites-${slug}-${year}.xlsx`;
+    const slug   = [gve, municipality].filter(Boolean).join("-").replace(/[^a-zA-Z0-9_-]/g, "_") || "SP";
+    const filename = `canal-endemico-conjuntivites-${slug}-${year}-${grain}.xlsx`;
 
     return new NextResponse(new Uint8Array(buffer as ArrayBuffer), {
       headers: {

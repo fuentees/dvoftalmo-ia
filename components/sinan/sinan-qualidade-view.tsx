@@ -8,7 +8,7 @@ import {
   MapPin, Stethoscope, BarChart2, Download, Search, Target, ChevronDown
 } from "lucide-react";
 import { PagedTable } from "@/components/ui/paged-table";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   CartesianGrid, Line, LineChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -113,6 +113,7 @@ function Collapsible({ title, badge, icon, defaultOpen = true, children }: {
     <div>
       <button
         type="button"
+        aria-expanded={open}
         onClick={() => setOpen(!open)}
         className="flex w-full items-center gap-2 rounded-lg border bg-muted/40 px-4 py-3 text-left transition-colors hover:bg-muted/60"
       >
@@ -1578,10 +1579,10 @@ function CompletudeTecnicoTab({ data }: { data: SinanAuditResult }) {
 function AlertasClinicoGrid({ data }: { data: SinanAuditResult }) {
   const alertas = [
     { count: data.ttSemTs ?? 0, tone: (data.ttSemTs ?? 0) > 0 ? "red" : "green", label: "TT sem TS associado", detail: "TT isolado deve ser revisado como possível erro de classificação ou digitação clínica." },
-    { count: data.tfSemTratamento, tone: data.tfSemTratamento > 0 ? "red" : "green", label: "TF sem tratamento registrado", detail: "TF ativo exige azitromicina. Ausência de registro é inconsistência grave que impede controle epidemiológico." },
-    { count: data.ttSemCircurgia, tone: data.ttSemCircurgia > 0 ? "red" : "green", label: "TT sem encaminhamento para cirurgia", detail: "Triquíase tracomatosa requer referência oftalmológica. Sem encaminhamento há risco de progressão para cegueira." },
+    { count: data.tfSemTratamento, tone: data.tfSemTratamento > 0 ? "red" : "green", label: "TF sem tratamento registrado", detail: "Confira a ficha e o registro de tratamento com a equipe responsável. Ausência no banco não comprova ausência de atendimento." },
+    { count: data.ttSemCircurgia, tone: data.ttSemCircurgia > 0 ? "red" : "green", label: "TT sem encaminhamento/cirurgia registrado", detail: "Confira avaliação, encaminhamento e conduta registrados com a equipe responsável. O painel identifica pendências documentais." },
     { count: data.semTratamento, tone: data.semTratamento > 0 ? "amber" : "green", label: "Sem tratamento (geral)", detail: "Campo tratamento vazio — verificar se azitromicina ou outra conduta foi omitida no registro." },
-    { count: data.semConclusao, tone: data.semConclusao > 0 ? "amber" : "green", label: "Sem conclusão / encerramento", detail: "Investigações sem encerramento dificultam o cálculo de prevalência real." },
+    { count: data.semConclusao, tone: data.semConclusao > 0 ? "amber" : "green", label: "Sem conclusão / encerramento", detail: "Confira o estado da investigação e o preenchimento da conclusão na fonte." },
     { count: data.anoImpossivel, tone: data.anoImpossivel > 0 ? "amber" : "green", label: "Ano impossível", detail: "Erro de digitação na data. Corrigir na fonte antes de analisar a série histórica." },
     { count: data.duplicateNotificationIds?.length ?? 0, tone: (data.duplicateNotificationIds?.length ?? 0) > 0 ? "red" : "green", label: "Possível duplicidade", detail: "Detectado quando coincidem NU_NOTIFIC, iniciais, nome da mãe, data de nascimento e ano." }
   ];
@@ -1721,18 +1722,14 @@ type SinanQualidadeViewProps = {
 };
 
 export function SinanQualidadeView({ externalFilters, embedded = false }: SinanQualidadeViewProps = {}) {
-  const [filters,   setFilters]   = useState<Record<string, string>>({});
+  const [localFilters] = useState<Record<string, string>>({});
   const [pageTab,   setPageTab]   = useState<PageTab>("situacao");
-
-  useEffect(() => {
-    if (!externalFilters) return;
-    setFilters({
-      municipio: externalFilters.municipio ?? "",
-      gve: externalFilters.gve ?? "",
-      yearStart: externalFilters.yearStart ?? "",
-      yearEnd: externalFilters.yearEnd ?? ""
-    });
-  }, [externalFilters]);
+  const filters = externalFilters ? {
+    municipio: externalFilters.municipio ?? "",
+    gve: externalFilters.gve ?? "",
+    yearStart: externalFilters.yearStart ?? "",
+    yearEnd: externalFilters.yearEnd ?? ""
+  } : localFilters;
 
   const buildFilterParams = (source: Record<string, string>) => {
     const params = new URLSearchParams();
@@ -1748,7 +1745,7 @@ export function SinanQualidadeView({ externalFilters, embedded = false }: SinanQ
     queryFn: async () => {
       const params = buildFilterParams(filters);
       const res = await fetch(`/api/sinan/auditoria?${params}`);
-      if (!res.ok) throw await res.json().catch(() => ({})) as ApiError;
+      if (!res.ok) throw await res.json().catch(() => ({ error: "Não foi possível consultar o SINAN." })) as ApiError;
       return res.json() as Promise<SinanAuditResult>;
     },
     retry: false
@@ -1799,7 +1796,7 @@ export function SinanQualidadeView({ externalFilters, embedded = false }: SinanQ
           </div>
         </div>}
         <div className="flex flex-wrap gap-2">
-          {data && (
+          {data && hasData && !error && !isFetching && (
             <>
               <Button
                 variant="outline"
@@ -1852,35 +1849,33 @@ export function SinanQualidadeView({ externalFilters, embedded = false }: SinanQ
       )}
       {apiError && apiError.error !== "tabela_ausente" && (
         <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          Erro ao carregar auditoria: {apiError.message ?? apiError.error}
+          Erro ao carregar auditoria: {apiError.message ?? apiError.error ?? "Não foi possível acessar a fonte de dados. Tente novamente."}
         </div>
       )}
       {!isLoading && !apiError && data && !hasData && (
         <div className="flex h-48 flex-col items-center justify-center gap-3 rounded-xl border bg-card text-muted-foreground">
           <Database className="h-10 w-10 opacity-30" />
-          <p className="text-sm">Nenhum registro SINAN importado ainda.</p>
+          <p className="text-sm">Nenhum registro SINAN encontrado no recorte selecionado.</p>
           <a href="/sincronizacao" className="text-sm font-medium text-primary underline">Ir para Sincronização</a>
         </div>
       )}
 
-      {data && hasData && (
+      {data && hasData && !apiError && (
         <>
+          {((data.consolidatedRowsWithoutPositiveField ?? 0) > 0 || (data.consolidatedMetrics?.examinados?.rowsMissing ?? 0) > 0) && (
+            <p role="alert" className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+              Consolidação incompleta: há registros sem contagem de positivos ou examinados. Os totais conhecidos não representam toda a base.
+            </p>
+          )}
           {/* ── Aviso banco invertido ───────────────────────────────────────── */}
           {data.diagnostico?.aviso && (
             <div className="rounded-xl border-2 border-red-400 bg-red-50 p-4">
               <div className="flex gap-3">
                 <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
                 <div className="space-y-2">
-                  <p className="font-bold text-red-900">Bancos importados invertidos!</p>
+                  <p className="font-bold text-red-900">Verifique a identificação dos bancos importados</p>
                   <p className="text-sm text-red-800">{data.diagnostico.aviso}</p>
-                  <details>
-                    <summary className="cursor-pointer text-xs font-medium text-red-700">SQL para corrigir no Supabase ▼</summary>
-                    <pre className="mt-2 overflow-x-auto rounded bg-red-100 p-3 text-xs font-mono text-red-900">{
-`UPDATE public.sinan_tracoma_rows SET source_bank = CASE
-  WHEN source_bank = 'traconet'    THEN 'nottraconet'
-  WHEN source_bank = 'nottraconet' THEN 'traconet'
-END;`}</pre>
-                  </details>
+                  <p className="text-sm text-red-800">Confira os arquivos de origem e os campos de cada importação em Sincronização antes de corrigir a identificação do banco.</p>
                 </div>
               </div>
             </div>
@@ -1916,15 +1911,15 @@ END;`}</pre>
                 <div className="space-y-6">
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                     <KpiCard
-                      label="Pessoas examinadas"
-                      value={data.consolidatedMetrics?.examinados?.value ?? 0}
+                      label="Exames registrados"
+                      value={data.consolidatedMetrics?.examinados?.field ? data.consolidatedMetrics.examinados.value : "—"}
                       sub="No período e região selecionados"
                       tone={(data.consolidatedMetrics?.examinados?.value ?? 0) > 0 ? "neutral" : "amber"}
                       icon={<ClipboardList className="h-4 w-4" />}
                     />
                     <KpiCard
-                      label="Casos confirmados de tracoma"
-                      value={data.totalNottraconet}
+                      label="Positivos registrados"
+                      value={data.consolidatedPositiveField ? data.totalNottraconet : "—"}
                       sub="Positivos no consolidado"
                       icon={<Activity className="h-4 w-4" />}
                     />
@@ -1937,7 +1932,7 @@ END;`}</pre>
                     />
                     <KpiCard
                       label="Situação dos dados"
-                      value={criticosCount > 0 ? "Atenção" : "Em ordem"}
+                      value={criticosCount > 0 ? "Atenção" : "Sem alertas detectados"}
                       sub={criticosCount > 0 ? `${criticosCount} registro(s) crítico(s) a corrigir` : "Sem pendências críticas detectadas"}
                       tone={criticosCount > 0 ? "red" : "green"}
                       icon={criticosCount > 0 ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}

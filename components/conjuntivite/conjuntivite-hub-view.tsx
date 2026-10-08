@@ -6,6 +6,7 @@ import { Activity, Database, ShieldAlert } from "lucide-react";
 import { NotificationsReportView } from "@/components/notifications/notifications-report-view";
 import { CevespQualidadeView } from "@/components/cevesp/cevesp-qualidade-view";
 import { listarGvesSp, listarMunicipiosPorGve } from "@/lib/municipios-sp";
+import { parseCevespFilters } from "@/lib/cevesp-filters";
 import { EpidemicZoneBanner } from "@/components/conjuntivite/epidemic-zone-banner";
 
 type OuterTab = "situacao" | "qualidade" | "consulta";
@@ -31,19 +32,19 @@ export function ConjuntiviteHubView() {
   const gveOptions = useMemo(() => listarGvesSp(), []);
   const municipioOptions = useMemo(() => listarMunicipiosPorGve(gve), [gve]);
 
-  const reportFilters = useMemo(() => ({
-    year: yearStart ? Number(yearStart) : undefined,
-    yearEnd: yearEnd ? Number(yearEnd) : undefined,
-    gve,
-    municipio
-  }), [yearStart, yearEnd, gve, municipio]);
+  const { reportFilters, filterError } = useMemo(() => {
+    try {
+      const parsed = parseCevespFilters(new URLSearchParams({ ano: yearStart, anoFim: yearEnd, gve, municipio }));
+      return { reportFilters: { year: parsed.ano, yearEnd: parsed.anoFim, gve, municipio }, filterError: null };
+    } catch (error) { return { reportFilters: undefined, filterError: (error as Error).message }; }
+  }, [yearStart, yearEnd, gve, municipio]);
 
   const hasFilters = yearStart || yearEnd || gve || municipio;
 
   return (
     <div className="flex flex-col">
-      <EpidemicZoneBanner gve={gve || undefined} municipio={municipio || undefined} />
-      <div className="sticky top-0 z-30 flex items-center gap-3 border-b bg-background/95 px-6 py-2 backdrop-blur-sm">
+      <EpidemicZoneBanner gve={gve || undefined} municipio={municipio || undefined} year={reportFilters?.yearEnd ?? reportFilters?.year} />
+      <div className="sticky top-0 z-30 flex flex-wrap items-center gap-3 border-b bg-background/95 px-6 py-2 backdrop-blur-sm">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
           Conjuntivite · CEVESP
         </span>
@@ -54,6 +55,8 @@ export function ConjuntiviteHubView() {
             return (
               <button
                 key={t.id}
+                type="button"
+                aria-pressed={active}
                 onClick={() => setTab(t.id)}
                 className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                   active
@@ -72,6 +75,8 @@ export function ConjuntiviteHubView() {
             type="number"
             value={yearStart}
             onChange={(e) => setYearStart(e.target.value)}
+            aria-label="Ano inicial"
+            min="1900" max="2100" step="1"
             placeholder="Ano início"
             className="h-8 w-24 rounded-md border bg-background px-2 text-xs"
           />
@@ -79,10 +84,13 @@ export function ConjuntiviteHubView() {
             type="number"
             value={yearEnd}
             onChange={(e) => setYearEnd(e.target.value)}
+            aria-label="Ano final"
+            min="1900" max="2100" step="1"
             placeholder="Ano fim"
             className="h-8 w-24 rounded-md border bg-background px-2 text-xs"
           />
           <select
+            aria-label="Grupo de Vigilância Epidemiológica"
             value={gve}
             onChange={(e) => { setGve(e.target.value); setMunicipio(""); }}
             className="h-8 min-w-40 rounded-md border bg-background px-2 text-xs"
@@ -91,6 +99,7 @@ export function ConjuntiviteHubView() {
             {gveOptions.map((item) => <option key={item} value={item}>{item}</option>)}
           </select>
           <select
+            aria-label="Município"
             value={municipio}
             onChange={(e) => setMunicipio(e.target.value)}
             className="h-8 min-w-40 rounded-md border bg-background px-2 text-xs"
@@ -111,9 +120,10 @@ export function ConjuntiviteHubView() {
       </div>
 
       <div className="flex-1">
-        {tab === "situacao"  && <NotificationsReportView section="situacao" externalFilters={reportFilters} hideFilters />}
-        {tab === "qualidade" && <CevespQualidadeView externalFilters={reportFilters} />}
-        {tab === "consulta"  && <NotificationsReportView section="consulta" externalFilters={reportFilters} hideFilters />}
+        {filterError && <p role="alert" className="m-6 rounded-md border border-destructive p-4 text-sm text-destructive">{filterError}</p>}
+        {!filterError && tab === "situacao"  && <NotificationsReportView section="situacao" externalFilters={reportFilters} hideFilters />}
+        {!filterError && tab === "qualidade" && <CevespQualidadeView externalFilters={reportFilters} />}
+        {!filterError && tab === "consulta"  && <NotificationsReportView section="consulta" externalFilters={reportFilters} hideFilters />}
       </div>
     </div>
   );

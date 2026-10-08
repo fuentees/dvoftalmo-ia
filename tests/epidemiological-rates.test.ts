@@ -18,5 +18,11 @@ assert.equal(prevalencePercent(10, 0), null);
 
 assert.equal(examCoveragePercent(500, 10_000), 5);
 assert.equal(examCoveragePercent(500, 0), null);
+assert.equal(incidencePer100k(-1, 1000), null);
+assert.equal(incidencePer100k(10, Infinity), null);
+assert.equal(prevalencePercent(501, 500), null);
+assert.equal(prevalencePercent(NaN, 500), null);
+assert.equal(examCoveragePercent(-1, 1000), null);
+assert.equal(examCoveragePercent(10, Infinity), null);
 
 console.log("epidemiological rates tests passed");

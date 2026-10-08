@@ -30,7 +30,7 @@ const FORM_COLORS: Record<string, string> = {
 };
 
 function num(v: unknown) {
-  return Number(v ?? 0).toLocaleString("pt-BR");
+  return v == null || !Number.isFinite(Number(v)) ? "—" : Number(v).toLocaleString("pt-BR");
 }
 
 function pct(v: number | null | undefined, d = 1) {
@@ -40,7 +40,7 @@ function pct(v: number | null | undefined, d = 1) {
 
 function KpiCard({ label, value, detail, tone = "default" }: {
   label: string;
-  value: string | number;
+  value: string | number | null;
   detail?: string;
   tone?: "default" | "green" | "amber" | "blue";
 }) {
@@ -55,7 +55,7 @@ function KpiCard({ label, value, detail, tone = "default" }: {
       <CardContent className="pt-4 pb-3">
         <div className="text-xs text-muted-foreground">{label}</div>
         <div className="mt-1 text-2xl font-semibold tabular-nums">
-          {typeof value === "number" ? num(value) : value}
+          {typeof value === "number" || value == null ? num(value) : value}
         </div>
         {detail && <div className="mt-1 text-xs text-muted-foreground">{detail}</div>}
       </CardContent>
@@ -170,15 +170,16 @@ export function TracomaChartsView({ filters }: Props) {
 
   // Média de positividade para linha de referência
   const ntcSeries = mainSeries.filter((r) => !excludedYears.has(r.ano));
-  const totalNtcPos = ntcSeries.reduce((s, r) => s + (Number(r["NOTTRACONET (positivos)"]) || 0), 0);
-  const totalNtcExa = ntcSeries.reduce((s, r) => s + (Number(r["Examinados"]) || 0), 0);
-  const avgPos = totalNtcExa > 0 ? (totalNtcPos / totalNtcExa) * 100 : null;
+  const pairedSeries = ntcSeries.filter((row) => row["Positividade (%)"] != null);
+  const totalNtcPos = pairedSeries.reduce((s, r) => s + (r["NOTTRACONET (positivos)"] ?? 0), 0);
+  const totalNtcExa = pairedSeries.reduce((s, r) => s + (r["Examinados"] ?? 0), 0);
+  const avgPos = pairedSeries.length === ntcSeries.length && totalNtcExa > 0 ? (totalNtcPos / totalNtcExa) * 100 : null;
 
   const fmtTick = (v: unknown) => Number(v).toLocaleString("pt-BR");
   const fmtPct = (v: unknown) => `${Number(v).toFixed(1)}%`;
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="min-w-0 space-y-6">
       {/* ── KPIs ─────────────────────────────────────────────────────────── */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <KpiCard
@@ -208,12 +209,11 @@ export function TracomaChartsView({ filters }: Props) {
           label="Positividade geral"
           value={pct(data.positividade)}
           detail="Positivos / Examinados"
-          tone={data.positividade != null && data.positividade > 5 ? "amber" : "green"}
         />
       </div>
 
       {/* ── Chart 2: Examinados + Positivos + Positividade ───────────────── */}
-      {data.totalExaminados > 0 && (
+      {data.byYear.some((row) => row.examinados != null) && (
         <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
@@ -253,7 +253,7 @@ export function TracomaChartsView({ filters }: Props) {
                   {avgPos != null && (
                     <ReferenceLine yAxisId="right" y={avgPos} stroke="#dc2626" strokeDasharray="4 4" label={{ value: `Média ${pct(avgPos)}`, position: "insideTopRight", fontSize: 10, fill: "#dc2626" }} />
                   )}
-                  <Line yAxisId="right" type="monotone" dataKey="Positividade (%)" stroke="#dc2626" strokeWidth={2} dot={ntcSeries.length <= 15} connectNulls />
+                  <Line yAxisId="right" type="monotone" dataKey="Positividade (%)" stroke="#dc2626" strokeWidth={2} dot={ntcSeries.length <= 15} connectNulls={false} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
@@ -284,7 +284,7 @@ export function TracomaChartsView({ filters }: Props) {
                 <CardTitle className="text-sm">Distribuição por forma clínica por ano</CardTitle>
                 <CardDescription className="text-xs">
                   TF = Folicular · TI = Inflamatório · TS = Cicatricial · TT = Triquíase · CO = Opacidade corneal.
-                  Combinado TRACONET + NOTTRACONET.
+                  Somente TRACONET. Um registro pode ter várias formas; a soma das barras não representa pessoas únicas.
                 </CardDescription>
               </div>
               <button onClick={() => exportChartSvg(refFormas.current, "tracoma-formas-clinicas")} className="flex items-center gap-1 rounded border px-2 py-1 text-xs hover:bg-muted">
@@ -322,6 +322,7 @@ export function TracomaChartsView({ filters }: Props) {
       )}
 
       {/* ── Legenda dos bancos ────────────────────────────────────────────── */}
+      {data.warnings?.length > 0 && <details className="rounded-md border p-3 text-xs text-muted-foreground"><summary className="cursor-pointer font-medium">Limitações da série histórica</summary><ul className="mt-2 space-y-1">{data.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></details>}
       <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
         <Badge className="gap-1.5 bg-muted font-normal text-muted-foreground hover:bg-muted">
           <span className="inline-block h-2 w-2 rounded-sm bg-[#2563eb]" />

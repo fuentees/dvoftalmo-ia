@@ -11,7 +11,7 @@ export const TRACOMA_AGE_ORDER = [
 ];
 
 function toNumber(value: unknown): number | null {
-  if (value == null || value === "") return null;
+  if (value == null || String(value).trim() === "") return null;
   const parsed = Number(String(value).trim().replace(",", "."));
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -22,15 +22,19 @@ export function decodeSinanAgeYears(value: unknown): number | null {
 
   if (direct <= 130) return Math.trunc(direct);
 
-  const digits = String(value ?? "").trim().replace(/\D/g, "");
-  if (digits.length !== 4) return null;
+  const digits = String(value).trim();
+  if (!/^\d{4}$/.test(digits)) return null;
 
   const unit = Number(digits[0]);
   const amount = Number(digits.slice(1));
   if (!Number.isFinite(unit) || !Number.isFinite(amount) || amount < 0) return null;
 
   // SINAN NU_IDADE_N: 1=hours, 2=days, 3=months, 4=years.
-  if (unit >= 1 && unit <= 3) return 0;
+  // Convert the declared unit instead of assuming every non-year value is
+  // an infant. The official dictionary does not restrict counts by unit.
+  if (unit === 1) return Math.floor(amount / (24 * 365));
+  if (unit === 2) return Math.floor(amount / 365);
+  if (unit === 3) return Math.floor(amount / 12);
   if (unit === 4 && amount <= 130) return amount;
   return null;
 }

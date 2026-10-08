@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { buildSinanTracomaRates } from "@/services/population-rates";
+import { validateTracomaFilters, type TracomaFilter } from "@/lib/tracoma-data";
 
 function emptyRates(message: string) {
   return {
@@ -26,13 +27,18 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const municipio = searchParams.get("municipio") ?? undefined;
   const gve = searchParams.get("gve") ?? undefined;
-  const yearStart = searchParams.get("yearStart") ? Number(searchParams.get("yearStart")) : undefined;
-  const yearEnd = searchParams.get("yearEnd") ? Number(searchParams.get("yearEnd")) : undefined;
+  let filters: TracomaFilter;
+  try {
+    filters = validateTracomaFilters({ municipio, gve, yearStart: searchParams.get("yearStart"), yearEnd: searchParams.get("yearEnd") });
+  } catch (error) {
+    return NextResponse.json({ error: (error as Error).message }, { status: 400 });
+  }
 
   try {
-    return NextResponse.json(await buildSinanTracomaRates({ municipio, gve, yearStart, yearEnd }));
+    return NextResponse.json(await buildSinanTracomaRates(filters));
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Erro ao calcular taxas SINAN Tracoma.";
-    return NextResponse.json(emptyRates(message));
+    console.error("Falha nas taxas SINAN Tracoma", error);
+    const message = "Não foi possível carregar os indicadores do SINAN Tracoma. Tente novamente ou verifique a sincronização.";
+    return NextResponse.json({ ...emptyRates(message), error: message }, { status: 503 });
   }
 }

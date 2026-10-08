@@ -1,11 +1,71 @@
 import { createHash } from "crypto";
 
+/**
+ * Chave do cache. Usa o ID do MySQL: assim uma correção de ANO/SemEpidemio atualiza a
+ * mesma linha e registros diferentes nunca são fundidos. O hash antigo só é usado para
+ * linhas sem ID (importações legadas).
+ */
 export function rowKey(row: Record<string, unknown>): string {
+  if (row.ID != null && String(row.ID).trim() !== "") return `id:${String(row.ID).trim()}`;
+  return legacyRowKey(row);
+}
+
+export function legacyRowKey(row: Record<string, unknown>): string {
   const seed = [
     row.DtNotificacao ?? "", row.Unid_notificacao ?? "", row.GVE_NOME ?? "",
     row.SemEpidemio ?? "", row.MunicipioNotificacao ?? "", row.ANO ?? "",
   ].join("|");
   return createHash("md5").update(seed).digest("hex");
+}
+
+/**
+ * No MySQL CEVESP `Excluido` é 'S'/'N' (varchar). No cache é 0/1.
+ * Number('S') e Number('N') dão NaN, por isso a conversão precisa ser explícita.
+ */
+export function excluidoFlag(value: unknown): 0 | 1 {
+  if (value == null) return 0;
+  const v = String(value).trim().toUpperCase();
+  return v === "S" || v === "1" || v === "TRUE" ? 1 : 0;
+}
+
+/**
+ * Condição SQL (MySQL) dos registros de um ano: pelo ANO informado e, entre os digitados
+ * no ano (created_at), os que têm ANO suspeito — vazio, no futuro, ou antigo com dia/mês
+ * logo antes da digitação (erro de digitação do ano). Carga em lote de anos antigos não
+ * entra. Parâmetros: cevespYearParams(ano).
+ */
+export const CEVESP_YEAR_WHERE = `ANO = ?
+   OR (ANO IS NULL AND created_at IS NULL)
+   OR (created_at >= ? AND created_at < ? AND (
+        ANO IS NULL OR ANO > ?
+        OR (ANO < ? AND DATEDIFF(DATE(created_at),
+              STR_TO_DATE(CONCAT(YEAR(created_at), SUBSTRING(DtNotificacao, 5, 6)), '%Y-%m-%d')) BETWEEN 0 AND 14)
+      ))`;
+
+export function cevespYearParams(ano: number) {
+  return [ano, `${ano}-01-01`, `${ano + 1}-01-01`, ano, ano - 1];
+}
+
+/** Aceita AAAA-MM-DD e DD/MM/AAAA (CSV salvo pelo Excel), com hora opcional. */
+function normalizeDateText(v: string): string {
+  const s = v.trim();
+  const br = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (!br) return s.replace("T", " ");
+  const pad = (n: string | undefined) => String(n ?? "0").padStart(2, "0");
+  const date = `${br[3]}-${pad(br[2])}-${pad(br[1])}`;
+  return br[4] ? `${date} ${pad(br[4])}:${br[5]}:${pad(br[6])}` : date;
+}
+
+/** created_at do MySQL como texto local "YYYY-MM-DD HH:MM:SS" (data de digitação). */
+function toTimestamp(v: unknown): string | null {
+  if (v == null || v === "") return null;
+  if (v instanceof Date) {
+    if (isNaN(v.getTime())) return null;
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${v.getFullYear()}-${pad(v.getMonth() + 1)}-${pad(v.getDate())} ${pad(v.getHours())}:${pad(v.getMinutes())}:${pad(v.getSeconds())}`;
+  }
+  const s = normalizeDateText(String(v)).slice(0, 19);
+  return /^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}(:\d{2})?)?$/.test(s) ? s : null;
 }
 
 function toDate(v: unknown): string | null {
@@ -15,7 +75,7 @@ function toDate(v: unknown): string | null {
     if (isNaN(v.getTime())) return null;
     s = v.toISOString().slice(0, 10);
   } else {
-    s = String(v).slice(0, 10);
+    s = normalizeDateText(String(v)).slice(0, 10);
   }
   if (!s.match(/^\d{4}-\d{2}-\d{2}$/)) return null;
   const [y, m, d] = s.split("-").map(Number);
@@ -24,10 +84,14 @@ function toDate(v: unknown): string | null {
   return s;
 }
 
-export function cleanRow(row: Record<string, unknown>): Record<string, unknown> {
+export function cleanRow(input: Record<string, unknown>): Record<string, unknown> {
+  // Linha já limpa (reimportação de JSON): a data inválida fica em dt_notificacao_raw
+  const row = input.DtNotificacao == null && input.dt_notificacao_raw != null
+    ? { ...input, DtNotificacao: input.dt_notificacao_raw }
+    : input;
   const rawDate = row.DtNotificacao instanceof Date
     ? (isNaN(row.DtNotificacao.getTime()) ? null : row.DtNotificacao.toISOString().slice(0, 10))
-    : (row.DtNotificacao != null ? String(row.DtNotificacao).slice(0, 10) : null);
+    : (row.DtNotificacao != null ? normalizeDateText(String(row.DtNotificacao)).slice(0, 10) : null);
   const validDate = toDate(row.DtNotificacao);
   const invalidDate = rawDate !== null && validDate === null ? rawDate : null;
 
@@ -35,6 +99,7 @@ export function cleanRow(row: Record<string, unknown>): Record<string, unknown> 
     row_key:              rowKey(row),
     ID:                   row.ID              != null ? String(row.ID)              : null,
     ControlaSubmit:       row.ControlaSubmit  != null ? String(row.ControlaSubmit)  : null,
+    created_at_origem:    toTimestamp(row.created_at_origem ?? row.created_at),
     ANO:                  row.ANO             != null ? Number(row.ANO)             : null,
     Mes:                  row.Mes             != null ? Number(row.Mes)             : null,
     SemEpidemio:          row.SemEpidemio     != null ? Number(row.SemEpidemio)     : null,
@@ -70,8 +135,8 @@ export function cleanRow(row: Record<string, unknown>): Record<string, unknown> 
     AfastamentoProfSintomatico: row.AfastamentoProfSintomatico != null ? String(row.AfastamentoProfSintomatico) : null,
     NuEncamimento:        row.NuEncamimento         != null ? Number(row.NuEncamimento)         : null,
     MedidaAdotada:        row.MedidaAdotada         != null ? String(row.MedidaAdotada)         : null,
-    Excluido:             row.Excluido              != null ? Number(row.Excluido)              : 0,
-    editable:             row.editable              != null ? Number(row.editable)              : 0,
+    Excluido:             excluidoFlag(row.Excluido),
+    editable:             excluidoFlag(row.editable),
   };
 }
 

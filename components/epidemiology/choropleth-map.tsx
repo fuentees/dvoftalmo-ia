@@ -12,6 +12,7 @@ export type ChoroplethMapProps = {
   colorScheme?: (value: number | null) => string;
   label?: string;
   className?: string;
+  fillContainer?: boolean;
 };
 
 const SVG_WIDTH = 820;
@@ -126,7 +127,8 @@ export function ChoroplethMap({
     return "#14b8a6";
   },
   label = "Mapa",
-  className
+  className,
+  fillContainer = false
 }: ChoroplethMapProps) {
   const [geoData, setGeoData] = useState<FeatureCollection<Geometry, GeoProperties> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -152,6 +154,9 @@ export function ChoroplethMap({
         }
 
         const data = await response.json();
+        if (data?.type !== "FeatureCollection" || !Array.isArray(data.features)) {
+          throw new Error("Camada geográfica inválida.");
+        }
         if (!active) return;
         setGeoData(data);
         setError(null);
@@ -192,15 +197,15 @@ export function ChoroplethMap({
   }
 
   if (error || !geoData) {
-    return null;
+    return <p role="alert" className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">Mapa indisponível. Não foi possível carregar a camada geográfica; consulte os valores na tabela.</p>;
   }
 
   return (
     <div className={className}>
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 shadow-sm">
+      <div className={`${fillContainer ? "h-full" : ""} overflow-hidden rounded-xl border border-slate-200 bg-slate-50 shadow-sm`}>
         <svg
           viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
-          className="h-[360px] w-full"
+          className={`${fillContainer ? "h-full" : "h-[360px]"} w-full`}
           preserveAspectRatio="xMidYMid meet"
           role="img"
           aria-label={label}

@@ -1,5 +1,8 @@
-import { createNotificationConnection, getNotificationTableName, isNotificationConnectionError } from "@/lib/external/notification-db";
+import { BUSINESS_TIME_ZONE, dateToEpiWeek, currentEpiWeek as officialCurrentEpiWeek } from "@/lib/epi-week";
+import { createNotificationConnection, getNotificationTableName } from "@/lib/external/notification-db";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { excluidoFlag } from "@/lib/cevesp-clean";
+import { auditStructure, conteudoKey, unidadeKey, type StructuralFinding } from "@/lib/cevesp-audit";
 
 export interface InvalidRecord {
   recordId: string;
@@ -12,9 +15,18 @@ export interface InvalidRecord {
   ano: number | null;
   totalCaso: number | null;
   issue: string;
-  issueType: "data_tempo" | "conteudo";
+  issueType: "data_tempo" | "conteudo" | "duplicidade";
+  /** Código estável do problema (ex.: se_invalida, duplicata). */
+  problem: string;
+  /** Chave única da linha (um registro pode ter vários problemas). */
+  issueKey: string;
+  /** Resumo da primeira sugestão, para exibição. */
   suggestedField: string;
   suggestedValue: string;
+  /** Todas as alterações sugeridas (ex.: ANO e SemEpidemio juntos). */
+  suggestions: Array<{ field: string; oldValue: string; newValue: string }>;
+  /** Grupo de duplicidade (unidade + semana), quando houver. */
+  group?: string;
 }
 
 export interface CorrectionProposal {
@@ -33,17 +45,39 @@ function toNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function currentEpiWeek() {
-  const now = new Date();
-  const startOfYear = new Date(now.getFullYear(), 0, 1);
-  return Math.ceil(((now.getTime() - startOfYear.getTime()) / 86_400_000 + startOfYear.getDay() + 1) / 7);
+function withSuggestions(record: InvalidRecord): InvalidRecord {
+  const oldValue = record.suggestedField === "SemEpidemio" ? String(record.semEpidemio ?? "")
+    : record.suggestedField === "TotalCaso" ? String(record.totalCaso ?? "")
+    : record.suggestedField === "DtNotificacao" ? (record.dtNotificacao ?? "") : "";
+  return {
+    ...record,
+    suggestions: record.suggestedField && record.suggestedValue
+      ? [{ field: record.suggestedField, oldValue, newValue: record.suggestedValue }]
+      : []
+  };
 }
 
-export function mapInvalidCacheRow(r: Record<string, unknown>): InvalidRecord | null {
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentSe = currentEpiWeek();
-  const rawDt = r.DtNotificacao ? String(r.DtNotificacao).split("T")[0] : null;
+function conservativeSuggestion(record: InvalidRecord, now = new Date()): InvalidRecord {
+  if (record.suggestedField === "DtNotificacao" || record.suggestedField === "TotalCaso") return withSuggestions({ ...record, suggestedValue: "" });
+  if (record.suggestedField === "SemEpidemio") {
+    const match = record.dtNotificacao?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return withSuggestions({ ...record, suggestedValue: "" });
+    const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    const valid = date.getFullYear() === Number(match[1]) && date.getMonth() === Number(match[2]) - 1 && date.getDate() === Number(match[3]) && date.getFullYear() >= 1990 && date <= now;
+    return withSuggestions({ ...record, suggestedValue: valid ? String(dateToEpiWeek(date)) : "" });
+  }
+  return withSuggestions(record);
+}
+
+export function mapInvalidCacheRow(r: Record<string, unknown>, now = new Date()): InvalidRecord | null {
+  if (excluidoFlag(r.Excluido) !== 0) return null;
+  const current = officialCurrentEpiWeek(now);
+  const currentSe = current.se;
+  const today = new Intl.DateTimeFormat("sv-SE", { timeZone: BUSINESS_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+  const rawDt = r.DtNotificacao || r.dt_notificacao_raw ? String(r.DtNotificacao || r.dt_notificacao_raw).split("T")[0] : null;
+  const dateMatch = rawDt?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const parsedDate = dateMatch ? new Date(Number(dateMatch[1]), Number(dateMatch[2]) - 1, Number(dateMatch[3])) : null;
+  const validDate = Boolean(parsedDate && dateMatch && parsedDate.getFullYear() === Number(dateMatch[1]) && parsedDate.getMonth() === Number(dateMatch[2]) - 1 && parsedDate.getDate() === Number(dateMatch[3]));
   const anoData = rawDt ? parseInt(rawDt.slice(0, 4), 10) : null;
   const se = toNumber(r.SemEpidemio);
   const totalCaso = toNumber(r.TotalCaso);
@@ -54,36 +88,39 @@ export function mapInvalidCacheRow(r: Record<string, unknown>): InvalidRecord | 
     (toNumber(r.FxDezQuatorze) ?? 0) +
     (toNumber(r.FxQuizeOuMais) ?? 0);
   const totalSexo = (toNumber(r.SexMasc) ?? 0) + (toNumber(r.SexFem) ?? 0);
+  const invalidDisaggregatedField = ["FxMenorUmAno", "FxUmQuatro", "FxCincoNove", "FxDezQuatorze", "FxQuizeOuMais", "SexMasc", "SexFem"]
+    .find((field) => r[field] != null && String(r[field]).trim() !== "" &&
+      (toNumber(r[field]) == null || !Number.isInteger(toNumber(r[field])) || Number(toNumber(r[field])) < 0));
 
   let problema = "";
   let issue = "";
   let suggestedField = "";
   let suggestedValue = "";
 
-  if (rawDt && anoData && anoData > currentYear) {
+  if (!rawDt) {
+    problema = "data_ausente";
+    issue = "Data de notificação ausente";
+    suggestedField = "DtNotificacao";
+  } else if (!validDate) {
+    problema = "dia_impossivel";
+    issue = `Data inválida: ${rawDt}`;
+    suggestedField = "DtNotificacao";
+  } else if (rawDt > today) {
     problema = "data_futura";
     issue = `Data futura: ${rawDt}`;
     suggestedField = "DtNotificacao";
-    const d = new Date(rawDt);
-    d.setFullYear(currentYear);
-    suggestedValue = d.toISOString().split("T")[0];
-  } else if (rawDt && anoData && anoData < 1990) {
+  } else if (anoData != null && anoData < 1990) {
     problema = "ano_impossivel";
     issue = `Ano impossível: ${anoData}`;
     suggestedField = "DtNotificacao";
-    const d = new Date(rawDt);
-    d.setFullYear(currentYear);
-    suggestedValue = d.toISOString().split("T")[0];
-  } else if (se !== null && (se > 53 || se < 1)) {
-    problema = se > 53 ? "se_alta" : "se_baixa";
-    issue = `SE inválida: ${se}`;
+  } else if (se === null || !Number.isInteger(se) || se > 53 || se < 1) {
+    problema = "se_invalida";
+    issue = `SE inválida: ${se ?? "não informada"}`;
     suggestedField = "SemEpidemio";
-    suggestedValue = String(Math.min(currentSe, 53));
-  } else if (anoData === currentYear && se !== null && se > currentSe) {
+  } else if ((toNumber(r.ANO) ?? anoData) === current.year && se > currentSe) {
     problema = "se_futura";
     issue = `SE futura: ${se} (SE atual: ${currentSe})`;
     suggestedField = "SemEpidemio";
-    suggestedValue = String(currentSe);
   } else if (!String(r.MunicipioNotificacao ?? "").trim()) {
     problema = "municipio_ausente";
     issue = "Município ausente";
@@ -93,9 +130,12 @@ export function mapInvalidCacheRow(r: Record<string, unknown>): InvalidRecord | 
   } else if (totalCaso === null) {
     problema = "sem_casos";
     issue = totalCaso === null ? "TotalCaso não informado" : "Nenhum caso confirmado (TotalCaso = 0)";
+  } else if (invalidDisaggregatedField) {
+    problema = "contagem_desagregada_invalida";
+    issue = `Contagem inválida em ${invalidDisaggregatedField}: ${r[invalidDisaggregatedField]}`;
   } else if (totalCaso === 0 && totalFaixa > 0) {
     problema = "faixa_etaria_divergente";
-    issue = `Faixa etaria diverge: soma das faixas=${totalFaixa} com TotalCaso=0`;
+    issue = `Faixa etária diverge: soma das faixas=${totalFaixa} com TotalCaso=0`;
   } else if (totalCaso === 0 && totalSexo > 0) {
     problema = "sexo_divergente";
     issue = `Sexo diverge: Masc+Fem=${totalSexo} com TotalCaso=0`;
@@ -103,10 +143,17 @@ export function mapInvalidCacheRow(r: Record<string, unknown>): InvalidRecord | 
     problema = "casos_negativos";
     issue = `Total de casos negativo: ${totalCaso}`;
     suggestedField = "TotalCaso";
-    suggestedValue = "0";
+    suggestedValue = "";
   } else if (totalCaso > 0 && totalFaixa === 0) {
     problema = "faixa_etaria_ausente";
-    issue = `Faixa etária ausente (${totalFaixa} informado para ${totalCaso} caso(s))`;
+    issue = `Faixa etária ausente: nenhuma faixa informada para ${totalCaso} caso(s)`;
+  } else if (!Number.isInteger(totalCaso)) {
+    problema = "casos_invalidos";
+    issue = `Total de casos inválido: ${totalCaso}`;
+    suggestedField = "TotalCaso";
+  } else if (totalCaso > 0 && totalFaixa !== totalCaso) {
+    problema = "faixa_etaria_divergente";
+    issue = `Faixa etária diverge: soma das faixas=${totalFaixa} ≠ TotalCaso=${totalCaso}`;
   } else if (totalCaso > 0 && totalSexo !== totalCaso) {
     problema = "sexo_divergente";
     issue = `Sexo diverge: Masc+Fem=${totalSexo} ≠ TotalCaso=${totalCaso}`;
@@ -114,9 +161,10 @@ export function mapInvalidCacheRow(r: Record<string, unknown>): InvalidRecord | 
     return null;
   }
 
-  const DATA_TEMPO = new Set(["data_futura", "ano_impossivel", "se_alta", "se_baixa", "se_futura"]);
-  return {
-    recordId: String(r["ID"] ?? r.id ?? r.row_key ?? `${r.DtNotificacao ?? ""}-${r.MunicipioNotificacao ?? ""}`),
+  const DATA_TEMPO = new Set(["data_ausente", "dia_impossivel", "data_futura", "ano_impossivel", "se_invalida", "se_futura"]);
+  const recordId = recordIdOf(r);
+  return conservativeSuggestion({
+    recordId,
     pkColumn: "ID",
     controlaSubmit: r.ControlaSubmit != null ? String(r.ControlaSubmit) : null,
     dtNotificacao: rawDt,
@@ -127,125 +175,166 @@ export function mapInvalidCacheRow(r: Record<string, unknown>): InvalidRecord | 
     totalCaso,
     issue,
     issueType: (DATA_TEMPO.has(problema) ? "data_tempo" : "conteudo") as "data_tempo" | "conteudo",
+    problem: problema,
+    issueKey: `${recordId}#${problema}`,
     suggestedField,
-    suggestedValue
-  };
+    suggestedValue,
+    suggestions: []
+  }, now);
 }
 
-type CevespQualityAuditRpcRow = {
-  record_id: string;
-  pk_column: string;
-  controla_submit: string | null;
-  dt_notificacao: string | null;
-  sem_epidemio: number | null;
-  municipio: string | null;
-  gve: string | null;
-  ano: number | null;
-  total_caso: number | null;
-  issue: string;
-  issue_type: "data_tempo" | "conteudo";
-  suggested_field: string | null;
-  suggested_value: string | null;
+/** ID do MySQL; registros antigos do cache sem ID ficam marcados para não serem corrigidos. */
+function recordIdOf(r: Record<string, unknown>) {
+  if (r.ID != null && String(r.ID).trim() !== "") return String(r.ID);
+  return `sem-id:${r.id ?? String(r.row_key ?? "").slice(0, 10)}`;
+}
+
+export function isMysqlRecordId(recordId: string) {
+  return /^\d+$/.test(recordId);
+}
+
+const STRUCTURAL_TYPE: Record<StructuralFinding["problem"], InvalidRecord["issueType"]> = {
+  ano_errado: "data_tempo",
+  se_invalida: "data_tempo",
+  se_futura: "data_tempo",
+  semana_trocada: "duplicidade",
+  duplicata: "duplicidade",
+  duplicata_conflito: "duplicidade"
 };
 
-function mapQualityAuditRpcRow(row: CevespQualityAuditRpcRow): InvalidRecord {
+function structuralRecord(r: Record<string, unknown>, f: StructuralFinding): InvalidRecord {
+  const recordId = recordIdOf(r);
+  const ano = toNumber(r.ANO);
+  const se = toNumber(r.SemEpidemio);
+  const suggestions: InvalidRecord["suggestions"] = [];
+  if (f.suggestion && isMysqlRecordId(recordId)) {
+    if (f.suggestion.ano !== ano) suggestions.push({ field: "ANO", oldValue: String(ano ?? ""), newValue: String(f.suggestion.ano) });
+    if (f.suggestion.se !== se) suggestions.push({ field: "SemEpidemio", oldValue: String(se ?? ""), newValue: String(f.suggestion.se) });
+  }
+  const rawDt = r.DtNotificacao || r.dt_notificacao_raw ? String(r.DtNotificacao || r.dt_notificacao_raw).split("T")[0] : null;
   return {
-    recordId: row.record_id,
-    pkColumn: row.pk_column || "ID",
-    controlaSubmit: row.controla_submit,
-    dtNotificacao: row.dt_notificacao,
-    semEpidemio: row.sem_epidemio,
-    municipio: row.municipio,
-    gve: row.gve,
-    ano: row.ano,
-    totalCaso: row.total_caso,
-    issue: row.issue,
-    issueType: row.issue_type,
-    suggestedField: row.suggested_field ?? "",
-    suggestedValue: row.suggested_value ?? ""
+    recordId,
+    pkColumn: "ID",
+    controlaSubmit: r.ControlaSubmit != null ? String(r.ControlaSubmit) : null,
+    dtNotificacao: rawDt,
+    semEpidemio: se,
+    municipio: r.MunicipioNotificacao ? String(r.MunicipioNotificacao) : null,
+    gve: r.GVE_NOME ? String(r.GVE_NOME) : null,
+    ano,
+    totalCaso: toNumber(r.TotalCaso),
+    issue: f.issue,
+    issueType: STRUCTURAL_TYPE[f.problem],
+    problem: f.problem,
+    issueKey: `${recordId}#${f.problem}`,
+    suggestedField: suggestions.map((x) => x.field).join("/"),
+    suggestedValue: suggestions.map((x) => x.newValue).join("/"),
+    suggestions,
+    group: f.group
   };
 }
 
-async function findInvalidRecordsFromCacheRpc(limit?: number, ano?: number, anoFim?: number, gve?: string): Promise<InvalidRecord[] | null> {
-  const supabase = createAdminClient();
-  const { data, error } = await supabase.rpc("cevesp_quality_audit", {
-    p_limit: limit ?? null,
-    p_ano_start: ano ?? null,
-    p_ano_end: anoFim ?? ano ?? null,
-    p_gve: gve ?? null
-  });
+/** Regras individuais já cobertas (e melhor sugeridas) pela auditoria por unidade. */
+const SUPERSEDED_BY_STRUCTURE = new Set(["se_invalida", "se_futura"]);
 
-  if (error) {
-    const message = error.message.toLowerCase();
-    if (message.includes("cevesp_quality_audit") || message.includes("schema cache") || message.includes("function")) {
-      return null;
+/**
+ * Audita registros do cache: regras de cada registro + comparação entre registros da
+ * mesma unidade (duplicidade, semana trocada, ano errado). `inScope` decide quais
+ * registros entram no resultado; os demais servem só de contexto (semanas vizinhas).
+ */
+export function auditCevespRows(
+  rows: Array<Record<string, unknown>>,
+  now = new Date(),
+  inScope: (row: Record<string, unknown>) => boolean = () => true
+): InvalidRecord[] {
+  const active = rows.filter((r) => excluidoFlag(r.Excluido) === 0);
+  const structural = auditStructure(active.map((r, i) => ({
+    key: String(i),
+    ANO: toNumber(r.ANO),
+    SemEpidemio: toNumber(r.SemEpidemio),
+    DtNotificacao: r.DtNotificacao ? String(r.DtNotificacao).slice(0, 10) : (r.dt_notificacao_raw ? String(r.dt_notificacao_raw) : null),
+    createdAt: r.created_at_origem ? String(r.created_at_origem).replace("T", " ") : null,
+    unidade: unidadeKey(r),
+    conteudo: conteudoKey(r)
+  })), now);
+
+  const result: InvalidRecord[] = [];
+  active.forEach((r, i) => {
+    if (!inScope(r)) return;
+    const found = structural.get(String(i)) ?? [];
+    const single = mapInvalidCacheRow(r, now);
+    if (single && !(SUPERSEDED_BY_STRUCTURE.has(single.problem) && found.some((f) => STRUCTURAL_TYPE[f.problem] === "data_tempo"))) {
+      result.push(isMysqlRecordId(single.recordId) ? single : { ...single, suggestions: [], suggestedField: "", suggestedValue: "" });
     }
-    throw new Error(`Erro ao auditar cache CEVESP: ${error.message}`);
+    for (const f of found) result.push(structuralRecord(r, f));
+    if (!isMysqlRecordId(recordIdOf(r))) {
+      result.push({
+        ...structuralRecord(r, { problem: "duplicata", issue: "", suggestion: null }),
+        issue: "Registro sem ID do MySQL: cache antigo, ressincronize a base (npm run sync-cevesp -- --purge-legacy)",
+        issueType: "duplicidade",
+        problem: "sem_id",
+        issueKey: `${recordIdOf(r)}#sem_id`
+      });
+    }
+  });
+  return result;
+}
+
+const AUDIT_COLUMNS = 'id,row_key,dt_notificacao_raw,"Excluido","ID","ControlaSubmit","DtNotificacao","SemEpidemio","MunicipioNotificacao","IbgeNotificacao","nCNES","Unid_notificacao","GVE_NOME","ANO","TotalCaso","FxMenorUmAno","FxUmQuatro","FxCincoNove","FxDezQuatorze","FxQuizeOuMais","SexMasc","SexFem","Surto"';
+
+async function fetchAuditRows(ano?: number, anoFim?: number, gve?: string) {
+  const supabase = createAdminClient();
+  const pageSize = 1000;
+  const lo = ano ?? anoFim;
+  const hi = anoFim && (!ano || anoFim > ano) ? anoFim : ano;
+
+  async function run(withCreatedAt: boolean) {
+    const rows: Array<Record<string, unknown>> = [];
+    for (let from = 0; ; from += pageSize) {
+      let q = supabase
+        .from("cevesp_notificacoes")
+        .select(withCreatedAt ? `${AUDIT_COLUMNS},created_at_origem` : AUDIT_COLUMNS)
+        .order("id")
+        .range(from, from + pageSize - 1);
+      // O ano anterior entra como contexto (semanas vizinhas na virada do ano); registros
+      // digitados no período com ANO errado ou vazio também precisam aparecer.
+      if (lo != null && hi != null) {
+        const filters = [`and(ANO.gte.${lo - 1},ANO.lte.${hi})`, "ANO.is.null"];
+        if (withCreatedAt) filters.push(`and(created_at_origem.gte.${lo}-01-01,created_at_origem.lt.${hi + 1}-01-01)`);
+        q = q.or(filters.join(",")) as typeof q;
+      }
+      if (gve) q = q.eq('"GVE_NOME"', gve) as typeof q;
+      const { data, error } = await q;
+      if (error) return { rows, error };
+      rows.push(...((data ?? []) as unknown as Array<Record<string, unknown>>));
+      if (!data || data.length < pageSize) break;
+    }
+    return { rows, error: null };
   }
 
-  return ((data ?? []) as CevespQualityAuditRpcRow[]).map(mapQualityAuditRpcRow);
+  const first = await run(true);
+  if (!first.error) return first.rows;
+  // Migração de created_at_origem ainda não aplicada: audita sem a data de digitação
+  if (/created_at_origem/.test(first.error.message)) {
+    const fallback = await run(false);
+    if (!fallback.error) return fallback.rows;
+    throw new Error(`Erro ao consultar cache CEVESP: ${fallback.error.message}`);
+  }
+  throw new Error(`Erro ao consultar cache CEVESP: ${first.error.message}`);
 }
 
 export async function findInvalidRecordsFromCache(limit?: number, ano?: number, anoFim?: number, gve?: string): Promise<InvalidRecord[]> {
-  const rpcRecords = await findInvalidRecordsFromCacheRpc(limit, ano, anoFim, gve);
-  if (rpcRecords) return rpcRecords;
-
-  const supabase = createAdminClient();
-  const pageSize = 1000;
-  const invalid: InvalidRecord[] = [];
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentSe = currentEpiWeek();
-  const today = now.toISOString().slice(0, 10);
-
-  for (let from = 0; ; from += pageSize) {
-    let q = supabase
-      .from("cevesp_notificacoes")
-      .select('id,row_key,"ID","ControlaSubmit","DtNotificacao","SemEpidemio","MunicipioNotificacao","GVE_NOME","ANO","TotalCaso","FxMenorUmAno","FxUmQuatro","FxCincoNove","FxDezQuatorze","FxQuizeOuMais","SexMasc","SexFem"')
-      .range(from, from + pageSize - 1);
-
-    // Pre-filter: only fetch rows that are likely to have quality issues.
-    // Without this, scanning 300k rows causes Vercel timeout (300+ pagination requests).
-    q = q.or([
-      "SemEpidemio.gt.53",
-      "SemEpidemio.lt.1",
-      `and(ANO.eq.${currentYear},SemEpidemio.gt.${currentSe})`,
-      "TotalCaso.is.null",
-      "TotalCaso.lt.0",
-      "and(TotalCaso.eq.0,FxMenorUmAno.gt.0)",
-      "and(TotalCaso.eq.0,FxUmQuatro.gt.0)",
-      "and(TotalCaso.eq.0,FxCincoNove.gt.0)",
-      "and(TotalCaso.eq.0,FxDezQuatorze.gt.0)",
-      "and(TotalCaso.eq.0,FxQuizeOuMais.gt.0)",
-      "and(TotalCaso.eq.0,SexMasc.gt.0)",
-      "and(TotalCaso.eq.0,SexFem.gt.0)",
-      "and(TotalCaso.gt.0,FxMenorUmAno.eq.0,FxUmQuatro.eq.0,FxCincoNove.eq.0,FxDezQuatorze.eq.0,FxQuizeOuMais.eq.0)",
-      "MunicipioNotificacao.is.null",
-      "GVE_NOME.is.null",
-      `DtNotificacao.gt.${today}`,
-    ].join(",")) as typeof q;
-
-    if (ano && anoFim && anoFim > ano) {
-      q = q.gte('"ANO"', ano).lte('"ANO"', anoFim) as typeof q;
-    } else if (ano) {
-      q = q.eq('"ANO"', ano) as typeof q;
-    } else if (anoFim) {
-      q = q.lte('"ANO"', anoFim) as typeof q;
-    }
-    if (gve) q = q.eq('"GVE_NOME"', gve) as typeof q;
-    const { data, error } = await q;
-    if (error) throw new Error(`Erro ao consultar cache CEVESP: ${error.message}`);
-
-    for (const row of data ?? []) {
-      const mapped = mapInvalidCacheRow(row as Record<string, unknown>);
-      if (mapped) invalid.push(mapped);
-      if (limit && invalid.length >= limit) return invalid.slice(0, limit);
-    }
-
-    if (!data || data.length < pageSize) break;
-  }
-
-  return invalid;
+  const rows = await fetchAuditRows(ano, anoFim, gve);
+  const lo = ano ?? anoFim;
+  const hi = anoFim && (!ano || anoFim > ano) ? anoFim : ano;
+  const inScope = (r: Record<string, unknown>) => {
+    if (lo == null || hi == null) return true;
+    const a = toNumber(r.ANO);
+    if (a != null && a >= lo && a <= hi) return true;
+    const created = r.created_at_origem ? Number(String(r.created_at_origem).slice(0, 4)) : null;
+    return created != null && created >= lo && created <= hi;
+  };
+  const records = auditCevespRows(rows, new Date(), inScope);
+  return limit ? records.slice(0, limit) : records;
 }
 
 // Discover primary key column from INFORMATION_SCHEMA
@@ -270,188 +359,9 @@ async function getPrimaryKeyColumn(tableName: string, dbName: string): Promise<s
   }
 }
 
+/** Quality and completeness use the same synchronized cache and TypeScript rules. */
 export async function findInvalidRecords(limit?: number, ano?: number, gve?: string, anoFim?: number): Promise<InvalidRecord[]> {
-  let tableName: string;
-  let conn: Awaited<ReturnType<typeof createNotificationConnection>>;
-  try {
-    tableName = getNotificationTableName();
-    conn = await createNotificationConnection();
-  } catch (error) {
-    if (isNotificationConnectionError(error) || !process.env.NOTIFY_DB_HOST) {
-      return findInvalidRecordsFromCache(limit, ano, anoFim, gve);
-    }
-    throw error;
-  }
-  const dbName = process.env.NOTIFY_DB_NAME!;
-
-  try {
-    const pkCol = await getPrimaryKeyColumn(tableName, dbName);
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const startOfYear = new Date(currentYear, 0, 1);
-    const currentSe = Math.ceil(
-      ((now.getTime() - startOfYear.getTime()) / 86_400_000 + startOfYear.getDay() + 1) / 7
-    );
-
-    const scopeConditions: string[] = [];
-    const scopeParams: unknown[] = [];
-    if (ano && anoFim && anoFim > ano) {
-      scopeConditions.push("ANO >= ?"); scopeParams.push(ano);
-      scopeConditions.push("ANO <= ?"); scopeParams.push(anoFim);
-    } else if (ano) {
-      scopeConditions.push("ANO = ?");
-      scopeParams.push(ano);
-    } else if (anoFim) {
-      scopeConditions.push("ANO <= ?");
-      scopeParams.push(anoFim);
-    }
-    if (gve) {
-      scopeConditions.push("GVE_NOME = ?");
-      scopeParams.push(gve);
-    }
-    const scopeClause = scopeConditions.length ? `${scopeConditions.join(" AND ")} AND ` : "";
-
-    const sql = `SELECT \`${pkCol}\`, ControlaSubmit,
-              DtNotificacao, SemEpidemio, MunicipioNotificacao,
-              GVE_NOME, ANO, TotalCaso,
-              COALESCE(FxMenorUmAno,0)+COALESCE(FxUmQuatro,0)+COALESCE(FxCincoNove,0)+COALESCE(FxDezQuatorze,0)+COALESCE(FxQuizeOuMais,0) AS total_faixa,
-              COALESCE(SexMasc,0)+COALESCE(SexFem,0) AS total_sexo,
-              CASE
-                WHEN DtNotificacao IS NOT NULL
-                     AND CAST(DtNotificacao AS CHAR) REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
-                     AND STR_TO_DATE(CAST(DtNotificacao AS CHAR), '%Y-%m-%d') IS NULL
-                  THEN 'dia_impossivel'
-                WHEN DtNotificacao > CURDATE()       THEN 'data_futura'
-                WHEN year(DtNotificacao) < 1990      THEN 'ano_impossivel'
-                WHEN SemEpidemio > 53                THEN 'se_alta'
-                WHEN SemEpidemio < 1                 THEN 'se_baixa'
-                WHEN year(DtNotificacao) = ? AND SemEpidemio > ? THEN 'se_futura'
-                WHEN MunicipioNotificacao IS NULL OR TRIM(MunicipioNotificacao) = '' THEN 'municipio_ausente'
-                WHEN GVE_NOME IS NULL OR TRIM(GVE_NOME) = ''  THEN 'gve_ausente'
-                WHEN TotalCaso IS NULL                         THEN 'sem_casos'
-                WHEN TotalCaso < 0                             THEN 'casos_negativos'
-                WHEN TotalCaso = 0
-                     AND (COALESCE(FxMenorUmAno,0)+COALESCE(FxUmQuatro,0)+COALESCE(FxCincoNove,0)+COALESCE(FxDezQuatorze,0)+COALESCE(FxQuizeOuMais,0)) > 0
-                  THEN 'faixa_etaria_divergente'
-                WHEN TotalCaso = 0
-                     AND (COALESCE(SexMasc,0)+COALESCE(SexFem,0)) > 0
-                  THEN 'sexo_divergente'
-                WHEN TotalCaso > 0
-                     AND (COALESCE(FxMenorUmAno,0)+COALESCE(FxUmQuatro,0)+COALESCE(FxCincoNove,0)+COALESCE(FxDezQuatorze,0)+COALESCE(FxQuizeOuMais,0)) = 0
-                  THEN 'faixa_etaria_ausente'
-                WHEN TotalCaso > 0
-                     AND (COALESCE(SexMasc,0)+COALESCE(SexFem,0)) <> TotalCaso
-                  THEN 'sexo_divergente'
-                ELSE 'outro'
-              END AS problema
-       FROM \`${tableName}\`
-       WHERE ${scopeClause}((
-              DtNotificacao IS NOT NULL
-              AND CAST(DtNotificacao AS CHAR) REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
-              AND STR_TO_DATE(CAST(DtNotificacao AS CHAR), '%Y-%m-%d') IS NULL
-             )
-          OR DtNotificacao > CURDATE()
-          OR year(DtNotificacao) < 1990
-          OR SemEpidemio > 53
-          OR SemEpidemio < 1
-          OR (year(DtNotificacao) = ? AND SemEpidemio > ?)
-          OR (MunicipioNotificacao IS NULL OR TRIM(MunicipioNotificacao) = '')
-          OR (GVE_NOME IS NULL OR TRIM(GVE_NOME) = '')
-          OR TotalCaso IS NULL
-          OR TotalCaso < 0
-          OR (TotalCaso = 0 AND (COALESCE(FxMenorUmAno,0)+COALESCE(FxUmQuatro,0)+COALESCE(FxCincoNove,0)+COALESCE(FxDezQuatorze,0)+COALESCE(FxQuizeOuMais,0)) > 0)
-          OR (TotalCaso = 0 AND (COALESCE(SexMasc,0)+COALESCE(SexFem,0)) > 0)
-          OR (TotalCaso > 0 AND (COALESCE(FxMenorUmAno,0)+COALESCE(FxUmQuatro,0)+COALESCE(FxCincoNove,0)+COALESCE(FxDezQuatorze,0)+COALESCE(FxQuizeOuMais,0)) = 0)
-          OR (TotalCaso > 0 AND (COALESCE(SexMasc,0)+COALESCE(SexFem,0)) <> TotalCaso)
-       )
-       ${limit ? "LIMIT ?" : ""}`;
-    // param order: CASE uses currentYear/currentSe first (in SELECT), then WHERE ANO (if ano), then WHERE se_futura pair
-    const queryParams: unknown[] = [currentYear, currentSe, ...scopeParams, currentYear, currentSe];
-    if (limit) queryParams.push(limit);
-    const [rows] = await conn.query(sql, queryParams);
-
-    const DATA_TEMPO = new Set(["dia_impossivel", "data_futura", "ano_impossivel", "se_alta", "se_baixa", "se_futura"]);
-
-    const allRecords = (rows as Array<Record<string, unknown>>).map((r) => {
-      const problema   = String(r.problema ?? "");
-      const rawDt      = r.DtNotificacao ? String(r.DtNotificacao).split("T")[0] : null;
-      const anoData    = rawDt ? parseInt(rawDt.slice(0, 4), 10) : null;
-      const se         = r.SemEpidemio  != null ? Number(r.SemEpidemio)  : null;
-      const totalCaso  = r.TotalCaso    != null ? Number(r.TotalCaso)    : null;
-      const totalFaixa = r.total_faixa  != null ? Number(r.total_faixa)  : null;
-      const totalSexo  = r.total_sexo   != null ? Number(r.total_sexo)   : null;
-
-      let issue          = "";
-      let suggestedField = "";
-      let suggestedValue = "";
-
-      if (problema === "dia_impossivel" && rawDt) {
-        const [y, m] = rawDt.split("-").map(Number);
-        const lastDay = new Date(y, m, 0).getDate();
-        issue = `Dia impossível: ${rawDt} (${["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"][m-1]} tem ${lastDay} dias)`;
-        suggestedField = "DtNotificacao";
-        suggestedValue = `${y}-${String(m).padStart(2,"0")}-${String(lastDay).padStart(2,"0")}`;
-      } else if (problema === "data_futura" && rawDt) {
-        issue = `Data futura: ${rawDt}`;
-        suggestedField = "DtNotificacao";
-        const d = new Date(rawDt); d.setFullYear(currentYear);
-        suggestedValue = d.toISOString().split("T")[0];
-      } else if (problema === "ano_impossivel" && rawDt) {
-        issue = `Ano impossível: ${anoData}`;
-        suggestedField = "DtNotificacao";
-        const d = new Date(rawDt); d.setFullYear(currentYear);
-        suggestedValue = d.toISOString().split("T")[0];
-      } else if (se !== null && (problema === "se_alta" || problema === "se_baixa")) {
-        issue = `SE inválida: ${se}`;
-        suggestedField = "SemEpidemio";
-        suggestedValue = String(Math.min(currentSe, 53));
-      } else if (se !== null && problema === "se_futura") {
-        issue = `SE futura: ${se} (SE atual: ${currentSe})`;
-        suggestedField = "SemEpidemio";
-        suggestedValue = String(currentSe);
-      } else if (problema === "municipio_ausente") {
-        issue = "Município ausente";
-      } else if (problema === "gve_ausente") {
-        issue = "GVE ausente";
-      } else if (problema === "sem_casos") {
-        issue = totalCaso === null ? "TotalCaso não informado" : "Nenhum caso confirmado (TotalCaso = 0)";
-      } else if (problema === "casos_negativos") {
-        issue = `Total de casos negativo: ${totalCaso}`;
-        suggestedField = "TotalCaso";
-        suggestedValue = "0";
-      } else if (problema === "faixa_etaria_divergente") {
-        issue = `Faixa etaria diverge: soma das faixas=${totalFaixa ?? 0} com TotalCaso=0`;
-      } else if (problema === "faixa_etaria_ausente") {
-        issue = `Faixa etária ausente (${totalFaixa ?? 0} informado para ${totalCaso} caso(s))`;
-      } else if (problema === "sexo_divergente") {
-        issue = `Sexo diverge: Masc+Fem=${totalSexo} ≠ TotalCaso=${totalCaso}`;
-      }
-
-      return {
-        recordId:       String(r[pkCol]),
-        pkColumn:       pkCol,
-        controlaSubmit: r.ControlaSubmit != null ? String(r.ControlaSubmit) : null,
-        dtNotificacao:  rawDt,
-        semEpidemio:    se,
-        municipio:      r.MunicipioNotificacao ? String(r.MunicipioNotificacao) : null,
-        gve:            r.GVE_NOME            ? String(r.GVE_NOME)             : null,
-        ano:            r.ANO                 ? Number(r.ANO)                  : null,
-        totalCaso,
-        issue,
-        issueType: (DATA_TEMPO.has(problema) ? "data_tempo" : "conteudo") as "data_tempo" | "conteudo",
-        suggestedField,
-        suggestedValue
-      };
-    });
-    return allRecords;
-  } catch (error) {
-    if (isNotificationConnectionError(error)) {
-      return findInvalidRecordsFromCache(limit, ano, anoFim, gve);
-    }
-    throw error;
-  } finally {
-    await conn.end();
-  }
+  return findInvalidRecordsFromCache(limit, ano, anoFim, gve);
 }
 
 export async function saveCorrectionsToQueue(
@@ -513,13 +423,27 @@ export async function applyCorrection(correctionId: string, reviewerId: string):
     if (!identPattern.test(item.table_name)) throw new Error("table_name inválido.");
     if (!identPattern.test(item.field_name)) throw new Error("field_name inválido.");
 
+    // Só IDs do MySQL: o id interno do cache (Supabase) apontaria para outro registro
+    if (!isMysqlRecordId(String(item.record_id))) {
+      throw new Error(`Registro ${item.record_id} não tem ID do MySQL; ressincronize o cache antes de corrigir.`);
+    }
+
     // Get PK column
     const pkCol = await getPrimaryKeyColumn(item.table_name, process.env.NOTIFY_DB_NAME!);
 
-    await conn.execute(
-      `UPDATE \`${item.table_name}\` SET \`${item.field_name}\` = ? WHERE \`${pkCol}\` = ?`,
-      [item.new_value, item.record_id]
+    // Só altera se o campo ainda tiver o valor que foi auditado; senão o registro mudou
+    // desde a proposta e a correção precisa ser revista.
+    const oldValue = String(item.old_value ?? "");
+    const guard = oldValue === ""
+      ? `(\`${item.field_name}\` IS NULL OR \`${item.field_name}\` = '')`
+      : `\`${item.field_name}\` = ?`;
+    const [result] = await conn.execute(
+      `UPDATE \`${item.table_name}\` SET \`${item.field_name}\` = ? WHERE \`${pkCol}\` = ? AND ${guard}`,
+      oldValue === "" ? [item.new_value, item.record_id] : [item.new_value, item.record_id, oldValue]
     );
+    if ((result as { affectedRows?: number }).affectedRows !== 1) {
+      throw new Error(`Registro ${item.record_id}: ${item.field_name} não está mais com o valor "${oldValue}". Correção não aplicada; revise.`);
+    }
   } finally {
     await conn.end();
   }

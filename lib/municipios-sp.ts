@@ -1,6 +1,6 @@
 /**
  * Lookup IBGE 6 dígitos → { nome, gve } para municípios do Estado de São Paulo.
- * Cobre todos os 331 municípios distintos presentes no banco SINAN tracoma.
+ * Cobre os 645 municípios do Estado de São Paulo.
  * Códigos verificados via API pública IBGE (servicodados.ibge.gov.br).
  * GVEs conforme estrutura das 28 GVEs da Secretaria de Saúde SP.
  */
@@ -658,10 +658,11 @@ const MUNICIPIOS_SP: Record<string, MunicipioInfo> = {
   "355730": { nome: "Estiva Gerbi",              gve: "SAO JOAO DA BOA VISTA" },
 };
 
-/** Retorna nome e GVE do município pelo código IBGE 6 dígitos */
+/** Retorna nome e GVE por código SINAN de 6 dígitos ou IBGE de 7 dígitos. */
 export function infoMunicipio(codigo: string | null | undefined): MunicipioInfo | null {
   if (!codigo) return null;
-  const cod = String(codigo).trim().replace(/\D/g, "").padStart(6, "0");
+  const digits = String(codigo).trim().replace(/\D/g, "");
+  const cod = digits.length === 7 ? digits.slice(0, 6) : digits.padStart(6, "0");
   return MUNICIPIOS_SP[cod] ?? null;
 }
 

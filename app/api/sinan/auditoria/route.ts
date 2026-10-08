@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { auditarSinanTracoma, type SinanAuditResult } from "@/services/sinan-tracoma";
+import { validateTracomaFilters, type TracomaFilter } from "@/lib/tracoma-data";
 
 function csvEscape(value: unknown) {
   return `"${String(value ?? "").replace(/"/g, '""')}"`;
@@ -124,12 +125,16 @@ export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const municipio = searchParams.get("municipio") ?? undefined;
   const gve = searchParams.get("gve") ?? undefined;
-  const yearStart = searchParams.get("yearStart") ? Number(searchParams.get("yearStart")) : undefined;
-  const yearEnd = searchParams.get("yearEnd") ? Number(searchParams.get("yearEnd")) : undefined;
+  let filters: TracomaFilter;
+  try {
+    filters = validateTracomaFilters({ municipio, gve, yearStart: searchParams.get("yearStart"), yearEnd: searchParams.get("yearEnd") });
+  } catch (error) {
+    return NextResponse.json({ error: (error as Error).message }, { status: 400 });
+  }
   const format = searchParams.get("format");
 
   try {
-    const result = await auditarSinanTracoma({ municipio, gve, yearStart, yearEnd });
+    const result = await auditarSinanTracoma(filters);
     if (format === "csv") {
       return new NextResponse("\uFEFF" + auditToCsv(result), {
         headers: {
@@ -140,9 +145,8 @@ export async function GET(req: NextRequest) {
     }
     return NextResponse.json(result);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return NextResponse.json(emptyAuditResult(msg.includes("sinan_tracoma_rows")
-      ? "A tabela SINAN Tracoma ainda nao foi criada ou sincronizada."
-      : msg));
+    console.error("Falha na auditoria SINAN Tracoma", err);
+    const message = "Não foi possível carregar a auditoria. Tente novamente ou verifique a sincronização do SINAN Tracoma.";
+    return NextResponse.json({ ...emptyAuditResult(message), error: message }, { status: 503 });
   }
 }

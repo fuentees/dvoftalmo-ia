@@ -25,6 +25,7 @@ import type { CevespKpis } from "@/services/cevesp-kpis";
 import type { CevespHistorico } from "@/lib/external/supabase-cevesp";
 import type { EndemicChannelPoint } from "@/services/cevesp-endemic";
 import { pickCurrentChannelPoint } from "@/lib/epi-week";
+import { classifyChannelPoint, CHANNEL_ZONE_LABELS } from "@/lib/cevesp-channel";
 
 interface SinanSnapshot {
   totalTraconet?: number;
@@ -74,6 +75,8 @@ type SituationPriority = {
 
 type SituationPriorities = {
   generatedAt: string;
+  partial?: boolean;
+  unavailableSources?: string[];
   priorities: SituationPriority[];
   summary: { total: number; critica: number; alta: number; media: number };
 };
@@ -104,13 +107,14 @@ function DeltaBadge({ delta }: { delta: number | null }) {
 
 function cevespRisk(data?: CevespKpis) {
   if (!data) return { label: "Sem dados", cls: "bg-muted text-foreground" };
+  if (data.currentWeek.notifications === 0) return { label: "Sem notificações na SE", cls: "bg-muted text-foreground" };
   if ((data.weekDelta ?? 0) >= 30 || data.outbreaksCurrentYear > 0) {
     return { label: "Atenção", cls: "border-red-200 bg-red-50 text-red-700" };
   }
   if ((data.weekDelta ?? 0) >= 10) {
     return { label: "Observação", cls: "border-amber-200 bg-amber-50 text-amber-700" };
   }
-  return { label: "Estável", cls: "border-teal-200 bg-teal-50 text-teal-700" };
+  return { label: data.weekDelta == null ? "Sem comparação semanal" : "Sem aumento detectado", cls: "bg-muted text-foreground" };
 }
 
 function tracomaRisk(data?: SinanSnapshot) {
@@ -126,7 +130,7 @@ function tracomaRisk(data?: SinanSnapshot) {
   if ((data.semGraduacao ?? 0) > 0) {
     return { label: "Qualificar", cls: "border-amber-200 bg-amber-50 text-amber-700" };
   }
-  return { label: "Estável", cls: "border-teal-200 bg-teal-50 text-teal-700" };
+  return { label: "Sem alertas de qualidade", cls: "bg-muted text-foreground" };
 }
 
 function KpiCard({
@@ -173,9 +177,10 @@ function CanalZoneStrip({ data, loading }: { data?: EndemicChannelPoint[]; loadi
 
   const cur = pt.currentYear;
   const incidence = pt.currentIncidence;
-  const isEpidemia = incidence > pt.q3;
-  const isAlerta = !isEpidemia && incidence >= pt.q1;
-  const zona = isEpidemia ? "Epidemia" : isAlerta ? "Alerta" : "Sucesso";
+  const zone = classifyChannelPoint(pt);
+  const isEpidemia = zone === "acima";
+  const isAlerta = zone === "insuficiente";
+  const zona = CHANNEL_ZONE_LABELS[zone];
   const bg  = isEpidemia ? "border-red-200 bg-red-50 text-red-800"
             : isAlerta   ? "border-amber-200 bg-amber-50 text-amber-800"
             :              "border-teal-200 bg-teal-50 text-teal-800";
@@ -233,7 +238,7 @@ function priorityStyle(level: SituationPriority["level"]) {
   return "border-sky-200 bg-sky-50 text-sky-700";
 }
 
-function DataHealthPanel({ diagnostic }: { diagnostic?: SituationDiagnostic }) {
+function DataHealthPanel({ diagnostic, error = false }: { diagnostic?: SituationDiagnostic; error?: boolean }) {
   const checks = diagnostic?.checks ?? [];
   const statusLabel = diagnostic?.status === "ok" ? "Operacional" : diagnostic?.status === "error" ? "Erro" : "Atenção";
 
@@ -251,6 +256,7 @@ function DataHealthPanel({ diagnostic }: { diagnostic?: SituationDiagnostic }) {
         </div>
       </CardHeader>
       <CardContent>
+        {error && <p role="alert" className="mb-3 text-sm text-amber-800">Diagnóstico indisponível. Não foi possível verificar as conexões e bases.</p>}
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {(checks.length ? checks : [
             { label: "Autenticacao", status: "warning" as const, message: "Verificando..." },
@@ -276,10 +282,12 @@ function DataHealthPanel({ diagnostic }: { diagnostic?: SituationDiagnostic }) {
 
 function TodayPrioritiesPanel({
   data,
-  loading
+  loading,
+  error
 }: {
   data?: SituationPriorities;
   loading: boolean;
+  error: boolean;
 }) {
   const priorities = data?.priorities ?? [];
 
@@ -293,23 +301,25 @@ function TodayPrioritiesPanel({
           </div>
           <div className="flex flex-wrap gap-2">
             <Badge className={data?.summary.critica ? "border-red-200 bg-red-50 text-red-700" : "border-teal-200 bg-teal-50 text-teal-700"}>
-              {data?.summary.critica ?? 0} críticas
+              {data?.summary.critica ?? "—"} críticas
             </Badge>
-            <Badge className="border-amber-200 bg-amber-50 text-amber-700">{data?.summary.alta ?? 0} altas</Badge>
-            <Badge className="bg-muted text-foreground">{data?.summary.total ?? 0} total</Badge>
+            <Badge className="border-amber-200 bg-amber-50 text-amber-700">{data?.summary.alta ?? "—"} altas</Badge>
+            <Badge className="bg-muted text-foreground">{data?.summary.total ?? "—"} total</Badge>
           </div>
         </div>
       </CardHeader>
       <CardContent>
-        {loading ? (
+        {error ? (
+          <p role="alert" className="rounded-md border border-amber-300 p-4 text-sm text-amber-800">Prioridades indisponíveis. Não foi possível avaliar as pendências operacionais.</p>
+        ) : loading ? (
           <div className="flex h-28 items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">
             <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
             Consolidando prioridades...
           </div>
         ) : priorities.length === 0 ? (
           <div className="flex h-28 flex-col items-center justify-center rounded-md border border-dashed text-center text-sm text-muted-foreground">
-            <CheckCircle2 className="mb-2 h-7 w-7 text-teal-600" />
-            Nenhuma prioridade operacional crítica com os dados carregados.
+            {data?.partial ? <AlertTriangle className="mb-2 h-7 w-7 text-amber-600" /> : <CheckCircle2 className="mb-2 h-7 w-7 text-teal-600" />}
+            {data?.partial ? "Análise incompleta: não é possível descartar pendências." : "Nenhuma prioridade operacional encontrada nos dados consultados."}
           </div>
         ) : (
           <div className="grid gap-3">
@@ -413,7 +423,7 @@ export function DashboardView() {
     queryKey: ["canal-endemico-dashboard"],
     queryFn: async () => {
       const res = await fetch("/api/cevesp/canal-endemico");
-      if (!res.ok) return [];
+      if (!res.ok) throw new Error("Não foi possível consultar o canal endêmico.");
       return res.json();
     },
     retry: false,
@@ -423,7 +433,9 @@ export function DashboardView() {
   const cevespState = cevespRisk(kpis.data);
   const tracomaState = tracomaRisk(sinan.data);
   const consolidatedByYear = sinan.data?.consolidatedMetricsByYear ?? [];
-  const latestConsolidated = consolidatedByYear[consolidatedByYear.length - 1];
+  const latestConsolidated = consolidatedByYear.reduce<(typeof consolidatedByYear)[number] | undefined>(
+    (latest, row) => !latest || row.ano > latest.ano ? row : latest, undefined
+  );
 
   const cevespSparkData = (historico.data?.byYear ?? []).map((r) => ({ ano: r.ano, value: r.casos }));
   const tracomaSparkData = consolidatedByYear.map((r) => ({ ano: r.ano, value: r.positivos }));
@@ -455,8 +467,9 @@ export function DashboardView() {
                 diagnostic.refetch();
                 priorities.refetch();
                 historico.refetch();
+                canal.refetch();
               }}
-              disabled={kpis.isFetching || sinan.isFetching || diagnostic.isFetching || priorities.isFetching || historico.isFetching}
+              disabled={kpis.isFetching || sinan.isFetching || diagnostic.isFetching || priorities.isFetching || historico.isFetching || canal.isFetching}
             >
               <RefreshCw className={`h-4 w-4 ${kpis.isFetching || sinan.isFetching || diagnostic.isFetching || priorities.isFetching ? "animate-spin" : ""}`} />
               Atualizar
@@ -469,7 +482,7 @@ export function DashboardView() {
       </div>
 
       <div className="space-y-5 p-6">
-        {(kpis.isError || sinan.isError) && (
+        {(kpis.isError || sinan.isError || diagnostic.isError || priorities.isError || historico.isError || canal.isError) && (
           <Card className="border-amber-300 bg-amber-50">
             <CardContent className="flex items-start gap-3 py-4 text-sm text-amber-900">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -483,7 +496,7 @@ export function DashboardView() {
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <KpiCard
-            label="Conjuntivites no ano"
+            label={`Conjuntivites até SE ${kpis.data?.comparisonThroughSe ?? "—"}`}
             value={kpis.isFetching ? "..." : formatValue(kpis.data?.currentYear.cases)}
             icon={<Eye className="h-4 w-4 text-primary" />}
             delta={kpis.data?.yearDelta ?? null}
@@ -501,7 +514,7 @@ export function DashboardView() {
           />
           <KpiCard
             label={`Casos tracoma ${latestConsolidated?.ano ?? ""}`.trim()}
-            value={sinan.isFetching ? "..." : formatValue(latestConsolidated?.positivos ?? sinan.data?.totalNottraconet)}
+            value={sinan.isFetching ? "..." : formatValue(latestConsolidated?.positivos)}
             icon={<AlertTriangle className="h-4 w-4 text-amber-600" />}
             tone="amber"
           />
@@ -510,7 +523,12 @@ export function DashboardView() {
         <CanalZoneStrip data={canal.data} loading={canal.isFetching && !canal.data} />
 
         <AlertsPanel />
-        <TodayPrioritiesPanel data={priorities.data} loading={priorities.isLoading} />
+        {priorities.data?.partial && (
+          <p role="alert" className="rounded-md border border-amber-300 p-3 text-sm text-amber-800">
+            Prioridades calculadas com dados parciais. Fontes indisponíveis: {priorities.data.unavailableSources?.join(", ")}.
+          </p>
+        )}
+        <TodayPrioritiesPanel data={priorities.data} loading={priorities.isLoading} error={priorities.isError} />
 
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           {quickActions.map((action) => {
@@ -572,7 +590,7 @@ export function DashboardView() {
             </CardContent>
           </Card>
 
-          <DataHealthPanel diagnostic={diagnostic.data} />
+          <DataHealthPanel diagnostic={diagnostic.data} error={diagnostic.isError} />
         </div>
 
         <Card>
@@ -581,7 +599,7 @@ export function DashboardView() {
               <Database className="h-3.5 w-3.5" />
               Sala sem repetição: decisão aqui, investigação em Análises.
             </span>
-            <span>Última atualização CEVESP: {kpis.data?.generatedAt ? new Date(kpis.data.generatedAt).toLocaleString("pt-BR") : "sem atualização"}</span>
+            <span>{kpis.data?.source === "cache" ? "Última sincronização CEVESP" : "Consulta CEVESP"}: {(kpis.data?.source === "cache" ? kpis.data.lastSync : kpis.data?.generatedAt) ? new Date((kpis.data?.source === "cache" ? kpis.data.lastSync : kpis.data?.generatedAt)!).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "sem atualização"}</span>
           </CardContent>
         </Card>
       </div>

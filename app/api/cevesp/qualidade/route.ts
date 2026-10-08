@@ -1,7 +1,8 @@
+import { parseCevespFilters } from "@/lib/cevesp-filters";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/supabase/auth";
-import { findInvalidRecords, findInvalidRecordsFromCache, saveCorrectionsToQueue, type InvalidRecord } from "@/services/cevesp-corrections";
+import { findInvalidRecords, findInvalidRecordsFromCache, isMysqlRecordId, saveCorrectionsToQueue, type InvalidRecord } from "@/services/cevesp-corrections";
 import { getNotificationTableName } from "@/lib/external/notification-db";
 
 function normalizeSearch(value: string | null | undefined) {
@@ -28,6 +29,7 @@ function recordsToCsv(records: InvalidRecord[]) {
     "totalCaso",
     "issueType",
     "issue",
+    "group",
     "suggestedField",
     "suggestedValue"
   ];
@@ -42,6 +44,7 @@ function recordsToCsv(records: InvalidRecord[]) {
     "Total casos",
     "Tipo",
     "Problema",
+    "Grupo (unidade e semana)",
     "Campo sugerido",
     "Valor sugerido"
   ];
@@ -53,6 +56,7 @@ function recordsToCsv(records: InvalidRecord[]) {
 
 function summarize(records: InvalidRecord[]) {
   const byType: Record<string, number> = {};
+  const byIssueType: Record<string, number> = {};
   const gveMap: Record<string, number> = {};
   const anoMap: Record<string, number> = {};
   const municipioMap: Record<string, { gve: string | null; count: number }> = {};
@@ -60,6 +64,7 @@ function summarize(records: InvalidRecord[]) {
   for (const record of records) {
     const typeKey = record.issue.split(":")[0].trim();
     byType[typeKey] = (byType[typeKey] ?? 0) + 1;
+    byIssueType[record.issueType] = (byIssueType[record.issueType] ?? 0) + 1;
 
     if (record.gve) gveMap[record.gve] = (gveMap[record.gve] ?? 0) + 1;
     if (record.ano) anoMap[String(record.ano)] = (anoMap[String(record.ano)] ?? 0) + 1;
@@ -70,7 +75,9 @@ function summarize(records: InvalidRecord[]) {
   }
 
   return {
+    totalRecords: new Set(records.map((record) => record.recordId)).size,
     byType,
+    byIssueType,
     byGve: Object.entries(gveMap)
       .map(([gve, count]) => ({ gve, count }))
       .sort((a, b) => b.count - a.count),
@@ -99,7 +106,8 @@ function filterRecords(records: InvalidRecord[], issueFilter: string, query: str
       record.issue,
       record.issueType,
       record.suggestedField,
-      record.suggestedValue
+      record.suggestedValue,
+      record.group
     ].join(" ")).includes(normalizedQuery);
     return matchesIssue && matchesQuery;
   });
@@ -111,7 +119,7 @@ function applyScopeFilters(
 ) {
   const selectedMunicipio = normalizeSearch(filters.municipio);
   return records.filter((record) => {
-    const matchesMunicipio = !selectedMunicipio || normalizeSearch(record.municipio).includes(selectedMunicipio);
+    const matchesMunicipio = !selectedMunicipio || normalizeSearch(record.municipio) === selectedMunicipio;
     const se = typeof record.semEpidemio === "number" ? record.semEpidemio : Number(record.semEpidemio);
     const matchesSeInicio = filters.seInicio == null || (Number.isFinite(se) && se >= filters.seInicio);
     const matchesSeFim = filters.seFim == null || (Number.isFinite(se) && se <= filters.seFim);
@@ -128,16 +136,11 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const limit = Math.min(Math.max(Number(searchParams.get("limit") ?? 100), 1), 500);
     const offset = Math.max(Number(searchParams.get("offset") ?? 0), 0);
+    if (!Number.isInteger(limit) || !Number.isInteger(offset)) return NextResponse.json({ error: "Paginação inválida." }, { status: 400 });
     const issueFilter = searchParams.get("issue") ?? "todos";
     const query = searchParams.get("q") ?? "";
     const format = searchParams.get("format");
-    const anoParam = searchParams.get("ano");
-    const ano = anoParam ? Number(anoParam) : undefined;
-    const anoFim = searchParams.get("anoFim") ? Number(searchParams.get("anoFim")) : undefined;
-    const gve = searchParams.get("gve") ?? undefined;
-    const municipio = searchParams.get("municipio") ?? undefined;
-    const seInicio = searchParams.get("seInicio") ? Number(searchParams.get("seInicio")) : undefined;
-    const seFim = searchParams.get("seFim") ? Number(searchParams.get("seFim")) : undefined;
+    const { ano, anoFim, gve, municipio, seInicio, seFim } = parseCevespFilters(searchParams);
     const source = searchParams.get("source");
 
     const records = source === "cache"
@@ -162,10 +165,12 @@ export async function GET(req: NextRequest) {
       filteredTotal: filteredRecords.length,
       limit,
       offset,
-      source: source === "cache" ? "cevesp_quality_cache" : "cevesp_quality_audit"
+      source: "cevesp_quality_cache",
+      auditMethod: "typescript_full_scope"
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    if (msg.startsWith("Filtro ") || msg.startsWith("O ano ") || msg.startsWith("A semana ")) return NextResponse.json({ error: msg }, { status: 400 });
     if (msg.toLowerCase().includes("econnrefused") || msg.toLowerCase().includes("etimedout") || msg.toLowerCase().includes("connect")) {
       return NextResponse.json(
         {
@@ -184,34 +189,39 @@ export async function POST(req: NextRequest) {
   const user = await getCurrentUser(supabase);
   if (!user) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
 
-  const body = await req.json() as { recordIds?: string[] };
-
   try {
-    const records = await findInvalidRecords();
+    const body = await req.json() as { recordIds?: string[]; filters?: string };
+    if (body.recordIds && (!Array.isArray(body.recordIds) || body.recordIds.some((id) => typeof id !== "string"))) {
+      return NextResponse.json({ error: "Seleção de registros inválida." }, { status: 400 });
+    }
+    const params = new URLSearchParams(body.filters ?? "");
+    const { ano, anoFim, gve, municipio, seInicio, seFim } = parseCevespFilters(params);
+    const audited = await findInvalidRecords(undefined, ano, gve, anoFim);
+    const records = filterRecords(applyScopeFilters(audited, { municipio, seInicio, seFim }), params.get("issue") ?? "todos", params.get("q") ?? "");
     const tableName = getNotificationTableName();
 
     const targets = body.recordIds?.length
       ? records.filter((record) => body.recordIds!.includes(record.recordId))
       : records;
 
+    // Uma proposta por campo (ex.: ANO e SemEpidemio); só registros com ID do MySQL
     const proposals = targets
-      .filter((record) => record.suggestedField && record.suggestedValue)
-      .map((record) => ({
+      .filter((record) => isMysqlRecordId(record.recordId))
+      .flatMap((record) => record.suggestions.map((suggestion) => ({
         recordId: record.recordId,
         tableName,
         pkColumn: record.pkColumn,
-        fieldName: record.suggestedField,
-        oldValue: record.suggestedField === "DtNotificacao"
-          ? (record.dtNotificacao ?? "")
-          : String(record.semEpidemio ?? ""),
-        newValue: record.suggestedValue,
+        fieldName: suggestion.field,
+        oldValue: suggestion.oldValue,
+        newValue: suggestion.newValue,
         reason: record.issue
-      }));
+      })));
 
     const result = await saveCorrectionsToQueue(proposals, user.id);
     return NextResponse.json(result);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    if (msg.startsWith("Filtro ") || msg.startsWith("O ano ") || msg.startsWith("A semana ")) return NextResponse.json({ error: msg }, { status: 400 });
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

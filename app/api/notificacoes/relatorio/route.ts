@@ -1,3 +1,5 @@
+import { currentCalendarYear, currentEpiWeek } from "@/lib/epi-week";
+import { parseCevespFilters } from "@/lib/cevesp-filters";
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -10,13 +12,13 @@ export async function GET(request: Request) {
   const user = await getCurrentUser(supabase);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { searchParams } = new URL(request.url);
-  const ano = searchParams.get("ano") ? Number(searchParams.get("ano")) : undefined;
-  const anoFim = searchParams.get("anoFim") ? Number(searchParams.get("anoFim")) : undefined;
-  const gve = searchParams.get("gve") ?? undefined;
-  const municipio = searchParams.get("municipio") ?? undefined;
-  const seInicio = searchParams.get("seInicio") ? Number(searchParams.get("seInicio")) : undefined;
-  const seFim = searchParams.get("seFim") ? Number(searchParams.get("seFim")) : undefined;
+  let filters;
+  try { filters = parseCevespFilters(new URL(request.url).searchParams); }
+  catch (error) { return NextResponse.json({ error: (error as Error).message }, { status: 400 }); }
+  const { ano, anoFim, gve, municipio, seInicio } = filters;
+  // Match the accumulated current year to the same epidemiological weeks of the previous year.
+  const seFim = ano === currentCalendarYear() && (anoFim == null || anoFim === ano)
+    ? Math.min(filters.seFim ?? 53, currentEpiWeek().se) : filters.seFim;
 
   // ── RPC path: aggregation happens in the database ─────────────────────────
   // Replaces three separate raw-row fetches (current year + all years + prev year)
@@ -49,17 +51,17 @@ export async function GET(request: Request) {
     const [relRes, mediaRes, prevRes] = await Promise.all([
       admin.rpc("cevesp_relatorio", rpcArgs),
       admin.rpc("cevesp_media_semanal", mediaArgs),
-      ano != null
+      ano != null && (anoFim == null || anoFim === ano)
         ? admin.rpc("cevesp_relatorio", prevArgs)
         : Promise.resolve({ data: null, error: null })
     ]);
 
-    if (!relRes.error && relRes.data) {
+    if (!(ano == null && anoFim != null) && !relRes.error && relRes.data) {
       const rpc = relRes.data as RpcRelatorioData;
       const weeklyAvg = !mediaRes.error && Array.isArray(mediaRes.data) ? mediaRes.data as Array<{ se: number; media: number }> : [];
 
       let previousYear: { ano: number; totalCases: number; notifications: number; reportingMunicipalities: number } | null = null;
-      if (ano != null && !prevRes.error && prevRes.data) {
+      if (ano != null && (anoFim == null || anoFim === ano) && !prevRes.error && prevRes.data) {
         const prev = prevRes.data as RpcRelatorioData;
         previousYear = {
           ano: ano - 1,
@@ -69,7 +71,7 @@ export async function GET(request: Request) {
         };
       }
 
-      return NextResponse.json(summarizeFromRpc(rpc, weeklyAvg, previousYear));
+      return NextResponse.json(Object.assign(summarizeFromRpc(rpc, weeklyAvg, previousYear), { source: "cache", alertsAvailable: false, comparisonPeriod: "mesmo intervalo de semanas" }));
     }
     // If RPC returned an error (e.g. functions not yet deployed), fall through to raw rows.
   } catch {
@@ -82,9 +84,10 @@ export async function GET(request: Request) {
   try {
     const data = await readNotificationRows({ ano, anoFim, gve, municipio, seInicio, seFim });
     const summary = summarizeNotificationRows(data.rows, data.total);
+    summary.indicators.weeklyAverage = [];
 
     let previousYear: { ano: number; totalCases: number; notifications: number; reportingMunicipalities: number } | null = null;
-    if (ano) {
+    if (ano && (anoFim == null || anoFim === ano)) {
       try {
         const prevData = await readNotificationRows({ ano: ano - 1, gve, municipio, seInicio, seFim });
         const prevCases = prevData.rows.reduce((sum, row) => sum + Number(row.TotalCaso ?? 0), 0);
@@ -102,7 +105,7 @@ export async function GET(request: Request) {
       }
     }
 
-    return NextResponse.json({ ...summary, previousYear });
+    return NextResponse.json({ ...summary, previousYear, source: data.source ?? "notificacoes", alertsAvailable: true, comparisonPeriod: "mesmo intervalo de semanas" });
   } catch (error) {
     return NextResponse.json(
       {

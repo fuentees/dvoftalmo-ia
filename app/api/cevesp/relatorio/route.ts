@@ -1,15 +1,10 @@
+import { parseChannelFilters } from "@/lib/cevesp-filters";
+import { CHANNEL_METHODOLOGY, CHANNEL_ZONE_LABELS, classifyChannelPoint } from "@/lib/cevesp-channel";
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { runEndemicChannel } from "@/services/cevesp-endemic";
-import { currentCalendarYear, formatBusinessDate, pickCurrentChannelPoint } from "@/lib/epi-week";
-
-function seZone(atual: number | null, q1: number, q3: number): string {
-  if (atual === null) return "sem dado";
-  if (atual > q3) return "epidemia";
-  if (atual >= q1) return "alerta";
-  return "sucesso";
-}
+import { currentCalendarYear, currentCalendarMonth, currentEpiWeek, formatBusinessDate, pickCurrentPoint } from "@/lib/epi-week";
 
 function csvRow(cells: (string | number | null)[]): string {
   return cells
@@ -27,21 +22,23 @@ export async function GET(request: NextRequest) {
   const user = await getCurrentUser(supabase);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const gve          = request.nextUrl.searchParams.get("gve")          ?? undefined;
-  const municipality = request.nextUrl.searchParams.get("municipality") ?? undefined;
-  const yearParam    = request.nextUrl.searchParams.get("year");
-  const year         = yearParam ? Number(yearParam) : currentCalendarYear();
+  let filters;
+  try { filters = parseChannelFilters(request.nextUrl.searchParams); }
+  catch (error) { return NextResponse.json({ error: (error as Error).message }, { status: 400 }); }
+  const { gve, municipality, grain } = filters;
+  const year = filters.year ?? currentCalendarYear();
+  const bucketLabel = grain === "month" ? "Mês" : "SE";
 
   try {
-    const data = await runEndemicChannel({ gve, municipality, year });
+    const data = await runEndemicChannel({ gve, municipality, year, grain });
     if (!data.length) {
       return NextResponse.json({ error: "Sem dados para gerar relatório." }, { status: 404 });
     }
 
     const dateStr  = formatBusinessDate();
-    const lastPt = pickCurrentChannelPoint(data);
+    const lastPt = pickCurrentPoint(data, year < currentCalendarYear() ? (grain === "month" ? 12 : 53) : year > currentCalendarYear() ? 0 : grain === "month" ? currentCalendarMonth() : currentEpiWeek().se);
     const lastSE = lastPt?.se ?? null;
-    const zona   = lastPt ? seZone(lastPt.currentIncidence, lastPt.q1, lastPt.q3) : "sem dado";
+    const zona   = lastPt ? CHANNEL_ZONE_LABELS[classifyChannelPoint(lastPt)] : "sem dado";
 
     const scope = [gve && `GVE: ${gve}`, municipality && `Município: ${municipality}`]
       .filter(Boolean)
@@ -55,12 +52,12 @@ export async function GET(request: NextRequest) {
     lines.push(csvRow([`Gerado em: ${dateStr}`]));
     lines.push(csvRow([`Abrangência: ${scope}`]));
     lines.push(csvRow([`Ano de referência: ${year}`]));
-    lines.push(csvRow(["Canal endêmico calculado sobre coeficiente de incidência por 100 mil habitantes, com média histórica ± 2 desvios-padrão dos últimos 10 anos (por SE), excluindo 2011, 2021 e 2022 e considerando apenas anos com casos registrados."]));
+    lines.push(csvRow([CHANNEL_METHODOLOGY]));
     lines.push("");
 
     // ── KPIs da última SE ────────────────────────────────────────────────────
-    lines.push(csvRow(["RESUMO — ÚLTIMA SEMANA OBSERVADA"]));
-    lines.push(csvRow(["SE atual", "Casos", "Incidência por 100 mil hab.", "Limite inferior", "Média histórica", "Limite superior", "Zona"]));
+    lines.push(csvRow(["RESUMO — ÚLTIMO PERÍODO OBSERVADO"]));
+    lines.push(csvRow([bucketLabel, "Casos", "Incidência por 100 mil hab.", "Limite inferior", "Média histórica", "Limite superior", "Zona"]));
     if (lastSE && lastPt) {
       lines.push(csvRow([
         lastSE,
@@ -75,25 +72,25 @@ export async function GET(request: NextRequest) {
     lines.push("");
 
     // ── Tabela completa por SE ────────────────────────────────────────────────
-    lines.push(csvRow(["SÉRIE TEMPORAL POR SEMANA EPIDEMIOLÓGICA"]));
-    lines.push(csvRow(["SE", "Casos " + year, "Incidência " + year + " por 100 mil hab.", "Limite inferior incidência (média − 2 DP)", "Média histórica incidência", "Limite superior incidência (média + 2 DP)", "Mínimo histórico incidência", "Máximo histórico incidência", "Zona " + year]));
+    lines.push(csvRow([grain === "month" ? "SÉRIE TEMPORAL MENSAL" : "SÉRIE TEMPORAL SEMANAL"]));
+    lines.push(csvRow([bucketLabel, "Casos " + year, "Incidência " + year + " por 100 mil hab.", "Limite inferior incidência (média − 2 DP)", "Média histórica incidência", "Limite superior incidência (média + 2 DP)", "Mínimo histórico incidência", "Máximo histórico incidência", "Zona " + year]));
     for (const pt of data) {
       lines.push(csvRow([
         pt.se,
         pt.currentYear,
         pt.currentIncidence,
-        pt.q1,
-        pt.median,
-        pt.q3,
-        pt.min,
-        pt.max,
-        seZone(pt.currentIncidence, pt.q1, pt.q3),
+        pt.baselineValid ? pt.q1 : null,
+        pt.baselineValid ? pt.median : null,
+        pt.baselineValid ? pt.q3 : null,
+        pt.baselineValid ? pt.min : null,
+        pt.baselineValid ? pt.max : null,
+        CHANNEL_ZONE_LABELS[classifyChannelPoint(pt)],
       ]));
     }
 
     const csv  = lines.join("\r\n");
-    const slug = [gve, municipality].filter(Boolean).join("-").replace(/\s+/g, "_") || "SP";
-    const filename = `relatorio-conjuntivites-${slug}-${year}.csv`;
+    const slug = [gve, municipality].filter(Boolean).join("-").replace(/[^a-zA-Z0-9_-]/g, "_") || "SP";
+    const filename = `relatorio-conjuntivites-${slug}-${year}-${grain}.csv`;
 
     return new NextResponse(csv, {
       headers: {

@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireCevespSyncPermission } from "@/lib/admin-guard";
+import { rowKey } from "@/lib/cevesp-clean";
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -42,7 +43,8 @@ export async function POST(request: NextRequest) {
     return next;
   }
 
-  const sanitized = rows.map(sanitizeDates);
+  // Arquivos exportados por versões antigas usam a chave por hash; com ID, a chave é o ID
+  const sanitized = rows.map(sanitizeDates).map((row) => ({ ...row, row_key: rowKey(row) }));
   const seen = new Set<string>();
   const deduped = sanitized.filter((row) => {
     const key = String(row.row_key ?? "");

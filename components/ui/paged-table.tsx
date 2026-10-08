@@ -60,8 +60,11 @@ export function PagedTable<T extends Record<string, unknown>>({
   const sorted = useMemo(() => {
     if (!sortKey) return rows;
     return [...rows].sort((a, b) => {
-      const av = a[sortKey] ?? "";
-      const bv = b[sortKey] ?? "";
+      const av = a[sortKey];
+      const bv = b[sortKey];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
       let cmp: number;
       if (typeof av === "number" && typeof bv === "number") {
         cmp = av - bv;
@@ -99,14 +102,12 @@ export function PagedTable<T extends Record<string, unknown>>({
                 <th
                   key={col.key}
                   className={thCls(col)}
-                  onClick={col.sortable !== false ? () => handleSort(col.key) : undefined}
+                  aria-sort={sortKey === col.key ? sortDir === "asc" ? "ascending" : "descending" : "none"}
                 >
-                  <span className="inline-flex items-center gap-1">
+                  {col.sortable !== false ? <button type="button" onClick={() => handleSort(col.key)} className="inline-flex items-center gap-1">
                     {col.label}
-                    {col.sortable !== false && (
-                      <SortIcon state={sortKey === col.key ? sortDir : "none"} />
-                    )}
-                  </span>
+                    <SortIcon state={sortKey === col.key ? sortDir : "none"} />
+                  </button> : col.label}
                 </th>
               ))}
             </tr>
@@ -170,6 +171,7 @@ export function PagedTable<T extends Record<string, unknown>>({
         {pageSize !== "all" && totalPages > 1 && (
           <div className="flex items-center gap-1">
             <button
+              aria-label="Página anterior"
               disabled={safePage === 0}
               onClick={() => goPage(safePage - 1)}
               className="rounded px-2 py-0.5 hover:bg-muted disabled:opacity-40"
@@ -181,6 +183,7 @@ export function PagedTable<T extends Record<string, unknown>>({
             </span>
             <button
               disabled={safePage + 1 >= totalPages}
+              aria-label="Próxima página"
               onClick={() => goPage(safePage + 1)}
               className="rounded px-2 py-0.5 hover:bg-muted disabled:opacity-40"
             >
@@ -190,7 +193,7 @@ export function PagedTable<T extends Record<string, unknown>>({
         )}
 
         <span>
-          {pageSize === "all"
+          {sorted.length === 0 ? "0 registros" : pageSize === "all"
             ? `${sorted.length.toLocaleString("pt-BR")} registro(s)`
             : `${(safePage * (pageSize as number) + 1).toLocaleString("pt-BR")}–${Math.min((safePage + 1) * (pageSize as number), sorted.length).toLocaleString("pt-BR")} de ${sorted.length.toLocaleString("pt-BR")}`}
         </span>

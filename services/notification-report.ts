@@ -1,3 +1,4 @@
+import { dateToEpiWeek, dateToEpiWeekYear } from "@/lib/epi-week";
 interface ColumnSummary {
   name: string;
   missing: number;
@@ -111,14 +112,13 @@ function weekKeyFromRow(row: Row) {
     return `${ano}-SE${String(se).padStart(2, "0")}`;
   }
 
-  const rawDate = row.DtNotificacao;
-  const date = rawDate ? new Date(String(rawDate)) : null;
-  if (!date || Number.isNaN(date.getTime())) return null;
-
-  const firstDay = new Date(date.getFullYear(), 0, 1);
-  const days = Math.floor((date.getTime() - firstDay.getTime()) / 86400000);
-  const week = Math.ceil((days + firstDay.getDay() + 1) / 7);
-  return `${date.getFullYear()}-SE${String(week).padStart(2, "0")}`;
+  const rawDate = String(row.DtNotificacao ?? "");
+  const match = rawDate.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  if (date.getFullYear() !== Number(match[1]) || date.getMonth() !== Number(match[2]) - 1 || date.getDate() !== Number(match[3])) return null;
+  const epi = dateToEpiWeekYear(new Date(`${match[0]}T12:00:00-03:00`));
+  return `${epi.year}-SE${String(dateToEpiWeek(date)).padStart(2, "0")}`;
 }
 
 function weeklySeries(rows: Row[]) {
@@ -181,7 +181,7 @@ function buildColumnSummaries(rows: Row[]) {
   return columns.map((name) => {
     const values = rows.map((row) => row[name]);
     const type = inferType(values);
-    const numericValues = values.map(toNumber).filter((value) => Number.isFinite(value));
+    const numericValues = values.filter((value) => value != null && String(value).trim() !== "").map((value) => Number(String(value).replace(",", "."))).filter(Number.isFinite);
 
     return {
       name,
@@ -189,7 +189,7 @@ function buildColumnSummaries(rows: Row[]) {
       missing: values.filter((value) => value === null || value === undefined || value === "").length,
       topValues: topValues(values),
       numeric:
-        numericValues.length > 0
+        type === "number" && numericValues.length > 0
           ? {
               min: Math.min(...numericValues),
               max: Math.max(...numericValues),
@@ -204,8 +204,8 @@ function buildAlerts(rows: Row[], indicators: NotificationIndicators) {
   const alerts: ReportAlert[] = [];
   const rowsWithoutEducation = rows.filter((row) => toNumber(row.NuAcaoEducativa) === 0).length;
   const rowsWithoutTraining = rows.filter((row) => toNumber(row.NuTreinamento) === 0).length;
-  const outbreaksWithoutCollection = rows.filter((row) => isYes(row.Surto) && toNumber(row.NuColetaMaterialBio) === 0 && !isYes(row.ColetaMaterialBio)).length;
-  const recurrentOutbreakUnits = groupSum(rows.filter((row) => isYes(row.Surto)), "Unid_notificacao", "NuSurto", 8).filter((item) => item.total >= 2);
+  const outbreaksWithoutCollection = rows.filter((row) => (isYes(row.Surto) || toNumber(row.NuSurto) > 0) && toNumber(row.NuColetaMaterialBio) === 0 && !isYes(row.ColetaMaterialBio)).length;
+  const recurrentOutbreakUnits = groupSum(rows.filter((row) => isYes(row.Surto) || toNumber(row.NuSurto) > 0), "Unid_notificacao", "NuSurto", 8).filter((item) => item.total >= 2);
   const totalCases = indicators.totalCases || 1;
 
   if (outbreaksWithoutCollection > 0) {
@@ -240,7 +240,7 @@ function buildAlerts(rows: Row[], indicators: NotificationIndicators) {
     });
   }
 
-  const dominantAge = indicators.ageDistribution[0];
+  const dominantAge = indicators.ageDistribution.find((item) => item.total > 0);
   if (dominantAge && dominantAge.total / totalCases > 0.45) {
     alerts.push({
       severity: "baixa",
@@ -255,7 +255,7 @@ function buildAlerts(rows: Row[], indicators: NotificationIndicators) {
 function buildInterpretation(indicators: NotificationIndicators, alerts: ReportAlert[]) {
   const topMunicipality = indicators.topMunicipalities[0];
   const topGve = indicators.topGves[0];
-  const dominantAge = indicators.ageDistribution[0];
+  const dominantAge = indicators.ageDistribution.find((item) => item.total > 0);
   const outbreakRate = indicators.notifications > 0 ? (indicators.outbreakNotifications / indicators.notifications) * 100 : 0;
 
   return [
@@ -272,7 +272,7 @@ function buildInterpretation(indicators: NotificationIndicators, alerts: ReportA
     `A proporcao de notificacoes classificadas como surto foi de ${outbreakRate.toFixed(1)}%, parametro importante para monitoramento de agregados e resposta oportuna.`,
     alerts.length > 0
       ? "Os alertas identificados apontam situacoes que merecem investigacao epidemiologica, especialmente quanto a recorrencia de surtos, baixa coleta laboratorial e ausencia de medidas educativas."
-      : "Nao foram identificados alertas automaticos relevantes na base avaliada, sem prejuizo da avaliacao tecnica local."
+      : "Nenhum alerta foi apresentado neste relatorio. A ausencia de alerta nao confirma ausencia de risco e nao substitui a avaliacao tecnica local."
   ];
 }
 
@@ -418,7 +418,7 @@ export function summarizeNotificationRows(rows: Row[], total: number, allYearsRo
     topUnits: groupSum(rows, "Unid_notificacao", "TotalCaso", 10),
     sexDistribution,
     ageDistribution,
-    outbreakNotifications: rows.filter((row) => isYes(row.Surto)).length,
+    outbreakNotifications: rows.filter((row) => isYes(row.Surto) || toNumber(row.NuSurto) > 0).length,
     outbreakTotal: sumBy(rows, "NuSurto"),
     biologicalCollectionNotifications: rows.filter((row) => isYes(row.ColetaMaterialBio) || toNumber(row.NuColetaMaterialBio) > 0).length,
     biologicalCollectionTotal: sumBy(rows, "NuColetaMaterialBio"),

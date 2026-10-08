@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireCevespSyncPermission } from "@/lib/admin-guard";
 import { currentCalendarYear } from "@/lib/epi-week";
 import { createNotificationConnection, getNotificationTableName } from "@/lib/external/notification-db";
-import { cleanRow } from "@/lib/cevesp-clean";
+import { CEVESP_YEAR_WHERE, cevespYearParams, cleanRow } from "@/lib/cevesp-clean";
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -34,8 +34,9 @@ export async function GET(request: NextRequest) {
   const currentYear = currentCalendarYear();
 
   const year     = yearParam ? parseInt(yearParam, 10) : (full ? null : currentYear);
-  const sql      = year != null ? `SELECT * FROM \`${table}\` WHERE ANO = ?` : `SELECT * FROM \`${table}\``;
-  const params   = year != null ? [year] : [];
+  // Inclui os registros digitados no ano com ANO errado, para a auditoria encontrá-los
+  const sql      = year != null ? `SELECT * FROM \`${table}\` WHERE ${CEVESP_YEAR_WHERE}` : `SELECT * FROM \`${table}\``;
+  const params   = year != null ? cevespYearParams(year) : [];
   const fileName = full ? "cevesp-export-completo.json" : `cevesp-export-${year ?? currentYear}.json`;
 
   let promiseConn: Awaited<ReturnType<typeof createNotificationConnection>> | null = null;

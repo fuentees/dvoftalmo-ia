@@ -222,11 +222,11 @@ export async function executeTool(
       const mockWarning = isMock ? "\n\n⚠️ DADOS DE EXEMPLO — REDCap não está configurado. Configure REDCAP_API_URL e REDCAP_API_TOKEN para dados reais." : "";
       const lines = surveys.map((s) =>
         `${s.municipality} (${s.uf}) ${s.examYear}: TF=${s.tfPrevalence.toFixed(1)}% ` +
-        `(${s.tfEliminated ? "eliminado" : "acima do limiar OMS"}) | ` +
-        `TT=${s.ttPrevalence.toFixed(2)}% (${s.ttEliminated ? "eliminado" : "acima do limiar OMS"}) | ` +
+        `(proporção entre examinados) | ` +
+        `TT=${s.ttPrevalence.toFixed(2)}% (proporção entre examinados) | ` +
         `Examinados=${s.totalExamined}`
       );
-      return { content: `Resultados de tracoma (${surveys.length} municípios/anos):\n` + lines.join("\n") + mockWarning };
+      return { content: `Resultados de tracoma (${surveys.length} municípios/anos):\n` + lines.join("\n") + mockWarning + "\nEssas proporções agregadas não comprovam eliminação. Os critérios OMS exigem TF em crianças de 1–9 anos, TT desconhecido pelo sistema de saúde em pessoas de 15 anos ou mais e avaliação dos demais critérios. Fonte: https://www.who.int/en/news-room/fact-sheets/detail/trachoma" };
     } catch (err) {
       return { content: `Erro tracoma: ${err instanceof Error ? err.message : String(err)}` };
     }
@@ -241,7 +241,7 @@ export async function executeTool(
       });
       return {
         content:
-          `Estimativa de doses de azitromicina:\n` +
+          `Simulação logística de azitromicina (hipóteses fixas; não usar como prescrição):\n` +
           `- População alvo: ${estimate.population}\n` +
           `- Meta de cobertura: ${estimate.coveragePercent}% → ${estimate.treatmentTarget} pessoas a tratar\n` +
           `- Comprimidos 250 mg (crianças): ${estimate.tablets250mg}\n` +
