@@ -7,19 +7,12 @@ import {
   ArrowRight,
   ArrowUpRight,
   CheckCircle2,
-  Database,
-  Eye,
-  Map,
   RefreshCw,
-  ShieldAlert,
-  Stethoscope,
-  TrendingUp
 } from "lucide-react";
 import Link from "next/link";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis } from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertsPanel } from "@/components/dashboard/alerts-panel";
 import type { CevespKpis } from "@/services/cevesp-kpis";
 import type { CevespHistorico } from "@/lib/external/supabase-cevesp";
@@ -81,13 +74,6 @@ type SituationPriorities = {
   summary: { total: number; critica: number; alta: number; media: number };
 };
 
-const quickActions = [
-  { href: "/territorios", label: "Territórios", detail: "Ranking operacional por risco e evidência", icon: Map },
-  { href: "/conjuntivite", label: "Analisar CEVESP", detail: "Séries, mapas, canal e boletim", icon: Eye },
-  { href: "/tracoma", label: "Analisar Tracoma", detail: "Prevalência, bancos e qualidade clínica", icon: Stethoscope },
-  { href: "/qualidade-dados", label: "Qualidade", detail: "Pendências que afetam a decisão", icon: ShieldAlert }
-];
-
 function formatValue(value: number | undefined) {
   if (value === undefined) return "-";
   return value.toLocaleString("pt-BR");
@@ -134,69 +120,29 @@ function tracomaRisk(data?: SinanSnapshot) {
 }
 
 function KpiCard({
+  href,
   label,
   value,
-  icon,
-  delta,
+  caption,
+  pill,
   tone = "default"
 }: {
+  href: string;
   label: string;
   value: string;
-  icon: React.ReactNode;
-  delta?: number | null;
-  tone?: "default" | "red" | "amber";
+  caption?: React.ReactNode;
+  pill?: { text: string; cls: string };
+  tone?: "default" | "alert";
 }) {
-  const color = tone === "red" ? "text-red-600" : tone === "amber" ? "text-amber-700" : "";
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-1">
-        <CardTitle className="text-sm text-muted-foreground">{label}</CardTitle>
-        {icon}
-      </CardHeader>
-      <CardContent>
-        <div className={`text-3xl font-bold tabular-nums ${color}`}>{value}</div>
-        {delta !== undefined && <DeltaBadge delta={delta} />}
-      </CardContent>
-    </Card>
-  );
-}
-
-function CanalZoneStrip({ data, loading }: { data?: EndemicChannelPoint[]; loading: boolean }) {
-  if (loading) {
-    return (
-      <div className="flex h-10 items-center gap-2 rounded-lg border bg-muted/30 px-4 text-xs text-muted-foreground animate-pulse">
-        <TrendingUp className="h-3.5 w-3.5" />
-        Carregando canal endêmico…
-      </div>
-    );
-  }
-  if (!data?.length) return null;
-
-  const pt = pickCurrentChannelPoint(data);
-  if (!pt || pt.currentYear === null || pt.currentIncidence === null) return null;
-
-  const cur = pt.currentYear;
-  const incidence = pt.currentIncidence;
-  const zone = classifyChannelPoint(pt);
-  const isEpidemia = zone === "acima";
-  const isAlerta = zone === "insuficiente";
-  const zona = CHANNEL_ZONE_LABELS[zone];
-  const bg  = isEpidemia ? "border-red-200 bg-red-50 text-red-800"
-            : isAlerta   ? "border-amber-200 bg-amber-50 text-amber-800"
-            :              "border-teal-200 bg-teal-50 text-teal-800";
-  const badgeCls = isEpidemia ? "bg-red-100 text-red-700"
-                 : isAlerta   ? "bg-amber-100 text-amber-700"
-                 :              "bg-teal-100 text-teal-700";
-
-  return (
-    <Link href="/conjuntivite?tab=situacao" className={`flex items-center gap-3 rounded-lg border px-4 py-2.5 text-sm transition-opacity hover:opacity-80 ${bg}`}>
-      <TrendingUp className="h-4 w-4 shrink-0" />
-      <span className="flex-1 font-medium">Canal Endêmico · SE {pt.se}</span>
-      <span className={`rounded px-2 py-0.5 text-xs font-semibold ${badgeCls}`}>{zona}</span>
-      <span className="text-xs opacity-75">
-        {incidence.toLocaleString("pt-BR")} /100 mil · {cur.toLocaleString("pt-BR")} casos
-      </span>
-      <ArrowRight className="h-3.5 w-3.5 shrink-0 opacity-60" />
+    <Link
+      href={href}
+      className={`flex flex-col gap-2 rounded-xl border bg-card p-[18px] transition-colors hover:border-primary/50 ${tone === "alert" ? "border-orange-200 dark:border-orange-900" : ""}`}
+    >
+      <span className="text-[13px] font-medium text-muted-foreground">{label}</span>
+      <span className={`num text-[32px] font-semibold leading-none ${tone === "alert" ? "text-orange-700 dark:text-orange-300" : ""}`}>{value}</span>
+      {caption && <span className="text-[13px] text-muted-foreground">{caption}</span>}
+      {pill && <span className={`self-start rounded-md px-2 py-0.5 text-xs font-medium ${pill.cls}`}>{pill.text}</span>}
     </Link>
   );
 }
@@ -243,40 +189,33 @@ function DataHealthPanel({ diagnostic, error = false }: { diagnostic?: Situation
   const statusLabel = diagnostic?.status === "ok" ? "Operacional" : diagnostic?.status === "error" ? "Erro" : "Atenção";
 
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <CardTitle>Saúde da sala</CardTitle>
-            <CardDescription>Conexões, bases e caches usados para decidir</CardDescription>
-          </div>
-          <Badge className={diagnosticStyle(diagnostic?.status === "error" ? "error" : diagnostic?.status === "ok" ? "ok" : "warning")}>
-            {statusLabel}
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent>
-        {error && <p role="alert" className="mb-3 text-sm text-amber-800">Diagnóstico indisponível. Não foi possível verificar as conexões e bases.</p>}
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          {(checks.length ? checks : [
-            { label: "Autenticacao", status: "warning" as const, message: "Verificando..." },
-            { label: "CEVESP", status: "warning" as const, message: "Verificando..." },
-            { label: "SINAN Tracoma", status: "warning" as const, message: "Verificando..." },
-            { label: "Populacao IBGE", status: "warning" as const, message: "Verificando..." },
-            { label: "Boletins", status: "warning" as const, message: "Verificando..." }
-          ]).map((check) => (
-            <div key={check.label} className={`rounded-md border p-3 ${diagnosticStyle(check.status)}`}>
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-medium">{check.label}</p>
-                {check.status === "ok" ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
-              </div>
-              <p className="mt-2 text-sm font-semibold leading-snug">{check.message}</p>
-              {check.detail && <p className="mt-1 line-clamp-2 text-xs opacity-80">{check.detail}</p>}
+    <section className="flex flex-col gap-3 rounded-xl border bg-card p-5">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-[17px] font-semibold">Saúde da sala</h2>
+        <Badge className={diagnosticStyle(diagnostic?.status === "error" ? "error" : diagnostic?.status === "ok" ? "ok" : "warning")}>
+          {statusLabel}
+        </Badge>
+      </div>
+      {error && <p role="alert" className="text-sm text-amber-800">Diagnóstico indisponível.</p>}
+      <ul className="divide-y">
+        {(checks.length ? checks : [
+          { label: "CEVESP", status: "warning" as const, message: "Verificando..." },
+          { label: "SINAN Tracoma", status: "warning" as const, message: "Verificando..." },
+          { label: "População IBGE", status: "warning" as const, message: "Verificando..." }
+        ]).map((check) => (
+          <li key={check.label} className="flex items-start gap-2.5 py-2.5">
+            {check.status === "ok"
+              ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" aria-hidden="true" />
+              : <AlertTriangle className={`mt-0.5 h-4 w-4 shrink-0 ${check.status === "error" ? "text-red-600" : "text-orange-600"}`} aria-hidden="true" />}
+            <div className="min-w-0">
+              <p className="text-sm font-medium">{check.label}</p>
+              <p className="text-[13px] text-muted-foreground">{check.message}</p>
+              {check.detail && <p className="line-clamp-2 text-xs text-muted-foreground">{check.detail}</p>}
             </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -292,69 +231,50 @@ function TodayPrioritiesPanel({
   const priorities = data?.priorities ?? [];
 
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <CardTitle>Prioridades de hoje</CardTitle>
-            <CardDescription>Cockpit operacional: o que exige decisão agora</CardDescription>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Badge className={data?.summary.critica ? "border-red-200 bg-red-50 text-red-700" : "border-teal-200 bg-teal-50 text-teal-700"}>
-              {data?.summary.critica ?? "—"} críticas
-            </Badge>
-            <Badge className="border-amber-200 bg-amber-50 text-amber-700">{data?.summary.alta ?? "—"} altas</Badge>
-            <Badge className="bg-muted text-foreground">{data?.summary.total ?? "—"} total</Badge>
-          </div>
+    <section className="flex flex-col gap-3 rounded-xl border bg-card p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-[17px] font-semibold">Prioridades de hoje</h2>
+        <div className="flex flex-wrap gap-1.5">
+          <Badge className={data?.summary.critica ? "border-red-200 bg-red-50 text-red-700" : "border-teal-200 bg-teal-50 text-teal-700"}>
+            {data?.summary.critica ?? "—"} críticas
+          </Badge>
+          <Badge className="border-amber-200 bg-amber-50 text-amber-700">{data?.summary.alta ?? "—"} altas</Badge>
         </div>
-      </CardHeader>
-      <CardContent>
-        {error ? (
-          <p role="alert" className="rounded-md border border-amber-300 p-4 text-sm text-amber-800">Prioridades indisponíveis. Não foi possível avaliar as pendências operacionais.</p>
-        ) : loading ? (
-          <div className="flex h-28 items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">
-            <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-            Consolidando prioridades...
-          </div>
-        ) : priorities.length === 0 ? (
-          <div className="flex h-28 flex-col items-center justify-center rounded-md border border-dashed text-center text-sm text-muted-foreground">
-            {data?.partial ? <AlertTriangle className="mb-2 h-7 w-7 text-amber-600" /> : <CheckCircle2 className="mb-2 h-7 w-7 text-teal-600" />}
-            {data?.partial ? "Análise incompleta: não é possível descartar pendências." : "Nenhuma prioridade operacional encontrada nos dados consultados."}
-          </div>
-        ) : (
-          <div className="grid gap-3">
-            {priorities.slice(0, 5).map((item, index) => (
+      </div>
+      {error ? (
+        <p role="alert" className="rounded-lg border border-amber-300 p-4 text-sm text-amber-800">Prioridades indisponíveis no momento.</p>
+      ) : loading ? (
+        <ol className="space-y-2.5" aria-busy="true" aria-label="Carregando prioridades">
+          {[0, 1, 2].map((i) => <li key={i} className="h-16 animate-pulse rounded-lg bg-muted" />)}
+        </ol>
+      ) : priorities.length === 0 ? (
+        <p className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">
+          {data?.partial ? "Análise incompleta: não é possível descartar pendências." : "Nenhuma prioridade nos dados consultados."}
+        </p>
+      ) : (
+        <ol className="space-y-2.5">
+          {priorities.slice(0, 5).map((item, index) => (
+            <li key={item.id}>
               <Link
-                key={item.id}
                 href={item.evidenciaHref}
-                className="group grid gap-3 rounded-md border p-3 transition-colors hover:border-primary/40 hover:bg-primary/5 lg:grid-cols-[44px_140px_1fr_220px_auto]"
+                className={`group flex gap-3 rounded-lg p-3 transition-colors ${index === 0 && item.level === "critica" ? "bg-orange-50 dark:bg-orange-950/40" : "bg-muted/60 hover:bg-muted"}`}
               >
-                <div className="flex h-10 w-10 items-center justify-center rounded-md bg-muted text-sm font-semibold tabular-nums">
-                  {index + 1}
+                <span className={`num pt-0.5 text-[13px] font-semibold ${index === 0 && item.level === "critica" ? "text-orange-700" : "text-muted-foreground"}`}>{index + 1}</span>
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <p className="text-sm font-semibold">{item.motivo} · {item.territorio}</p>
+                  <p className="text-[13px] text-muted-foreground">{item.acao}</p>
+                  {item.detalhe && <p className="text-xs text-muted-foreground">{item.detalhe}</p>}
                 </div>
-                <div className="space-y-1">
-                  <Badge className={priorityStyle(item.level)}>{item.level}</Badge>
-                  <p className="text-xs text-muted-foreground">{item.agravo}</p>
-                </div>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold">{item.territorio}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">{item.motivo}</p>
-                  {item.detalhe && <p className="mt-1 text-xs text-muted-foreground">{item.detalhe}</p>}
-                </div>
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Ação</p>
-                  <p className="mt-1 text-sm leading-snug">{item.acao}</p>
-                </div>
-                <div className="flex items-center justify-between gap-3 lg:justify-end">
-                  <Badge className="bg-muted text-foreground">{item.prazo}</Badge>
-                  <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary" />
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  <Badge className={priorityStyle(item.level)}>{item.prazo}</Badge>
+                  <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary" aria-hidden="true" />
                 </div>
               </Link>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
   );
 }
 
@@ -441,167 +361,154 @@ export function DashboardView() {
   const tracomaSparkData = consolidatedByYear.map((r) => ({ ano: r.ano, value: r.positivos }));
   const localAuthMode = process.env.NEXT_PUBLIC_DISABLE_AUTH === "true" && process.env.NODE_ENV !== "production";
 
+  const canalPoint = canal.data ? pickCurrentChannelPoint(canal.data) : null;
+  const canalZone = canalPoint ? classifyChannelPoint(canalPoint) : null;
+  const lastUpdate = kpis.data?.source === "cache" ? kpis.data.lastSync : kpis.data?.generatedAt;
+  const anyFetching = kpis.isFetching || sinan.isFetching || diagnostic.isFetching || priorities.isFetching || historico.isFetching || canal.isFetching;
+
   return (
-    <div className="flex flex-col">
-      <div className="border-b bg-card px-6 py-4">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              <Badge className="border-primary/30 bg-primary/10 text-primary">Sala de Situação</Badge>
-              <Badge className={cevespState.cls}>CEVESP: {cevespState.label}</Badge>
-              <Badge className={tracomaState.cls}>Tracoma: {tracomaState.label}</Badge>
-              {localAuthMode && <Badge className="border-amber-200 bg-amber-50 text-amber-700">Login desativado</Badge>}
-            </div>
-            <h1 className="text-xl font-semibold tracking-tight">Vigilância oftalmológica</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Cockpit para priorizar decisões. As análises detalhadas ficam nas páginas de investigação.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                kpis.refetch();
-                sinan.refetch();
-                diagnostic.refetch();
-                priorities.refetch();
-                historico.refetch();
-                canal.refetch();
-              }}
-              disabled={kpis.isFetching || sinan.isFetching || diagnostic.isFetching || priorities.isFetching || historico.isFetching || canal.isFetching}
-            >
-              <RefreshCw className={`h-4 w-4 ${kpis.isFetching || sinan.isFetching || diagnostic.isFetching || priorities.isFetching ? "animate-spin" : ""}`} />
-              Atualizar
-            </Button>
-            <Button size="sm" asChild>
-              <Link href="/territorios">Abrir territórios</Link>
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      <div className="space-y-5 p-6">
-        {(kpis.isError || sinan.isError || diagnostic.isError || priorities.isError || historico.isError || canal.isError) && (
-          <Card className="border-amber-300 bg-amber-50">
-            <CardContent className="flex items-start gap-3 py-4 text-sm text-amber-900">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              <div>
-                <p className="font-medium">Dados incompletos neste ambiente</p>
-                <p className="text-amber-800/80">Sem sessão, Supabase ou rede CEVESP, alguns indicadores ficam indisponíveis.</p>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <KpiCard
-            label={`Conjuntivites até SE ${kpis.data?.comparisonThroughSe ?? "—"}`}
-            value={kpis.isFetching ? "..." : formatValue(kpis.data?.currentYear.cases)}
-            icon={<Eye className="h-4 w-4 text-primary" />}
-            delta={kpis.data?.yearDelta ?? null}
-          />
-          <KpiCard
-            label="Surtos CEVESP"
-            value={kpis.isFetching ? "..." : formatValue(kpis.data?.outbreaksCurrentYear)}
-            icon={<ShieldAlert className="h-4 w-4 text-red-500" />}
-            tone="red"
-          />
-          <KpiCard
-            label={`Examinados ${latestConsolidated?.ano ?? ""}`.trim()}
-            value={sinan.isFetching ? "..." : formatValue(latestConsolidated?.examinados)}
-            icon={<Stethoscope className="h-4 w-4 text-primary" />}
-          />
-          <KpiCard
-            label={`Casos tracoma ${latestConsolidated?.ano ?? ""}`.trim()}
-            value={sinan.isFetching ? "..." : formatValue(latestConsolidated?.positivos)}
-            icon={<AlertTriangle className="h-4 w-4 text-amber-600" />}
-            tone="amber"
-          />
-        </div>
-
-        <CanalZoneStrip data={canal.data} loading={canal.isFetching && !canal.data} />
-
-        <AlertsPanel />
-        {priorities.data?.partial && (
-          <p role="alert" className="rounded-md border border-amber-300 p-3 text-sm text-amber-800">
-            Prioridades calculadas com dados parciais. Fontes indisponíveis: {priorities.data.unavailableSources?.join(", ")}.
+    <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6 p-4 md:p-7">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div className="space-y-1.5">
+          <h1 className="text-[28px] font-bold tracking-tight">Sala de Situação</h1>
+          <p className="text-[15px] text-muted-foreground">
+            O que pede ação nesta semana, em conjuntivite e tracoma.
+            {lastUpdate && <> Dados do CEVESP atualizados em {new Date(lastUpdate).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" })}.</>}
           </p>
-        )}
-        <TodayPrioritiesPanel data={priorities.data} loading={priorities.isLoading} error={priorities.isError} />
+          {localAuthMode && <Badge className="border-amber-200 bg-amber-50 text-amber-700">Login desativado (local)</Badge>}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            className="h-11"
+            onClick={() => {
+              kpis.refetch();
+              sinan.refetch();
+              diagnostic.refetch();
+              priorities.refetch();
+              historico.refetch();
+              canal.refetch();
+            }}
+            disabled={anyFetching}
+          >
+            <RefreshCw className={`h-4 w-4 ${anyFetching ? "animate-spin" : ""}`} />
+            Atualizar
+          </Button>
+          <Button variant="outline" className="h-11" asChild>
+            <Link href="/boletins">Gerar boletim</Link>
+          </Button>
+          <Button className="h-11" asChild>
+            <Link href="/alertas">Ver alertas</Link>
+          </Button>
+        </div>
+      </header>
 
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          {quickActions.map((action) => {
-            const Icon = action.icon;
-            return (
-              <Link
-                key={action.href}
-                href={action.href}
-                className="group flex min-h-20 items-center gap-3 rounded-md border bg-card p-3 transition-colors hover:border-primary/40 hover:bg-primary/5"
-              >
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-                  <Icon className="h-4 w-4" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-semibold">{action.label}</span>
-                  <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">{action.detail}</span>
-                </span>
-                <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
-              </Link>
-            );
-          })}
+      {(kpis.isError || sinan.isError || diagnostic.isError || priorities.isError || historico.isError || canal.isError) && (
+        <p role="alert" className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          Alguns indicadores estão indisponíveis agora. Os demais continuam válidos.
+        </p>
+      )}
+
+      <section aria-label="Indicadores da semana" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <KpiCard
+          href="/conjuntivite"
+          label={`Conjuntivite · SE ${canalPoint?.se ?? kpis.data?.currentWeek.se ?? "—"}`}
+          value={canalPoint?.currentYear != null ? formatValue(canalPoint.currentYear) : kpis.isLoading ? "…" : formatValue(kpis.data?.currentWeek.cases)}
+          caption={canalPoint?.currentIncidence != null ? `casos · ${canalPoint.currentIncidence.toLocaleString("pt-BR")} por 100 mil hab.` : "casos na semana"}
+          pill={canalZone ? {
+            text: `Canal endêmico: ${CHANNEL_ZONE_LABELS[canalZone]}`,
+            cls: canalZone === "acima" ? "bg-red-50 text-red-700" : canalZone === "insuficiente" ? "bg-orange-50 text-orange-700" : "bg-emerald-50 text-emerald-800"
+          } : undefined}
+        />
+        <KpiCard
+          href="/conjuntivite"
+          label={`Conjuntivite · ${kpis.data?.currentYear.year ?? "ano"} até a SE ${kpis.data?.comparisonThroughSe ?? "—"}`}
+          value={kpis.isLoading ? "…" : formatValue(kpis.data?.currentYear.cases)}
+          caption={<DeltaBadge delta={kpis.data?.yearDelta ?? null} />}
+        />
+        <KpiCard
+          href="/conjuntivite"
+          label={`Surtos · ${kpis.data?.currentYear.year ?? ""}`.trim()}
+          value={kpis.isLoading ? "…" : formatValue(kpis.data?.outbreaksCurrentYear)}
+          caption={kpis.data ? `${formatValue(kpis.data.collectionsCurrentYear)} coletas de material` : undefined}
+          tone={(kpis.data?.outbreaksCurrentYear ?? 0) > 0 ? "alert" : "default"}
+        />
+        <KpiCard
+          href="/tracoma"
+          label={`Tracoma · ${latestConsolidated?.ano ?? ""}`.trim()}
+          value={sinan.isLoading ? "…" : formatValue(latestConsolidated?.examinados)}
+          caption={latestConsolidated ? `examinados · ${formatValue(latestConsolidated.positivos)} positivos` : "examinados"}
+          pill={{ text: tracomaState.label, cls: tracomaState.cls }}
+        />
+      </section>
+
+      <div className="grid gap-4 xl:grid-cols-3">
+        <div className="space-y-4 xl:col-span-2">
+          <AlertsPanel />
+          {priorities.data?.partial && (
+            <p role="alert" className="rounded-lg border border-amber-300 p-3 text-sm text-amber-800">
+              Prioridades calculadas com dados parciais. Fontes indisponíveis: {priorities.data.unavailableSources?.join(", ")}.
+            </p>
+          )}
+          <TodayPrioritiesPanel data={priorities.data} loading={priorities.isLoading} error={priorities.isError} />
+
+          <section className="flex flex-col gap-3 rounded-xl border bg-card p-5">
+            <div className="flex items-baseline justify-between gap-2">
+              <h2 className="text-[17px] font-semibold">Municípios com mais casos na SE {kpis.data?.currentWeek.se ?? ""}</h2>
+              <Link href="/territorios" className="text-sm font-medium text-primary">Ver territórios</Link>
+            </div>
+            {kpis.data?.topMunicipalitiesCurrentWeek.length ? (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-sm">
+                  <thead>
+                    <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
+                      <th className="px-2.5 py-2 font-semibold">Município</th>
+                      <th className="px-2.5 py-2 text-right font-semibold">Casos</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {kpis.data.topMunicipalitiesCurrentWeek.slice(0, 6).map((m) => (
+                      <tr key={m.name} className="border-t">
+                        <td className="px-2.5 py-2.5 font-medium">{m.name}</td>
+                        <td className="num px-2.5 py-2.5 text-right">{formatValue(m.cases)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">{kpis.isLoading ? "Carregando…" : "Sem notificações na semana até agora."}</p>
+            )}
+          </section>
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle>Agravos monitorados</CardTitle>
-              <CardDescription>Tendência histórica · série completa em Análises</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Link href="/conjuntivite" className="block rounded-md border p-3 transition-colors hover:bg-muted/40">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">Conjuntivites</p>
-                    <p className="text-xs text-muted-foreground">CEVESP · casos por ano</p>
-                  </div>
-                  <Badge className={cevespState.cls}>{cevespState.label}</Badge>
+        <div className="space-y-4">
+          <section className="flex flex-col gap-3 rounded-xl border bg-card p-5">
+            <h2 className="text-[17px] font-semibold">Agravos</h2>
+            <Link href="/conjuntivite" className="block rounded-lg border p-3 transition-colors hover:bg-muted/50">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-medium">Conjuntivite</p>
+                  <p className="text-xs text-muted-foreground">CEVESP · casos por ano</p>
                 </div>
-                {cevespSparkData.length >= 2 && (
-                  <div className="mt-2">
-                    <MiniSparkline data={cevespSparkData} color="#2563eb" />
-                  </div>
-                )}
-              </Link>
-              <Link href="/tracoma" className="block rounded-md border p-3 transition-colors hover:bg-muted/40">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">Tracoma</p>
-                    <p className="text-xs text-muted-foreground">SINAN · positivos NOTTRACONET por ano</p>
-                  </div>
-                  <Badge className={tracomaState.cls}>{tracomaState.label}</Badge>
+                <Badge className={cevespState.cls}>{cevespState.label}</Badge>
+              </div>
+              {cevespSparkData.length >= 2 && <div className="mt-2"><MiniSparkline data={cevespSparkData} color="#0B5D57" /></div>}
+            </Link>
+            <Link href="/tracoma" className="block rounded-lg border p-3 transition-colors hover:bg-muted/50">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-medium">Tracoma</p>
+                  <p className="text-xs text-muted-foreground">SINAN · positivos por ano</p>
                 </div>
-                {tracomaSparkData.length >= 2 && (
-                  <div className="mt-2">
-                    <MiniSparkline data={tracomaSparkData} color="#d97706" />
-                  </div>
-                )}
-              </Link>
-            </CardContent>
-          </Card>
-
+                <Badge className={tracomaState.cls}>{tracomaState.label}</Badge>
+              </div>
+              {tracomaSparkData.length >= 2 && <div className="mt-2"><MiniSparkline data={tracomaSparkData} color="#C4620F" /></div>}
+            </Link>
+          </section>
           <DataHealthPanel diagnostic={diagnostic.data} error={diagnostic.isError} />
         </div>
-
-        <Card>
-          <CardContent className="flex flex-col gap-2 py-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-            <span className="inline-flex items-center gap-2">
-              <Database className="h-3.5 w-3.5" />
-              Sala sem repetição: decisão aqui, investigação em Análises.
-            </span>
-            <span>{kpis.data?.source === "cache" ? "Última sincronização CEVESP" : "Consulta CEVESP"}: {(kpis.data?.source === "cache" ? kpis.data.lastSync : kpis.data?.generatedAt) ? new Date((kpis.data?.source === "cache" ? kpis.data.lastSync : kpis.data?.generatedAt)!).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "sem atualização"}</span>
-          </CardContent>
-        </Card>
       </div>
     </div>
   );
