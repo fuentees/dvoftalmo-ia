@@ -178,6 +178,7 @@ export function auditStructure(rows: AuditRow[], now = new Date()): Map<string, 
   const isBulk = (r: Prepared) => r.createdDay != null && (oldByDay.get(r.createdDay) ?? 0) > BULK_LOAD_THRESHOLD;
 
   const moved = new Set<string>();   // registros com sugestão para sair da semana atual
+  const wrongYear = new Set<string>(); // ANO errado: a semana informada não é comparável
   const flagged = new Set<string>(); // registros com problema de ano/semana individual
 
   // Ordem determinística: mais antigos primeiro
@@ -209,6 +210,7 @@ export function auditStructure(rows: AuditRow[], now = new Date()): Map<string, 
       suggestion: target == null ? null : indexToWeek(target)
     });
     flagged.add(r.key);
+    wrongYear.add(r.key);
     if (target != null) moved.add(r.key);
   }
 
@@ -244,7 +246,7 @@ export function auditStructure(rows: AuditRow[], now = new Date()): Map<string, 
   // 4) Grupos: mesma unidade com mais de um registro na mesma semana
   const groups = new Map<string, Prepared[]>();
   for (const r of ordered) {
-    if (r.idx == null || moved.has(r.key)) continue;
+    if (r.idx == null || moved.has(r.key) || wrongYear.has(r.key)) continue;
     const k = `${r.unidade}#${r.idx}`;
     groups.set(k, [...(groups.get(k) ?? []), r]);
   }
