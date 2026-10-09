@@ -17,9 +17,8 @@ import { BarChart2, Download, GitCompare, TrendingUp } from "lucide-react";
 import { exportChartSvg } from "@/lib/chart-export";
 
 const PALETTE = [
-  "#2563eb", "#16a34a", "#dc2626", "#d97706", "#7c3aed",
-  "#0891b2", "#be185d", "#059669", "#ea580c", "#4f46e5",
-  "#b45309", "#0f766e",
+  "#0B5D57", "#C4620F", "#1E4FD8", "#7CC4B7", "#B42318", "#8A6D1F",
+  "#6B4FA3", "#52625D", "#2A8C7E", "#E3A06B", "#7C9CEB", "#A3A3A3",
 ];
 
 const MAX_SERIES = 10;

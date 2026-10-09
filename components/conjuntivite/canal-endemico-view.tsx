@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import type { EndemicChannelPoint } from "@/services/cevesp-endemic";
 import { CHANNEL_METHODOLOGY, CHANNEL_ZONE_LABELS, MIN_BASELINE_YEARS, classifyChannelPoint } from "@/lib/cevesp-channel";
 import { currentCalendarYear, currentCalendarMonth, currentEpiWeek, pickCurrentPoint } from "@/lib/epi-week";
+import { CHART } from "@/lib/chart-palette";
 
 const MESES = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -368,7 +369,7 @@ export function CanalEndemicoView({ filters }: Props) {
         <CardContent>
           <ResponsiveContainer width="100%" height={360}>
             <ComposedChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={CHART.grid} />
               <XAxis
                 dataKey="label"
                 tick={{ fontSize: 11 }}
@@ -399,7 +400,7 @@ export function CanalEndemicoView({ filters }: Props) {
                 type="monotone"
                 dataKey="Faixa esperada"
                 stackId="zone"
-                fill="#bae6fd"
+                fill={CHART.primaryFill}
                 stroke="none"
                 fillOpacity={0.55}
                 legendType="square"
@@ -411,7 +412,7 @@ export function CanalEndemicoView({ filters }: Props) {
               <Line
                 type="monotone"
                 dataKey="Ano anterior"
-                stroke="#7c3aed"
+                stroke={CHART.accent}
                 strokeWidth={1.75}
                 strokeDasharray="4 3"
                 dot={false}
@@ -422,7 +423,7 @@ export function CanalEndemicoView({ filters }: Props) {
               <Line
                 type="monotone"
                 dataKey="Média"
-                stroke="#475569"
+                stroke={CHART.muted}
                 strokeWidth={1.5}
                 strokeDasharray="2 3"
                 dot={false}
@@ -433,7 +434,7 @@ export function CanalEndemicoView({ filters }: Props) {
               <Line
                 type="monotone"
                 dataKey="Projeção"
-                stroke="#3b82f6"
+                stroke={CHART.primarySoft}
                 strokeWidth={2}
                 strokeDasharray="5 3"
                 dot={false}
@@ -447,7 +448,7 @@ export function CanalEndemicoView({ filters }: Props) {
               <Line
                 type="monotone"
                 dataKey="Incidência atual"
-                stroke="#1d4ed8"
+                stroke={CHART.primary}
                 strokeWidth={3.5}
                 dot={false}
                 legendType="line"
@@ -457,7 +458,7 @@ export function CanalEndemicoView({ filters }: Props) {
               {lastLabel && (
                 <ReferenceLine
                   x={lastLabel}
-                  stroke="#6b7280"
+                  stroke={CHART.muted}
                   strokeDasharray="2 2"
                   label={{ value: xAxisMode === "se" ? `SE ${lastLabel}` : lastLabel, position: "top", fontSize: 10, fill: "#6b7280" }}
                 />

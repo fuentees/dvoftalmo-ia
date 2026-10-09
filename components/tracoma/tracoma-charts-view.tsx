@@ -20,13 +20,14 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { exportChartSvg } from "@/lib/chart-export";
 import type { TracomaOverview } from "@/services/sinan-tracoma";
+import { CHART } from "@/lib/chart-palette";
 
 const FORM_COLORS: Record<string, string> = {
-  TF: "#f59e0b",
-  TI: "#ef4444",
-  TS: "#8b5cf6",
-  TT: "#1d4ed8",
-  CO: "#6b7280",
+  TF: "#C4620F",
+  TI: "#B42318",
+  TS: "#6B4FA3",
+  TT: "#1E4FD8",
+  CO: "#52625D",
 };
 
 function num(v: unknown) {
@@ -248,12 +249,12 @@ export function TracomaChartsView({ filters }: Props) {
                     }
                   />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar yAxisId="left" dataKey="Examinados" fill="#86efac" radius={[3, 3, 0, 0]} />
-                  <Bar yAxisId="left" dataKey="NOTTRACONET (positivos)" fill="#f97316" radius={[3, 3, 0, 0]} />
+                  <Bar yAxisId="left" dataKey="Examinados" fill={CHART.primarySoft} radius={[3, 3, 0, 0]} />
+                  <Bar yAxisId="left" dataKey="NOTTRACONET (positivos)" fill={CHART.accent} radius={[3, 3, 0, 0]} />
                   {avgPos != null && (
-                    <ReferenceLine yAxisId="right" y={avgPos} stroke="#dc2626" strokeDasharray="4 4" label={{ value: `Média ${pct(avgPos)}`, position: "insideTopRight", fontSize: 10, fill: "#dc2626" }} />
+                    <ReferenceLine yAxisId="right" y={avgPos} stroke={CHART.alert} strokeDasharray="4 4" label={{ value: `Média ${pct(avgPos)}`, position: "insideTopRight", fontSize: 10, fill: "#dc2626" }} />
                   )}
-                  <Line yAxisId="right" type="monotone" dataKey="Positividade (%)" stroke="#dc2626" strokeWidth={2} dot={ntcSeries.length <= 15} connectNulls={false} />
+                  <Line yAxisId="right" type="monotone" dataKey="Positividade (%)" stroke={CHART.alert} strokeWidth={2} dot={ntcSeries.length <= 15} connectNulls={false} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
@@ -325,11 +326,11 @@ export function TracomaChartsView({ filters }: Props) {
       {data.warnings?.length > 0 && <details className="rounded-md border p-3 text-xs text-muted-foreground"><summary className="cursor-pointer font-medium">Limitações da série histórica</summary><ul className="mt-2 space-y-1">{data.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></details>}
       <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
         <Badge className="gap-1.5 bg-muted font-normal text-muted-foreground hover:bg-muted">
-          <span className="inline-block h-2 w-2 rounded-sm bg-[#2563eb]" />
+          <span className="inline-block h-2 w-2 rounded-sm bg-[#7CC4B7]" />
           TRACONET — registros individuais (1 linha = 1 caso)
         </Badge>
         <Badge className="gap-1.5 bg-muted font-normal text-muted-foreground hover:bg-muted">
-          <span className="inline-block h-2 w-2 rounded-sm bg-[#f97316]" />
+          <span className="inline-block h-2 w-2 rounded-sm bg-[#C4620F]" />
           NOTTRACONET — consolidado (NU_CASOPOS = positivos; NU_CASOEXA = examinados)
         </Badge>
       </div>

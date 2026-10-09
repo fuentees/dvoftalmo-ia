@@ -10,6 +10,7 @@ import { Download, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { exportChartSvg } from "@/lib/chart-export";
 import type { CevespHistorico } from "@/lib/external/supabase-cevesp";
+import { CHART } from "@/lib/chart-palette";
 
 function num(v: unknown) { return Number(v ?? 0).toLocaleString("pt-BR"); }
 
@@ -88,7 +89,7 @@ export function ConjuntiviteChartsView({ filters }: Props) {
   const filteredAnual = anualData.filter((r) => !excludedYears.has(r.ano));
   const hasIncidencia = data.byYear.some((r) => r.incidencia100k != null);
   const activeKey = metricAnual === "municipios" ? "Municípios notificantes" : "Casos";
-  const activeColor = metricAnual === "municipios" ? "#16a34a" : "#2563eb";
+  const activeColor = metricAnual === "municipios" ? CHART.accent : CHART.primary;
   const fmt = (v: unknown) => num(v);
 
   return (
@@ -140,14 +141,14 @@ export function ConjuntiviteChartsView({ filters }: Props) {
                   style={{ cursor: "pointer" }}
                   margin={{ top: 4, right: 48, left: 4, bottom: 4 }}
                 >
-                  <CartesianGrid vertical={false} stroke="#e5e7eb" />
+                  <CartesianGrid vertical={false} stroke={CHART.grid} />
                   <XAxis dataKey="ano" tick={{ fontSize: 11 }} />
                   <YAxis yAxisId="left" tick={{ fontSize: 11 }} width={60} tickFormatter={fmt} />
                   <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} width={44} tickFormatter={(v) => `${Number(v).toFixed(1)}`} domain={[0, "auto"]} />
                   <Tooltip formatter={(v, name) => name === "Incidência/100k" ? `${Number(v).toFixed(1)} /100k` : fmt(v)} labelFormatter={(label, payload) => { const row = payload[0]?.payload; return `Ano ${label}${row?.populationYear ? ` · População IBGE ${row.populationYear}${row.populationFallback ? " (substituta)" : ""}` : " · população indisponível"}`; }} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                   <Bar yAxisId="left" dataKey={activeKey} fill={activeColor} radius={[3, 3, 0, 0]} />
-                  <Line yAxisId="right" type="monotone" dataKey="Incidência/100k" stroke="#dc2626" strokeWidth={2} dot={filteredAnual.length <= 15} />
+                  <Line yAxisId="right" type="monotone" dataKey="Incidência/100k" stroke={CHART.alert} strokeWidth={2} dot={filteredAnual.length <= 15} />
                 </ComposedChart>
               ) : (
                 <BarChart
@@ -156,7 +157,7 @@ export function ConjuntiviteChartsView({ filters }: Props) {
                   style={{ cursor: "pointer" }}
                   margin={{ top: 4, right: 16, left: 4, bottom: 4 }}
                 >
-                  <CartesianGrid vertical={false} stroke="#e5e7eb" />
+                  <CartesianGrid vertical={false} stroke={CHART.grid} />
                   <XAxis dataKey="ano" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} width={56} tickFormatter={fmt} />
                   <Tooltip formatter={fmt} />

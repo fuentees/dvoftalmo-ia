@@ -212,59 +212,32 @@ function riskFromReport(report?: ReportData, quality?: QualityData) {
   return { label: !quality ? "Qualidade não avaliada" : report?.alertsAvailable === false ? "Alertas não avaliados" : "Sem pendências detectadas", cls: "border-slate-200 bg-slate-50 text-slate-700" };
 }
 
-function MetricCard({ label, value, detail, tone = "default", change }: {
+function MetricCard({ label, value, detail, tone = "default", change, pill }: {
   label: string;
   value: string | number;
   detail?: string;
   tone?: "default" | "red" | "amber" | "green";
   change?: { pct: number; prevAno: number };
+  pill?: string;
 }) {
-  const toneClass = {
-    default: "",
-    red: "border-red-200 bg-red-50",
-    amber: "border-amber-200 bg-amber-50",
-    green: "border-green-200 bg-green-50"
+  const pillClass = {
+    default: "bg-muted text-muted-foreground",
+    red: "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-200",
+    amber: "bg-orange-50 text-orange-700 dark:bg-orange-950 dark:text-orange-200",
+    green: "bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"
   }[tone];
   return (
-    <Card className={toneClass}>
-      <CardContent className="pt-4">
-        <div className="text-xs text-muted-foreground">{label}</div>
-        <div className="mt-1 text-2xl font-semibold tabular-nums">{typeof value === "number" ? num(value) : value}</div>
-        {change != null && (
-          <div className={`mt-0.5 text-xs font-medium ${change.pct > 0 ? "text-red-600" : change.pct < 0 ? "text-green-600" : "text-muted-foreground"}`}>
-            {change.pct > 0 ? "▲" : change.pct < 0 ? "▼" : "="} {Math.abs(change.pct).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% vs {change.prevAno}
-          </div>
-        )}
-        {detail && <div className="mt-1 text-xs text-muted-foreground">{detail}</div>}
-      </CardContent>
-    </Card>
-  );
-}
-
-function ExecutiveSummary({ report, quality }: { report?: ReportData; quality?: QualityData }) {
-  const topGve = report?.indicators.topGves[0];
-  const topMuni = report?.indicators.topMunicipalities[0];
-  const alert = report?.alerts[0];
-  const qualityTotal = quality?.total ?? 0;
-  const risk = riskFromReport(report, quality);
-  const nextAction = alert
-    ? "Investigar alerta e validar município/GVE com maior carga."
-    : qualityTotal > 0
-      ? "Revisar pendências de qualidade antes de divulgar o recorte."
-      : "Manter monitoramento semanal e registrar devolutiva técnica.";
-  return (
-    <Card className="border-primary/20 bg-primary/5">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base">Resumo executivo</CardTitle>
-        <CardDescription>Leitura rápida para decisão do recorte selecionado.</CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-3 md:grid-cols-4">
-        <InfoItem label="Revisão dos dados" value={risk.label} />
-        <InfoItem label="Onde olhar primeiro" value={topMuni?.name ?? topGve?.name ?? "Sem território predominante"} />
-        <InfoItem label="Principal sinal" value={alert?.title ?? `${qualityTotal.toLocaleString("pt-BR")} pendência(s) de qualidade`} />
-        <InfoItem label="Próxima ação" value={nextAction} />
-      </CardContent>
-    </Card>
+    <div className="flex flex-col gap-1.5 rounded-xl border bg-card p-[18px]">
+      <span className="text-[13px] font-medium text-muted-foreground">{label}</span>
+      <span className="num text-[32px] font-semibold leading-none">{typeof value === "number" ? num(value) : value}</span>
+      {change != null && (
+        <span className={`text-[13px] font-medium ${change.pct > 0 ? "text-red-700" : change.pct < 0 ? "text-emerald-700" : "text-muted-foreground"}`}>
+          {change.pct > 0 ? "▲" : change.pct < 0 ? "▼" : "="} {Math.abs(change.pct).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% vs {change.prevAno}
+        </span>
+      )}
+      {detail && <span className="text-[13px] text-muted-foreground">{detail}</span>}
+      {pill && <span className={`mt-1 self-start rounded-md px-2 py-0.5 text-xs font-medium ${pillClass}`}>{pill}</span>}
+    </div>
   );
 }
 
@@ -334,8 +307,8 @@ function ResultTable({ title, columns, rows, limit = 80 }: {
 function SectionIntro({ title, description }: { title: string; description: string }) {
   return (
     <div>
-      <h2 className="text-base font-semibold">{title}</h2>
-      <p className="text-sm text-muted-foreground">{description}</p>
+      <h2 className="text-[20px] font-bold tracking-tight">{title}</h2>
+      <p className="text-[14px] text-muted-foreground">{description}</p>
     </div>
   );
 }
@@ -801,7 +774,6 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
 
         {activeTab === "situacao" && report.data && (
           <div className="space-y-6">
-            <ExecutiveSummary report={report.data} quality={quality.data} />
             <div className="flex items-center justify-between gap-2 print-hide" data-print-hide>
               <div className="text-xs text-muted-foreground">
                 {(() => {
@@ -819,23 +791,35 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
                 Exportar análise CSV
               </Button>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <MetricCard
-                label="Casos analisados"
+                label="Casos no recorte"
                 value={totalCases}
-                detail={`${num(report.data.indicators.notifications)} notificações no recorte`}
+                detail={`${num(report.data.indicators.notifications)} notificações`}
                 change={casesChange ?? undefined}
               />
               <MetricCard
-                label="Municípios notificando"
+                label="Municípios que notificaram"
                 value={`${reportingMunicipalities} de ${SP_MUNICIPIOS}`}
                 detail={`${pct(reportingMunicipalities, SP_MUNICIPIOS)} dos municípios do território`}
                 tone={reportingMunicipalities < SP_MUNICIPIOS * 0.5 ? "amber" : "green"}
+                pill={reportingMunicipalities < SP_MUNICIPIOS * 0.5 ? "Menos da metade notificou" : "Boa cobertura"}
                 change={muniChange ?? undefined}
               />
-              <MetricCard label="Notificações com surto" value={report.data.indicators.outbreakNotifications} detail={`${outbreakRate} das notificações`} tone={report.data.indicators.outbreakNotifications > 0 ? "amber" : "green"} />
-              <MetricCard label="Materiais coletados" value={report.data.indicators.biologicalCollectionTotal} detail={`${num(report.data.indicators.biologicalCollectionNotifications)} notificações com coleta`} />
-              <MetricCard label="Problemas de qualidade" value={quality.data?.total ?? "Indisponível"} detail="Registros que precisam revisão" tone={(quality.data?.total ?? 0) > 0 ? "amber" : "green"} />
+              <MetricCard
+                label="Notificações com surto"
+                value={report.data.indicators.outbreakNotifications}
+                detail={`${outbreakRate} das notificações · ${num(report.data.indicators.biologicalCollectionTotal)} materiais coletados`}
+                tone={report.data.indicators.outbreakNotifications > 0 ? "amber" : "default"}
+                pill={report.data.indicators.outbreakNotifications > 0 ? "Investigar surtos" : undefined}
+              />
+              <MetricCard
+                label="Pendências de qualidade"
+                value={quality.data?.total ?? "—"}
+                detail="Registros a revisar na aba Qualidade dos dados"
+                tone={(quality.data?.total ?? 0) > 0 ? "red" : "green"}
+                pill={(quality.data?.total ?? 0) > 0 ? "Revisar antes de divulgar" : "Sem pendências"}
+              />
             </div>
 
             <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
@@ -1149,6 +1133,7 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
     </div>
   );
 }
+
 
 function InfoItem({ label, value }: { label: string; value: string }) {
   return (

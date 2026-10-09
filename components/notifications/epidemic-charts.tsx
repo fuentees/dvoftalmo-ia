@@ -16,6 +16,7 @@ import {
   YAxis
 } from "recharts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { CHART } from "@/lib/chart-palette";
 
 interface WeekPoint {
   week: string;
@@ -115,11 +116,11 @@ export function EpidemicCharts({
                       value === "yearTotal" ? String(selectedYear) : "Média histórica"
                     }
                   />
-                  <Bar dataKey="yearTotal" fill="#0f766e" name="yearTotal" opacity={0.85} radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="yearTotal" fill={CHART.primary} name="yearTotal" opacity={0.85} radius={[3, 3, 0, 0]} />
                   <Line
                     type="monotone"
                     dataKey="average"
-                    stroke="#dc2626"
+                    stroke={CHART.ink}
                     strokeWidth={2}
                     dot={false}
                     name="average"
@@ -135,8 +136,8 @@ export function EpidemicCharts({
                   <Area
                     type="monotone"
                     dataKey="average"
-                    stroke="#0f766e"
-                    fill="#99f6e4"
+                    stroke={CHART.primary}
+                    fill={CHART.primaryFill}
                     name="Média histórica"
                     strokeWidth={2}
                   />
@@ -161,7 +162,7 @@ export function EpidemicCharts({
                   <XAxis type="number" tick={{ fontSize: 11 }} />
                   <YAxis dataKey="name" type="category" width={130} tick={{ fontSize: 11 }} />
                   <Tooltip formatter={(value: number) => [value, "Casos"]} />
-                  <Bar dataKey="total" fill="#ca8a04" name="Casos" radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="total" fill={CHART.accent} name="Casos" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
@@ -181,7 +182,7 @@ export function EpidemicCharts({
                   <XAxis type="number" tick={{ fontSize: 11 }} />
                   <YAxis dataKey="name" type="category" width={130} tick={{ fontSize: 11 }} />
                   <Tooltip formatter={(value: number) => [value, "Casos"]} />
-                  <Bar dataKey="total" fill="#0f766e" name="Casos" radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="total" fill={CHART.primary} name="Casos" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
@@ -210,7 +211,7 @@ export function EpidemicCharts({
                       "Casos"
                     ]}
                   />
-                  <Bar dataKey="total" fill="#0f766e" name="Casos" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="total" fill={CHART.primary} name="Casos" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
@@ -235,7 +236,7 @@ export function EpidemicCharts({
                       "Casos"
                     ]}
                   />
-                  <Bar dataKey="total" fill="#2563eb" name="Casos" radius={[0, 4, 4, 0]}>
+                  <Bar dataKey="total" fill={CHART.primary} name="Casos" radius={[0, 4, 4, 0]}>
                     <LabelList dataKey="percentLabel" position="right" className="fill-muted-foreground text-[11px]" />
                   </Bar>
                 </BarChart>
