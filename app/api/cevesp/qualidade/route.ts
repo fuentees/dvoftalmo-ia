@@ -5,6 +5,9 @@ import { getCurrentUser } from "@/lib/supabase/auth";
 import { findInvalidRecords, findInvalidRecordsFromCache, isMysqlRecordId, saveCorrectionsToQueue, type InvalidRecord } from "@/services/cevesp-corrections";
 import { getNotificationTableName } from "@/lib/external/notification-db";
 
+// A auditoria lê o ano filtrado e o anterior inteiros (dezenas de milhares de linhas)
+export const maxDuration = 60;
+
 function normalizeSearch(value: string | null | undefined) {
   return String(value ?? "")
     .normalize("NFD")

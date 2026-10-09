@@ -41,7 +41,8 @@ function required(name: string): string {
 function getSupabase() {
   const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
   if (!url) { console.error("❌  SUPABASE_URL ou NEXT_PUBLIC_SUPABASE_URL não configurado."); process.exit(1); }
-  return createClient(url, required("SUPABASE_SERVICE_ROLE_KEY"));
+  // Aceita também a URL da API REST (".../rest/v1/"): o cliente precisa da URL base
+  return createClient(url.replace(/\/rest\/v1\/?$/, "").replace(/\/$/, ""), required("SUPABASE_SERVICE_ROLE_KEY"));
 }
 
 const clean = cleanRow;

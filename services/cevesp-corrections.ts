@@ -287,39 +287,56 @@ async function fetchAuditRows(ano?: number, anoFim?: number, gve?: string) {
   const lo = ano ?? anoFim;
   const hi = anoFim && (!ano || anoFim > ano) ? anoFim : ano;
 
-  async function run(withCreatedAt: boolean) {
-    const rows: Array<Record<string, unknown>> = [];
-    for (let from = 0; ; from += pageSize) {
-      let q = supabase
-        .from("cevesp_notificacoes")
-        .select(withCreatedAt ? `${AUDIT_COLUMNS},created_at_origem` : AUDIT_COLUMNS)
-        .order("id")
-        .range(from, from + pageSize - 1);
-      // O ano anterior entra como contexto (semanas vizinhas na virada do ano); registros
-      // digitados no período com ANO errado ou vazio também precisam aparecer.
-      if (lo != null && hi != null) {
-        const filters = [`and(ANO.gte.${lo - 1},ANO.lte.${hi})`, "ANO.is.null"];
-        if (withCreatedAt) filters.push(`and(created_at_origem.gte.${lo}-01-01,created_at_origem.lt.${hi + 1}-01-01)`);
-        q = q.or(filters.join(",")) as typeof q;
+  // full: com data de digitação e ano_suspeito; created: sem ano_suspeito; basic: sem os dois
+  type Mode = "full" | "created" | "basic";
+  function query(mode: Mode, from: number, count = false) {
+    const columns = mode === "full" ? `${AUDIT_COLUMNS},created_at_origem,ano_suspeito`
+      : mode === "created" ? `${AUDIT_COLUMNS},created_at_origem` : AUDIT_COLUMNS;
+    let q = supabase
+      .from("cevesp_notificacoes")
+      .select(columns, count ? { count: "exact" } : undefined)
+      .order("id")
+      .range(from, from + pageSize - 1);
+    // O ano anterior entra como contexto (semanas vizinhas na virada do ano). Dos
+    // digitados no período, só os de ANO suspeito: a carga em lote de anos antigos não.
+    if (lo != null && hi != null) {
+      const filters = [`and(ANO.gte.${lo - 1},ANO.lte.${hi})`, "ANO.is.null"];
+      if (mode === "full") filters.push(`and(ano_suspeito.is.true,created_at_origem.gte.${lo}-01-01,created_at_origem.lt.${hi + 1}-01-01)`);
+      if (mode === "created") filters.push(`and(ANO.gt.${hi},created_at_origem.gte.${lo}-01-01,created_at_origem.lt.${hi + 1}-01-01)`);
+      q = q.or(filters.join(",")) as typeof q;
+    }
+    if (gve) q = q.eq('"GVE_NOME"', gve) as typeof q;
+    return q;
+  }
+
+  // Primeira página traz o total; as demais são buscadas em paralelo (evita timeout)
+  async function run(mode: Mode) {
+    const first = await query(mode, 0, true);
+    if (first.error) return { rows: [], error: first.error };
+    const rows = [...((first.data ?? []) as unknown as Array<Record<string, unknown>>)];
+    const total = first.count ?? rows.length;
+    const offsets: number[] = [];
+    for (let from = pageSize; from < total; from += pageSize) offsets.push(from);
+    const CONCURRENCY = 8;
+    for (let i = 0; i < offsets.length; i += CONCURRENCY) {
+      const pages = await Promise.all(offsets.slice(i, i + CONCURRENCY).map((from) => query(mode, from)));
+      for (const page of pages) {
+        if (page.error) return { rows, error: page.error };
+        for (const row of (page.data ?? []) as unknown as Array<Record<string, unknown>>) rows.push(row);
       }
-      if (gve) q = q.eq('"GVE_NOME"', gve) as typeof q;
-      const { data, error } = await q;
-      if (error) return { rows, error };
-      rows.push(...((data ?? []) as unknown as Array<Record<string, unknown>>));
-      if (!data || data.length < pageSize) break;
     }
     return { rows, error: null };
   }
 
-  const first = await run(true);
-  if (!first.error) return first.rows;
-  // Migração de created_at_origem ainda não aplicada: audita sem a data de digitação
-  if (/created_at_origem/.test(first.error.message)) {
-    const fallback = await run(false);
-    if (!fallback.error) return fallback.rows;
-    throw new Error(`Erro ao consultar cache CEVESP: ${fallback.error.message}`);
+  // Migrações ainda não aplicadas: audita com o que existir no cache
+  for (const mode of ["full", "created", "basic"] as Mode[]) {
+    const result = await run(mode);
+    if (!result.error) return result.rows;
+    if (!/ano_suspeito|created_at_origem/.test(result.error.message)) {
+      throw new Error(`Erro ao consultar cache CEVESP: ${result.error.message}`);
+    }
   }
-  throw new Error(`Erro ao consultar cache CEVESP: ${first.error.message}`);
+  throw new Error("Erro ao consultar cache CEVESP.");
 }
 
 export async function findInvalidRecordsFromCache(limit?: number, ano?: number, anoFim?: number, gve?: string): Promise<InvalidRecord[]> {
@@ -330,8 +347,10 @@ export async function findInvalidRecordsFromCache(limit?: number, ano?: number, 
     if (lo == null || hi == null) return true;
     const a = toNumber(r.ANO);
     if (a != null && a >= lo && a <= hi) return true;
+    // Fora do período pelo ANO: entra só se o ANO for suspeito e foi digitado no período
+    const suspeito = r.ano_suspeito === true || a == null || a > hi;
     const created = r.created_at_origem ? Number(String(r.created_at_origem).slice(0, 4)) : null;
-    return created != null && created >= lo && created <= hi;
+    return suspeito && created != null && created >= lo && created <= hi;
   };
   const records = auditCevespRows(rows, new Date(), inScope);
   return limit ? records.slice(0, limit) : records;
