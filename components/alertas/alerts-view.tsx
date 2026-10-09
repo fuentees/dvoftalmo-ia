@@ -1,14 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, AlertTriangle, CheckCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
+import { cn } from "@/lib/utils";
 
 type AlertStatus = "novo" | "em_investigacao" | "confirmado" | "descartado" | "encerrado";
-type AlertFilter = "active" | "critical" | AlertStatus | "all";
+type AlertFilter = "active" | "em_investigacao" | "terminal" | "all";
 
 interface EpiAlert {
   id: string;
@@ -42,15 +44,10 @@ type GenerateResponse = {
   warning?: string;
 };
 
-const severityConfig = {
-  critical: { label: "Crítica", icon: AlertCircle, cls: "border-red-200 bg-red-50 text-red-700" },
-  warning:  { label: "Atenção", icon: AlertTriangle, cls: "border-amber-200 bg-amber-50 text-amber-700" },
-};
-
 const statusConfig: Record<AlertStatus, { label: string; cls: string }> = {
-  novo: { label: "Novo", cls: "border-red-200 bg-red-50 text-red-700" },
+  novo: { label: "Pendente", cls: "border-orange-200 bg-orange-50 text-orange-700" },
   em_investigacao: { label: "Em investigação", cls: "border-blue-200 bg-blue-50 text-blue-700" },
-  confirmado: { label: "Confirmado", cls: "border-amber-200 bg-amber-50 text-amber-700" },
+  confirmado: { label: "Confirmado", cls: "border-red-200 bg-red-50 text-red-700" },
   descartado: { label: "Descartado", cls: "bg-muted text-foreground" },
   encerrado: { label: "Encerrado", cls: "border-teal-200 bg-teal-50 text-teal-700" }
 };
@@ -64,9 +61,14 @@ function isActive(alert: EpiAlert) {
   return !["descartado", "encerrado"].includes(alertStatus(alert));
 }
 
+const pct = (v: number) => `${v >= 0 ? "+" : ""}${Math.round(v).toLocaleString("pt-BR")}%`;
+const dataHora = (v?: string | null) => (v ? new Date(v).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "");
+
 export function AlertsView() {
   const qc = useQueryClient();
   const [filter, setFilter] = useState<AlertFilter>("active");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [note, setNote] = useState("");
 
   const { data, error, isLoading } = useQuery<AlertsResponse>({
     queryKey: ["alerts"],
@@ -75,26 +77,26 @@ export function AlertsView() {
       const warning = response.headers.get("X-DvOftalmo-Warning");
       const body = await response.json().catch(() => []);
       if (!response.ok) throw new Error(body?.error ?? "Erro ao carregar alertas.");
-      return {
-        alerts: Array.isArray(body) ? body as EpiAlert[] : [],
-        warning
-      };
+      return { alerts: Array.isArray(body) ? (body as EpiAlert[]) : [], warning };
     }
   });
   const alerts = useMemo(() => data?.alerts ?? [], [data?.alerts]);
 
   const updateStatus = useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: AlertStatus }) => {
+    mutationFn: async ({ id, status, note }: { id: string; status: AlertStatus; note?: string }) => {
       const response = await fetch("/api/alertas", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, status })
+        body: JSON.stringify({ id, status, note })
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error ?? "Erro ao atualizar alerta.");
       return body;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["alerts"] })
+    onSuccess: () => {
+      setNote("");
+      qc.invalidateQueries({ queryKey: ["alerts"] });
+    }
   });
   const generateAlerts = useMutation({
     mutationFn: async () => {
@@ -106,173 +108,182 @@ export function AlertsView() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["alerts"] })
   });
 
-  const pending  = alerts.filter(isActive).length;
-  const critical = alerts.filter((a) => a.severity === "critical" && isActive(a)).length;
-  const investigating = alerts.filter((a) => alertStatus(a) === "em_investigacao").length;
-  const visible  = useMemo(() => {
-    if (filter === "active") return alerts.filter(isActive);
-    if (filter === "critical") return alerts.filter((a) => a.severity === "critical" && isActive(a));
-    if (filter !== "all") return alerts.filter((a) => alertStatus(a) === filter);
+  const pendente = (a: EpiAlert) => alertStatus(a) === "novo" || alertStatus(a) === "confirmado";
+  const counts: Record<AlertFilter, number> = {
+    active: alerts.filter(pendente).length,
+    em_investigacao: alerts.filter((a) => alertStatus(a) === "em_investigacao").length,
+    terminal: alerts.filter((a) => !isActive(a)).length,
+    all: alerts.length
+  };
+  const visible = useMemo(() => {
+    if (filter === "active") return alerts.filter((a) => alertStatus(a) === "novo" || alertStatus(a) === "confirmado");
+    if (filter === "em_investigacao") return alerts.filter((a) => alertStatus(a) === "em_investigacao");
+    if (filter === "terminal") return alerts.filter((a) => !isActive(a));
     return alerts;
   }, [alerts, filter]);
 
+  // Mantém um alerta selecionado entre os visíveis
+  useEffect(() => {
+    if (!visible.some((a) => a.id === selectedId)) setSelectedId(visible[0]?.id ?? null);
+  }, [visible, selectedId]);
+  const selected = visible.find((a) => a.id === selectedId) ?? null;
+  const selectedStatus = selected ? alertStatus(selected) : null;
+  const terminal = selectedStatus === "descartado" || selectedStatus === "encerrado";
+
+  function decide(status: AlertStatus) {
+    if (!selected) return;
+    updateStatus.mutate({ id: selected.id, status, note: note.trim() || undefined });
+  }
+
+  const aviso = data?.warning || error || updateStatus.error || generateAlerts.error || generateAlerts.data?.warning || generateAlerts.data?.reason;
+
   return (
-    <div className="mx-auto flex w-full max-w-[1200px] flex-col">
-      <div className="px-4 pt-6 md:px-7 md:pt-7">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              {pending > 0 && <Badge className="border-red-200 bg-red-50 text-red-700">{pending} pendentes</Badge>}
-            </div>
-            <h1 className="text-[28px] font-bold tracking-tight">Alertas</h1>
-            <p className="mt-1.5 text-[15px] text-muted-foreground">
-              Eventos que merecem verificação local, investigação de surto ou reforço das medidas de controle.
-            </p>
-          </div>
-          <div className="grid grid-cols-3 gap-2 text-center text-xs sm:min-w-[330px]">
-            <div className="rounded-md border bg-background px-3 py-2">
-              <p className="text-muted-foreground">Ativos</p>
-              <p className="text-lg font-semibold tabular-nums">{pending}</p>
-            </div>
-            <div className="rounded-md border bg-background px-3 py-2">
-              <p className="text-muted-foreground">Críticos</p>
-              <p className="text-lg font-semibold tabular-nums text-red-600">{critical}</p>
-            </div>
-            <div className="rounded-md border bg-background px-3 py-2">
-              <p className="text-muted-foreground">Investigação</p>
-              <p className="text-lg font-semibold tabular-nums">{investigating}</p>
-            </div>
-          </div>
-          <Button variant="outline" size="sm" onClick={() => generateAlerts.mutate()} disabled={generateAlerts.isPending}>
-            {generateAlerts.isPending ? "Gerando..." : "Gerar alertas agora"}
+    <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6 p-4 md:p-7">
+      <PageHeader
+        title="Alertas"
+        description="Aumentos acima do esperado, verificados toda segunda-feira. Cada alerta precisa de uma decisão registrada."
+        action={
+          <Button variant="outline" className="h-11" onClick={() => generateAlerts.mutate()} disabled={generateAlerts.isPending}>
+            {generateAlerts.isPending ? "Verificando..." : "Verificar agora"}
           </Button>
-        </div>
+        }
+      />
+
+      {aviso && (
+        <p role="status" className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 p-3.5 text-sm text-amber-900">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            {generateAlerts.data
+              ? `${generateAlerts.data.alerts.toLocaleString("pt-BR")} alerta(s) na SE ${generateAlerts.data.se ?? "-"}/${generateAlerts.data.ano ?? "-"}. ${generateAlerts.data.reason ?? generateAlerts.data.warning ?? ""}`
+              : data?.warning ?? error?.message ?? updateStatus.error?.message ?? generateAlerts.error?.message}
+          </span>
+        </p>
+      )}
+
+      <div role="tablist" aria-label="Situação do alerta" className="flex flex-wrap gap-2">
+        {([
+          { id: "active", label: "Pendentes" },
+          { id: "em_investigacao", label: "Em investigação" },
+          { id: "terminal", label: "Encerrados" },
+          { id: "all", label: "Todos" }
+        ] as Array<{ id: AlertFilter; label: string }>).map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            aria-selected={filter === item.id}
+            onClick={() => setFilter(item.id)}
+            className={cn(
+              "h-10 rounded-full border px-4 text-sm transition-colors",
+              filter === item.id ? "border-primary bg-primary font-semibold text-primary-foreground" : "border-input bg-card hover:bg-muted"
+            )}
+          >
+            {item.label} <span className="num">{counts[item.id].toLocaleString("pt-BR")}</span>
+          </button>
+        ))}
       </div>
 
-      <div className="space-y-4 p-6">
-        <div className="flex flex-wrap gap-2 rounded-md border bg-card p-1">
-          {[
-            { id: "active",  label: "Ativos" },
-            { id: "critical", label: "Críticos" },
-            { id: "em_investigacao", label: "Em investigação" },
-            { id: "confirmado", label: "Confirmados" },
-            { id: "encerrado", label: "Encerrados" },
-            { id: "all",      label: "Todos" }
-          ].map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setFilter(item.id as typeof filter)}
-              className={`h-9 rounded px-3 text-sm font-medium transition-colors ${
-                filter === item.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
+      {isLoading ? (
+        <div className="grid gap-4 lg:grid-cols-5" aria-busy="true">
+          <div className="space-y-2.5 lg:col-span-2">{[0, 1].map((i) => <div key={i} className="h-28 animate-pulse rounded-xl bg-muted" />)}</div>
+          <div className="h-80 animate-pulse rounded-xl bg-muted lg:col-span-3" />
         </div>
-
-        {isLoading && <div className="rounded-md border bg-card p-8 text-center text-sm text-muted-foreground">Carregando alertas...</div>}
-
-        {(data?.warning || error || updateStatus.error || generateAlerts.error || generateAlerts.data?.warning || generateAlerts.data?.reason) && (
-          <Card className="border-amber-200 bg-amber-50">
-            <CardContent className="flex gap-3 py-4 text-sm text-amber-900">
-              <AlertTriangle className="mt-0.5 h-4 w-4" />
-              <div>
-                <p className="font-medium">Verifique a fonte dos alertas</p>
-                <p className="text-amber-800">
-                  {generateAlerts.data
-                    ? `${generateAlerts.data.alerts.toLocaleString("pt-BR")} alerta(s) gerado(s) na SE ${generateAlerts.data.se ?? "-"} / ${generateAlerts.data.ano ?? "-"} via ${generateAlerts.data.source ?? "fonte"}. ${generateAlerts.data.reason ?? generateAlerts.data.warning ?? ""}`
-                    : data?.warning ?? error?.message ?? updateStatus.error?.message ?? generateAlerts.error?.message}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {!isLoading && visible.length === 0 && (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-14 text-center text-sm text-muted-foreground">
-              <CheckCircle className="mb-3 h-10 w-10 text-teal-600" />
-              {filter === "active" ? "Nenhum alerta ativo." : "Nenhum alerta registrado neste filtro."}
-            </CardContent>
-          </Card>
-        )}
-
-        <div className="grid gap-3">
-          {visible.map((alert) => {
-            const cfg  = severityConfig[alert.severity] ?? severityConfig.warning;
-            const Icon = cfg.icon;
-            const status = alertStatus(alert);
-            const terminal = status === "descartado" || status === "encerrado";
-            return (
-              <Card key={alert.id} className={terminal ? "opacity-70" : ""}>
-                <CardContent className="flex flex-col gap-3 p-4 xl:flex-row xl:items-start">
-                  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md border ${cfg.cls}`}>
-                    <Icon className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-semibold">{alert.gve}</p>
-                      <Badge className={cfg.cls}>{cfg.label}</Badge>
-                      <Badge className={statusConfig[status].cls}>{statusConfig[status].label}</Badge>
-                      <span className="text-xs text-muted-foreground">SE {alert.se_epidemiologica}/{alert.ano}</span>
-                    </div>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      <strong className="text-foreground">{alert.cases_current}</strong> casos registrados; média móvel de{" "}
-                      <strong className="text-foreground">{alert.cases_avg.toFixed(1)}</strong> e aumento de{" "}
-                      <strong className="text-foreground">{alert.increase_pct.toFixed(0)}%</strong>.
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Criado em {new Date(alert.created_at).toLocaleString("pt-BR")}
-                      {alert.status_updated_at ? ` · status atualizado em ${new Date(alert.status_updated_at).toLocaleString("pt-BR")}` : ""}
-                    </p>
-                  </div>
-                  {!terminal && (
-                    <div className="grid gap-2 sm:grid-cols-2 xl:w-[360px]">
-                      {status === "novo" && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => updateStatus.mutate({ id: alert.id, status: "em_investigacao" })}
-                          disabled={updateStatus.isPending}
-                        >
-                          Investigar
-                        </Button>
-                      )}
-                      {status !== "confirmado" && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => updateStatus.mutate({ id: alert.id, status: "confirmado" })}
-                          disabled={updateStatus.isPending}
-                        >
-                          Confirmar
-                        </Button>
-                      )}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => updateStatus.mutate({ id: alert.id, status: "descartado" })}
-                        disabled={updateStatus.isPending}
-                      >
-                        Descartar
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={() => updateStatus.mutate({ id: alert.id, status: "encerrado" })}
-                        disabled={updateStatus.isPending}
-                      >
-                        Encerrar
-                      </Button>
-                    </div>
+      ) : visible.length === 0 ? (
+        <div className="flex flex-col items-center justify-center rounded-xl border bg-card py-14 text-center text-sm text-muted-foreground">
+          <CheckCircle className="mb-3 h-10 w-10 text-teal-600" aria-hidden="true" />
+          {filter === "active" ? "Nenhum alerta pendente." : "Nenhum alerta neste filtro."}
+        </div>
+      ) : (
+        <div className="grid items-start gap-4 lg:grid-cols-5">
+          <section aria-label="Lista de alertas" className="flex flex-col gap-2.5 lg:col-span-2">
+            {visible.map((alert) => {
+              const status = alertStatus(alert);
+              const ativo = alert.id === selectedId;
+              return (
+                <button
+                  key={alert.id}
+                  type="button"
+                  onClick={() => { setSelectedId(alert.id); setNote(""); }}
+                  aria-pressed={ativo}
+                  className={cn(
+                    "flex flex-col gap-2 rounded-xl border bg-card p-4 text-left transition-colors",
+                    ativo ? "border-2 border-primary" : "hover:border-primary/40"
                   )}
-                </CardContent>
-              </Card>
-            );
-          })}
+                >
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="text-[15px] font-semibold">{alert.gve}</span>
+                    <Badge className={statusConfig[status].cls}>{statusConfig[status].label}</Badge>
+                  </span>
+                  <span className="text-[13px] text-muted-foreground">Conjuntivite · SE {alert.se_epidemiologica}/{alert.ano}</span>
+                  <span className={cn("num text-[22px] font-semibold", alert.severity === "critical" ? "text-red-700" : "text-orange-700")}>{pct(alert.increase_pct)}</span>
+                </button>
+              );
+            })}
+          </section>
+
+          {selected && (
+            <section aria-label="Detalhe do alerta" className="flex flex-col gap-5 rounded-xl border bg-card p-5 lg:col-span-3">
+              <div className="space-y-1">
+                <span className="flex items-center gap-2 text-[13px] text-muted-foreground">
+                  {selected.severity === "critical"
+                    ? <AlertCircle className="h-4 w-4 text-red-600" aria-hidden="true" />
+                    : <AlertTriangle className="h-4 w-4 text-orange-600" aria-hidden="true" />}
+                  GVE {selected.gve} · {selected.severity === "critical" ? "crítico" : "atenção"}
+                </span>
+                <h2 className="text-[22px] font-bold leading-tight">
+                  Aumento de {Math.round(selected.increase_pct).toLocaleString("pt-BR")}% na SE {selected.se_epidemiologica}/{selected.ano}
+                </h2>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-lg bg-muted/60 p-3.5"><span className="block text-xs text-muted-foreground">Casos na semana</span><span className="num text-2xl font-semibold">{selected.cases_current.toLocaleString("pt-BR")}</span></div>
+                <div className="rounded-lg bg-muted/60 p-3.5"><span className="block text-xs text-muted-foreground">Esperado (média móvel)</span><span className="num text-2xl font-semibold">{selected.cases_avg.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}</span></div>
+                <div className="rounded-lg bg-muted/60 p-3.5"><span className="block text-xs text-muted-foreground">Aumento</span><span className="num text-2xl font-semibold">{pct(selected.increase_pct)}</span></div>
+              </div>
+
+              <p className="rounded-lg bg-blue-50 p-3.5 text-sm leading-relaxed text-blue-900 dark:bg-blue-950/40 dark:text-blue-100">
+                Antes de investigar, confira se o aumento não vem de notificação duplicada ou de semana trocada nessa GVE.{" "}
+                <Link href={`/conjuntivite?tab=qualidade&gve=${encodeURIComponent(selected.gve)}`} className="font-semibold underline">
+                  Ver pendências da GVE
+                </Link>
+              </p>
+
+              {selected.status_note && (
+                <div className="rounded-lg border p-3.5 text-sm">
+                  <span className="block text-xs text-muted-foreground">Última decisão · {dataHora(selected.status_updated_at)}</span>
+                  {selected.status_note}
+                </div>
+              )}
+
+              {!terminal && (
+                <>
+                  <label className="flex flex-col gap-1.5 text-sm font-medium">
+                    Registro da decisão
+                    <textarea
+                      value={note}
+                      onChange={(e) => setNote(e.target.value)}
+                      rows={3}
+                      placeholder="O que foi feito e por quê"
+                      className="resize-y rounded-lg border bg-background p-2.5 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    />
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedStatus === "novo" && (
+                      <Button className="h-11" disabled={updateStatus.isPending} onClick={() => decide("em_investigacao")}>Iniciar investigação</Button>
+                    )}
+                    {selectedStatus !== "confirmado" && (
+                      <Button variant="outline" className="h-11" disabled={updateStatus.isPending} onClick={() => decide("confirmado")}>Confirmar surto</Button>
+                    )}
+                    <Button variant="outline" className="h-11" disabled={updateStatus.isPending} onClick={() => decide("descartado")}>Encerrar: erro de dado</Button>
+                    <Button variant="outline" className="h-11" disabled={updateStatus.isPending} onClick={() => decide("encerrado")}>Encerrar: sem ação necessária</Button>
+                  </div>
+                </>
+              )}
+              <p className="text-xs text-muted-foreground">Criado em {dataHora(selected.created_at)}</p>
+            </section>
+          )}
         </div>
-      </div>
+      )}
     </div>
   );
 }
