@@ -120,11 +120,11 @@ export const categoryLabels: Record<DocumentCategory, string> = {
   tracoma: "Tracoma",
   conjuntivite: "Conjuntivite",
   treinamentos: "Treinamentos",
-  relatorios: "Relatorios",
+  relatorios: "Relatórios",
   manuais: "Manuais",
-  oficios: "Oficios",
+  oficios: "Ofícios",
   despachos: "Despachos",
-  legislacao: "Legislacao",
+  legislacao: "Legislação",
   outros: "Outros"
 };
 
