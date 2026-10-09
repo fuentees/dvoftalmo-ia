@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { auditStructure, indexToWeek, weekIndex, weeksInYear, type AuditRow } from "@/lib/cevesp-audit";
 import { cleanRow, excluidoFlag, rowKey } from "@/lib/cevesp-clean";
 import { auditCevespRows } from "@/services/cevesp-corrections";
+import { qualityBucket } from "@/lib/cevesp-quality-buckets";
 
 const NOW = new Date("2026-10-08T15:00:00-03:00"); // SE 40/2026
 
@@ -125,6 +126,7 @@ assert.deepEqual(indexToWeek(weekIndex(2026, 1) - 1), { ano: 2025, se: 53 });
   assert.match(f.get(b.key)![0].issue, /reenvio 188 dia\(s\) depois/);
   assert.equal(f.get(c.key)![0].problem, "duplicata_conflito");
   assert.equal(f.get(c.key)![0].suggestion, null, "duplicata nunca é excluída automaticamente");
+  assert.deepEqual(f.get(b.key)![0].members, [a.key, b.key, c.key], "o grupo traz todos os registros, inclusive o original");
 }
 
 // ── Notificação negativa (zero casos) em semanas diferentes não é duplicata ──
@@ -168,6 +170,9 @@ assert.deepEqual(indexToWeek(weekIndex(2026, 1) - 1), { ano: 2025, se: 53 });
   const semId = records.filter((r) => r.recordId === "sem-id:3018");
   assert.ok(semId.some((r) => r.problem === "sem_id"), "linha antiga do cache é sinalizada");
   assert.ok(semId.every((r) => r.suggestions.length === 0), "sem ID do MySQL nunca gera correção");
+  assert.equal(qualityBucket(anoErrado), "pronta", "com sugestão: a central só aprova");
+  assert.equal(qualityBucket({ problem: "duplicata_conflito", suggestions: [] }), "decisao");
+  assert.equal(qualityBucket({ problem: "faixa_etaria_divergente", suggestions: [] }), "unidade");
 }
 
 console.log("cevesp audit tests passed ✓");

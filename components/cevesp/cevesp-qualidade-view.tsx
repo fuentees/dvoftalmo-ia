@@ -6,13 +6,15 @@ import {
   AlertCircle, AlertTriangle, CheckCircle2, ClipboardCheck,
   Download, MapPin, RefreshCw, Users, XCircle
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PagedTable, type PagedColumn } from "@/components/ui/paged-table";
 import { listarGvesSp, listarMunicipiosPorGve } from "@/lib/municipios-sp";
 import type { InvalidRecord } from "@/services/cevesp-corrections";
 import { currentCalendarYear } from "@/lib/epi-week";
+import type { QualityBucket } from "@/lib/cevesp-quality-buckets";
+import { DuplicateComparePanel, QualityBucketCards } from "@/components/cevesp/qualidade-buckets";
 
 type CevespTab = "registros" | "por_ano" | "por_gve" | "por_municipio" | "completude";
 
@@ -22,6 +24,7 @@ interface QualidadeData {
   records: InvalidRecord[];
   byType: Record<string, number>;
   byIssueType?: Record<string, number>;
+  byBucket?: Record<QualityBucket, number>;
   byGve: Array<{ gve: string; count: number }>;
   byAno: Array<{ ano: number; count: number }>;
   byMunicipio: Array<{ municipio: string; gve: string | null; count: number }>;
@@ -108,28 +111,6 @@ function SortTh({ label, sortKey, currentKey, dir, onSort, className }: {
         <span className="text-[10px] text-muted-foreground/60">{active ? (dir === "asc" ? "↑" : "↓") : "↕"}</span>
       </button>
     </th>
-  );
-}
-
-function SummaryCard({ count, label, sev, detail }: {
-  count: number; label: string; sev: "critical" | "warning" | "ok"; detail?: string;
-}) {
-  const styles = {
-    critical: { border: "border-red-200 bg-red-50",     icon: <XCircle       className="h-5 w-5 text-red-500"   />, num: "text-red-700"   },
-    warning:  { border: "border-amber-200 bg-amber-50", icon: <AlertTriangle className="h-5 w-5 text-amber-500" />, num: "text-amber-700" },
-    ok:       { border: "border-green-200 bg-green-50", icon: <CheckCircle2  className="h-5 w-5 text-green-500" />, num: "text-green-700"  }
-  }[sev];
-  return (
-    <div className={`flex items-start gap-3 rounded-lg border p-3 ${styles.border}`}>
-      <div className="mt-0.5 shrink-0">{styles.icon}</div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
-          <span className={`text-2xl font-bold tabular-nums ${styles.num}`}>{count.toLocaleString("pt-BR")}</span>
-          <span className="text-sm font-medium">{label}</span>
-        </div>
-        {detail && <p className="mt-0.5 text-xs text-muted-foreground">{detail}</p>}
-      </div>
-    </div>
   );
 }
 
@@ -652,6 +633,8 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
   const qc = useQueryClient();
   const [tab, setTab]             = useState<CevespTab>("registros");
   const [filterType, setFilterType] = useState<string>("todos");
+  const [bucket, setBucket] = useState<QualityBucket | "">("");
+  const [groupKey, setGroupKey] = useState<string | null>(null);
   const [recordQuery, setRecordQuery] = useState("");
   // Sem ano escolhido, abre no ano atual: auditar a base inteira é pesado demais
   const defaultYear = String(currentCalendarYear());
@@ -700,7 +683,7 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
   }
 
   const { data, isLoading, isFetching, isError, error, refetch } = useQuery<QualidadeData, ApiError>({
-    queryKey: ["cevesp-qualidade", filterType, recordQuery, anoFilter, anoFimFilter, gveFilter, municipioFilter, page],
+    queryKey: ["cevesp-qualidade", filterType, recordQuery, anoFilter, anoFimFilter, gveFilter, municipioFilter, page, bucket],
     queryFn: async () => {
       const params = new URLSearchParams({
         limit: String(pageSize),
@@ -708,6 +691,7 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
         issue: filterType,
         q: recordQuery
       });
+      if (bucket) params.set("bucket", bucket);
       if (anoFilter) params.set("ano", anoFilter);
       if (anoFimFilter && anoFimFilter !== anoFilter) params.set("anoFim", anoFimFilter);
       if (gveFilter) params.set("gve", gveFilter);
@@ -741,7 +725,7 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
       const res = await fetch("/api/cevesp/qualidade", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ recordIds, filters: new URLSearchParams({ ano: anoFilter, anoFim: anoFimFilter, gve: gveFilter, municipio: municipioFilter, issue: filterType, q: recordQuery }).toString() })
+        body: JSON.stringify({ recordIds, filters: new URLSearchParams({ ano: anoFilter, anoFim: anoFimFilter, gve: gveFilter, municipio: municipioFilter, issue: filterType, q: recordQuery, bucket }).toString() })
       });
       const json = await res.json();
       if (!res.ok) throw new Error((json as ApiError).message ?? (json as ApiError).error);
@@ -754,6 +738,49 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
       });
       if (recordIds) setSelected(new Set());
       void qc.invalidateQueries({ queryKey: ["cevesp-qualidade"] });
+    },
+    onError: (err: Error) => { setProposeMsg({ type: "error", text: err.message }); }
+  });
+
+  // Envia de uma vez todas as pendências com correção pronta do recorte
+  const proposeReadyMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/cevesp/qualidade", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filters: new URLSearchParams({ ano: anoFilter, anoFim: anoFimFilter, gve: gveFilter, municipio: municipioFilter, bucket: "pronta" }).toString() })
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error((json as ApiError).message ?? (json as ApiError).error);
+      return json as { saved: number; skipped: number };
+    },
+    onSuccess: (result) => {
+      setProposeMsg({ type: "ok", text: `${result.saved} correção(ões) enviada(s) para a fila. ${result.skipped} já estavam lá.` });
+    },
+    onError: (err: Error) => { setProposeMsg({ type: "error", text: err.message }); }
+  });
+
+  // Decisão sobre um grupo de duplicidade: propõe excluir os descartados
+  const decideMutation = useMutation({
+    mutationFn: async ({ manter, excluir }: { manter: string; excluir: string[] }) => {
+      const res = await fetch("/api/cevesp/qualidade", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          decisoes: [{ manter, excluir }],
+          filters: new URLSearchParams({ ano: anoFilter, anoFim: anoFimFilter, gve: gveFilter, municipio: municipioFilter, bucket: "decisao" }).toString()
+        })
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error((json as ApiError).message ?? (json as ApiError).error);
+      return json as { saved: number; skipped: number };
+    },
+    onSuccess: (result) => {
+      setProposeMsg({ type: "ok", text: `${result.saved} exclusão(ões) proposta(s) na fila de correções.` });
+      // Próximo grupo da página atual
+      const groups = [...new Set((data?.records ?? []).map((r) => r.group).filter(Boolean))] as string[];
+      const next = groups[groups.indexOf(groupKey ?? "") + 1] ?? null;
+      setGroupKey(next);
     },
     onError: (err: Error) => { setProposeMsg({ type: "error", text: err.message }); }
   });
@@ -832,9 +859,6 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
   const totalPages = Math.max(1, Math.ceil(filteredTotal / pageSize));
   const byType = data?.byType ?? {};
 
-  const dateTempoBased = data?.byIssueType?.data_tempo ?? records.filter((r) => r.issueType === "data_tempo").length;
-  const conteudoBased  = data?.byIssueType?.conteudo ?? records.filter((r) => r.issueType === "conteudo").length;
-  const duplicidadeBased = data?.byIssueType?.duplicidade ?? records.filter((r) => r.issueType === "duplicidade").length;
 
   const completudeCritica = Object.values(completudeData?.fieldCompleteness ?? {}).filter((e) => e.pct < 90 && e.total > 0).length;
   const tabCounts: Record<CevespTab, number> = {
@@ -845,8 +869,15 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
     completude:   completudeCritica
   };
 
+  const groupRecord = groupKey ? records.find((r) => r.group === groupKey && r.groupMembers?.length) ?? null : null;
+  const embedded = Boolean(externalFilters);
+  // Duplicidades: lista enxuta ao lado do painel de comparação
+  const compact = bucket === "decisao";
+  const digitado = (v?: string | null) => v ? `${v.slice(8, 10)}/${v.slice(5, 7)}/${v.slice(0, 4)}` : "—";
+
   return (
-    <div className="space-y-6 p-4 md:p-6">
+    <div className={embedded ? "space-y-6" : "space-y-6 p-4 md:p-6"}>
+      {!embedded && <>
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -923,36 +954,19 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
           </div>
         </CardContent>
       </Card>
+      </>}
 
-      {/* Summary cards */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <SummaryCard
-          count={total}
-          label="inconsistências detectadas"
-          sev={total > 0 ? "warning" : "ok"}
-          detail={total === 0
-            ? "Nenhuma inconsistência detectada"
-            : `Em ${(data?.totalRecords ?? total).toLocaleString("pt-BR")} registro(s); um registro pode ter vários problemas`}
-        />
-        <SummaryCard
-          count={dateTempoBased}
-          label="problemas de data/SE/ano"
-          sev={dateTempoBased > 0 ? "critical" : "ok"}
-          detail="Data inválida/futura, SE em branco ou futura, ano digitado errado"
-        />
-        <SummaryCard
-          count={duplicidadeBased}
-          label="duplicidades e semanas trocadas"
-          sev={duplicidadeBased > 0 ? "critical" : "ok"}
-          detail="Mesma unidade notificando a mesma semana mais de uma vez"
-        />
-        <SummaryCard
-          count={conteudoBased}
-          label="problemas de conteúdo"
-          sev={conteudoBased > 0 ? "warning" : "ok"}
-          detail="Município/GVE ausente, sem casos, faixa etária, sexo"
-        />
-      </div>
+      <QualityBucketCards
+        counts={data?.byBucket ?? { pronta: 0, decisao: 0, unidade: 0 }}
+        active={bucket}
+        onSelect={(next) => { setBucket(next); setPage(0); setSelected(new Set()); setGroupKey(null); setTab("registros"); }}
+        onProposeReady={() => { setProposeMsg(null); proposeReadyMutation.mutate(); }}
+        proposing={proposeReadyMutation.isPending}
+      />
+      <p className="num text-xs text-muted-foreground">
+        {total.toLocaleString("pt-BR")} inconsistências em {(data?.totalRecords ?? total).toLocaleString("pt-BR")} registros · um registro pode ter mais de um problema
+      </p>
+
 
       {(data || completudeData) && <TabsBar tab={tab} setTab={setTab} counts={tabCounts} />}
 
@@ -1064,9 +1078,10 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
                 </div>
               )}
 
-              <Card>
+              <div className={bucket === "decisao" ? "grid items-start gap-4 lg:grid-cols-5" : ""}>
+              <Card className={bucket === "decisao" ? "lg:col-span-3" : ""}>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">Registros com inconsistência</CardTitle>
+                  <CardTitle className="text-sm">{bucket === "decisao" ? "Grupos de duplicidade" : "Registros com inconsistência"}</CardTitle>
                 </CardHeader>
                 <CardContent className="p-0">
                   <div className="overflow-x-auto">
@@ -1082,22 +1097,49 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
                             />
                           </th>
                           <th className="px-3 py-2 text-left text-xs font-medium">ID</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium">ControlaSubmit</th>
-                          <SortTh label="Data" sortKey="dtNotificacao" currentKey={sortKeyRec} dir={sortDirRec} onSort={handleSortRec} className="px-3 py-2 text-left text-xs font-medium" />
-                          <SortTh label="SE" sortKey="semEpidemio" currentKey={sortKeyRec} dir={sortDirRec} onSort={handleSortRec} className="px-3 py-2 text-left text-xs font-medium" />
-                          <SortTh label="Município" sortKey="municipio" currentKey={sortKeyRec} dir={sortDirRec} onSort={handleSortRec} className="px-3 py-2 text-left text-xs font-medium" />
-                          <SortTh label="GVE" sortKey="gve" currentKey={sortKeyRec} dir={sortDirRec} onSort={handleSortRec} className="px-3 py-2 text-left text-xs font-medium" />
-                          <SortTh label="Total Casos" sortKey="totalCaso" currentKey={sortKeyRec} dir={sortDirRec} onSort={handleSortRec} className="px-3 py-2 text-left text-xs font-medium" />
-                          <SortTh label="Problema" sortKey="issue" currentKey={sortKeyRec} dir={sortDirRec} onSort={handleSortRec} className="px-3 py-2 text-left text-xs font-medium" />
-                          <th className="px-3 py-2 text-left text-xs font-medium">Sugestão</th>
+                          {compact ? (
+                            <>
+                              <th className="px-3 py-2 text-left text-xs font-medium">Digitado em</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium">SE</th>
+                              <th className="px-3 py-2 text-right text-xs font-medium">Casos</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium">Situação</th>
+                            </>
+                          ) : (
+                            <>
+                              <th className="px-3 py-2 text-left text-xs font-medium">ControlaSubmit</th>
+                              <SortTh label="Data" sortKey="dtNotificacao" currentKey={sortKeyRec} dir={sortDirRec} onSort={handleSortRec} className="px-3 py-2 text-left text-xs font-medium" />
+                              <SortTh label="SE" sortKey="semEpidemio" currentKey={sortKeyRec} dir={sortDirRec} onSort={handleSortRec} className="px-3 py-2 text-left text-xs font-medium" />
+                              <SortTh label="Município" sortKey="municipio" currentKey={sortKeyRec} dir={sortDirRec} onSort={handleSortRec} className="px-3 py-2 text-left text-xs font-medium" />
+                              <SortTh label="GVE" sortKey="gve" currentKey={sortKeyRec} dir={sortDirRec} onSort={handleSortRec} className="px-3 py-2 text-left text-xs font-medium" />
+                              <SortTh label="Total Casos" sortKey="totalCaso" currentKey={sortKeyRec} dir={sortDirRec} onSort={handleSortRec} className="px-3 py-2 text-left text-xs font-medium" />
+                              <SortTh label="Problema" sortKey="issue" currentKey={sortKeyRec} dir={sortDirRec} onSort={handleSortRec} className="px-3 py-2 text-left text-xs font-medium" />
+                              <th className="px-3 py-2 text-left text-xs font-medium">Sugestão</th>
+                            </>
+                          )}
                         </tr>
                       </thead>
                       <tbody>
-                        {visible.map((r) => {
+                        {visible.map((r, i) => {
                           const sev = severity(r);
+                          const novoGrupo = bucket === "decisao" && r.group && r.group !== visible[i - 1]?.group;
                           return (
+                            <Fragment key={r.issueKey}>
+                            {novoGrupo && (
+                              <tr className={groupKey === r.group ? "bg-secondary" : "bg-muted/50"}>
+                                <td colSpan={10} className="px-3 py-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => setGroupKey(r.group ?? null)}
+                                    aria-pressed={groupKey === r.group}
+                                    className="flex min-h-9 w-full items-center justify-between gap-2 text-left text-[13px] font-semibold"
+                                  >
+                                    <span>{r.group}</span>
+                                    <span className="text-xs font-medium text-primary">{groupKey === r.group ? "Comparando" : "Comparar"}</span>
+                                  </button>
+                                </td>
+                              </tr>
+                            )}
                             <tr
-                              key={r.issueKey}
                               className={`border-b last:border-0 transition-colors ${
                                 selected.has(r.recordId) ? "bg-primary/5" : "hover:bg-muted/30"
                               }`}
@@ -1111,6 +1153,21 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
                                 />
                               </td>
                               <td className="px-3 py-2 font-mono font-medium whitespace-nowrap">{r.recordId}</td>
+                              {compact ? (
+                                <>
+                                  <td className="num px-3 py-2 whitespace-nowrap">{digitado(r.createdAt)}</td>
+                                  <td className="num px-3 py-2">{r.semEpidemio ?? "—"}</td>
+                                  <td className="num px-3 py-2 text-right">{r.totalCaso ?? "—"}</td>
+                                  <td className="px-3 py-2">
+                                    <span className={r.problem === "duplicata_conflito"
+                                      ? "rounded-md bg-red-50 px-2 py-0.5 font-medium text-red-800 dark:bg-red-950 dark:text-red-200"
+                                      : "rounded-md bg-orange-50 px-2 py-0.5 font-medium text-orange-800 dark:bg-orange-950 dark:text-orange-200"}>
+                                      {r.problem === "duplicata_conflito" ? "Números diferentes" : "Cópia exata"}
+                                    </span>
+                                  </td>
+                                </>
+                              ) : (
+                                <>
                               <td className="px-3 py-2 font-mono font-medium whitespace-nowrap text-primary">{r.controlaSubmit ?? "—"}</td>
                               <td className="px-3 py-2 tabular-nums">{r.dtNotificacao ?? "—"}</td>
                               <td className="px-3 py-2 tabular-nums">{r.semEpidemio ?? "—"}</td>
@@ -1150,7 +1207,10 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
                                   </span>
                                 )}
                               </td>
+                                </>
+                              )}
                             </tr>
+                            </Fragment>
                           );
                         })}
                       </tbody>
@@ -1158,6 +1218,16 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
                   </div>
                 </CardContent>
               </Card>
+              {bucket === "decisao" && (
+                <div className="lg:sticky lg:top-4 lg:col-span-2">
+                  <DuplicateComparePanel
+                    record={groupRecord}
+                    deciding={decideMutation.isPending}
+                    onDecide={(manter, excluir) => { setProposeMsg(null); decideMutation.mutate({ manter, excluir }); }}
+                  />
+                </div>
+              )}
+              </div>
 
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-card px-3 py-2 text-xs">
                 <span className="text-muted-foreground">

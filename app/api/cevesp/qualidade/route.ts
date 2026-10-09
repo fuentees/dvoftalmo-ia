@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/supabase/auth";
 import { findInvalidRecords, findInvalidRecordsFromCache, isMysqlRecordId, saveCorrectionsToQueue, type InvalidRecord } from "@/services/cevesp-corrections";
 import { getNotificationTableName } from "@/lib/external/notification-db";
 import { currentCalendarYear } from "@/lib/epi-week";
+import { isQualityBucket, qualityBucket, type QualityBucket } from "@/lib/cevesp-quality-buckets";
 
 // A auditoria lê o ano filtrado e o anterior inteiros (dezenas de milhares de linhas)
 export const maxDuration = 60;
@@ -68,6 +69,7 @@ function recordsToCsv(records: InvalidRecord[]) {
 function summarize(records: InvalidRecord[]) {
   const byType: Record<string, number> = {};
   const byIssueType: Record<string, number> = {};
+  const byBucket: Record<QualityBucket, number> = { pronta: 0, decisao: 0, unidade: 0 };
   const gveMap: Record<string, number> = {};
   const anoMap: Record<string, number> = {};
   const municipioMap: Record<string, { gve: string | null; count: number }> = {};
@@ -76,6 +78,7 @@ function summarize(records: InvalidRecord[]) {
     const typeKey = record.issue.split(":")[0].trim();
     byType[typeKey] = (byType[typeKey] ?? 0) + 1;
     byIssueType[record.issueType] = (byIssueType[record.issueType] ?? 0) + 1;
+    byBucket[qualityBucket(record)]++;
 
     if (record.gve) gveMap[record.gve] = (gveMap[record.gve] ?? 0) + 1;
     if (record.ano) anoMap[String(record.ano)] = (anoMap[String(record.ano)] ?? 0) + 1;
@@ -89,6 +92,7 @@ function summarize(records: InvalidRecord[]) {
     totalRecords: new Set(records.map((record) => record.recordId)).size,
     byType,
     byIssueType,
+    byBucket,
     byGve: Object.entries(gveMap)
       .map(([gve, count]) => ({ gve, count }))
       .sort((a, b) => b.count - a.count),
@@ -101,9 +105,10 @@ function summarize(records: InvalidRecord[]) {
   };
 }
 
-function filterRecords(records: InvalidRecord[], issueFilter: string, query: string) {
+function filterRecords(records: InvalidRecord[], issueFilter: string, query: string, bucket?: string | null) {
   const normalizedQuery = normalizeSearch(query);
-  return records.filter((record) => {
+  const filtered = records.filter((record) => {
+    if (isQualityBucket(bucket) && qualityBucket(record) !== bucket) return false;
     const typeKey = record.issue.split(":")[0].trim();
     const matchesIssue = issueFilter === "todos" || typeKey === issueFilter || record.issue.startsWith(issueFilter);
     const matchesQuery = !normalizedQuery || normalizeSearch([
@@ -122,6 +127,12 @@ function filterRecords(records: InvalidRecord[], issueFilter: string, query: str
     ].join(" ")).includes(normalizedQuery);
     return matchesIssue && matchesQuery;
   });
+  // Duplicidades: registros do mesmo grupo ficam juntos, do mais antigo ao mais recente
+  if (bucket === "decisao") {
+    filtered.sort((a, b) => String(a.group ?? "").localeCompare(String(b.group ?? ""), "pt-BR")
+      || String(a.createdAt ?? "").localeCompare(String(b.createdAt ?? "")));
+  }
+  return filtered;
 }
 
 function applyScopeFilters(
@@ -158,7 +169,7 @@ export async function GET(req: NextRequest) {
       ? await findInvalidRecordsFromCache(undefined, ano, anoFim, gve)
       : await findInvalidRecords(undefined, ano, gve, anoFim);
     const scopedRecords = applyScopeFilters(records, { municipio, seInicio, seFim });
-    const filteredRecords = filterRecords(scopedRecords, issueFilter, query);
+    const filteredRecords = filterRecords(scopedRecords, issueFilter, query, searchParams.get("bucket"));
 
     if (format === "csv") {
       return new NextResponse(recordsToCsv(filteredRecords), {
@@ -201,15 +212,47 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
 
   try {
-    const body = await req.json() as { recordIds?: string[]; filters?: string };
+    const body = await req.json() as { recordIds?: string[]; filters?: string; decisoes?: Array<{ manter?: unknown; excluir?: unknown }> };
     if (body.recordIds && (!Array.isArray(body.recordIds) || body.recordIds.some((id) => typeof id !== "string"))) {
       return NextResponse.json({ error: "Seleção de registros inválida." }, { status: 400 });
     }
     const params = new URLSearchParams(body.filters ?? "");
     const { ano, anoFim, gve, municipio, seInicio, seFim } = withDefaultYear(parseCevespFilters(params));
     const audited = await findInvalidRecords(undefined, ano, gve, anoFim);
-    const records = filterRecords(applyScopeFilters(audited, { municipio, seInicio, seFim }), params.get("issue") ?? "todos", params.get("q") ?? "");
+    const records = filterRecords(applyScopeFilters(audited, { municipio, seInicio, seFim }), params.get("issue") ?? "todos", params.get("q") ?? "", params.get("bucket"));
     const tableName = getNotificationTableName();
+
+    // Decisão sobre duplicidade: os registros descartados viram proposta de exclusão,
+    // que ainda passa pela aprovação na fila de correções
+    if (body.decisoes) {
+      const duplicados = new Map(records.filter((r) => qualityBucket(r) === "decisao").map((r) => [r.recordId, r]));
+      const proposals = [];
+      for (const decisao of body.decisoes) {
+        const manter = String(decisao.manter ?? "");
+        const excluir = Array.isArray(decisao.excluir) ? decisao.excluir.map(String) : [];
+        if (!isMysqlRecordId(manter) || !excluir.every(isMysqlRecordId)) {
+          return NextResponse.json({ error: "Decisão inválida: use IDs do MySQL." }, { status: 400 });
+        }
+        for (const id of excluir) {
+          const record = duplicados.get(id) ?? [...duplicados.values()].find((r) => r.groupMembers?.some((m) => m.recordId === id));
+          const grupo = record?.groupMembers?.map((m) => m.recordId) ?? [];
+          if (!grupo.includes(id) || !grupo.includes(manter)) {
+            return NextResponse.json({ error: `Registro ${id} não está no mesmo grupo de duplicidade que ${manter}.` }, { status: 400 });
+          }
+          proposals.push({
+            recordId: id,
+            tableName,
+            pkColumn: "ID",
+            fieldName: "Excluido",
+            oldValue: "N",
+            newValue: "S",
+            reason: `Duplicidade: mantido o registro ${manter} (${record?.group ?? "mesma unidade e semana"})`
+          });
+        }
+      }
+      const result = await saveCorrectionsToQueue(proposals, user.id);
+      return NextResponse.json(result);
+    }
 
     const targets = body.recordIds?.length
       ? records.filter((record) => body.recordIds!.includes(record.recordId))

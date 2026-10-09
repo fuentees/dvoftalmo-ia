@@ -41,6 +41,8 @@ export interface StructuralFinding {
   suggestion: WeekSuggestion | null;
   /** Identifica o grupo de duplicidade (unidade + semana) para exibição. */
   group?: string;
+  /** Chaves de todos os registros do grupo, do mais antigo ao mais recente. */
+  members?: string[];
 }
 
 export interface AuditRow {
@@ -328,7 +330,8 @@ export function auditStructure(rows: AuditRow[], now = new Date()): Map<string, 
             ? `Duplicata: mesma unidade e ${fmt(indexToWeek(n))} com os mesmos números (${origem})`
             : `Duplicata com números diferentes: mesma unidade e ${fmt(indexToWeek(n))} (${origem})`,
           suggestion: null,
-          group: label
+          group: label,
+          members: stay.map((m) => m.key)
         });
       }
     }

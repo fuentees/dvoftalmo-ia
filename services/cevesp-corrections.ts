@@ -27,6 +27,34 @@ export interface InvalidRecord {
   suggestions: Array<{ field: string; oldValue: string; newValue: string }>;
   /** Grupo de duplicidade (unidade + semana), quando houver. */
   group?: string;
+  /** Data/hora de digitação no MySQL (created_at). */
+  createdAt?: string | null;
+  /** Registros do grupo de duplicidade, do mais antigo ao mais recente, para comparação. */
+  groupMembers?: GroupMember[];
+}
+
+export interface GroupMember {
+  recordId: string;
+  createdAt: string | null;
+  dtNotificacao: string | null;
+  notificante: string | null;
+  valores: Record<string, number | null>;
+}
+
+const MEMBER_FIELDS = ["TotalCaso", "FxMenorUmAno", "FxUmQuatro", "FxCincoNove", "FxDezQuatorze", "FxQuizeOuMais", "SexMasc", "SexFem"];
+
+function createdAtOf(r: Record<string, unknown>) {
+  return r.created_at_origem ? String(r.created_at_origem).replace("T", " ").slice(0, 19) : null;
+}
+
+function groupMemberOf(r: Record<string, unknown>): GroupMember {
+  return {
+    recordId: recordIdOf(r),
+    createdAt: createdAtOf(r),
+    dtNotificacao: r.DtNotificacao ? String(r.DtNotificacao).slice(0, 10) : (r.dt_notificacao_raw ? String(r.dt_notificacao_raw) : null),
+    notificante: r.Nome_notificante ? String(r.Nome_notificante) : null,
+    valores: Object.fromEntries(MEMBER_FIELDS.map((f) => [f, toNumber(r[f])]))
+  };
 }
 
 export interface CorrectionProposal {
@@ -203,7 +231,7 @@ const STRUCTURAL_TYPE: Record<StructuralFinding["problem"], InvalidRecord["issue
   duplicata_conflito: "duplicidade"
 };
 
-function structuralRecord(r: Record<string, unknown>, f: StructuralFinding): InvalidRecord {
+function structuralRecord(r: Record<string, unknown>, f: StructuralFinding, rowByKey?: (key: string) => Record<string, unknown> | undefined): InvalidRecord {
   const recordId = recordIdOf(r);
   const ano = toNumber(r.ANO);
   const se = toNumber(r.SemEpidemio);
@@ -230,7 +258,11 @@ function structuralRecord(r: Record<string, unknown>, f: StructuralFinding): Inv
     suggestedField: suggestions.map((x) => x.field).join("/"),
     suggestedValue: suggestions.map((x) => x.newValue).join("/"),
     suggestions,
-    group: f.group
+    group: f.group,
+    createdAt: createdAtOf(r),
+    groupMembers: f.members && rowByKey
+      ? f.members.map(rowByKey).filter((m): m is Record<string, unknown> => Boolean(m)).map(groupMemberOf)
+      : undefined
   };
 }
 
@@ -264,9 +296,10 @@ export function auditCevespRows(
     if (!inScope(r, found.some((f) => f.problem === "ano_errado"))) return;
     const single = mapInvalidCacheRow(r, now);
     if (single && !(SUPERSEDED_BY_STRUCTURE.has(single.problem) && found.some((f) => STRUCTURAL_TYPE[f.problem] === "data_tempo"))) {
-      result.push(isMysqlRecordId(single.recordId) ? single : { ...single, suggestions: [], suggestedField: "", suggestedValue: "" });
+      const withCreated = { ...single, createdAt: createdAtOf(r) };
+      result.push(isMysqlRecordId(single.recordId) ? withCreated : { ...withCreated, suggestions: [], suggestedField: "", suggestedValue: "" });
     }
-    for (const f of found) result.push(structuralRecord(r, f));
+    for (const f of found) result.push(structuralRecord(r, f, (key) => active[Number(key)]));
     if (!isMysqlRecordId(recordIdOf(r))) {
       result.push({
         ...structuralRecord(r, { problem: "duplicata", issue: "", suggestion: null }),
@@ -280,7 +313,7 @@ export function auditCevespRows(
   return result;
 }
 
-const AUDIT_COLUMNS = 'id,row_key,dt_notificacao_raw,"Excluido","ID","ControlaSubmit","DtNotificacao","SemEpidemio","MunicipioNotificacao","IbgeNotificacao","nCNES","Unid_notificacao","GVE_NOME","ANO","TotalCaso","FxMenorUmAno","FxUmQuatro","FxCincoNove","FxDezQuatorze","FxQuizeOuMais","SexMasc","SexFem","Surto"';
+const AUDIT_COLUMNS = 'id,row_key,dt_notificacao_raw,"Excluido","ID","ControlaSubmit","DtNotificacao","SemEpidemio","MunicipioNotificacao","IbgeNotificacao","nCNES","Unid_notificacao","Nome_notificante","GVE_NOME","ANO","TotalCaso","FxMenorUmAno","FxUmQuatro","FxCincoNove","FxDezQuatorze","FxQuizeOuMais","SexMasc","SexFem","Surto"';
 
 async function fetchAuditRows(ano?: number, anoFim?: number, gve?: string) {
   const supabase = createAdminClient();
