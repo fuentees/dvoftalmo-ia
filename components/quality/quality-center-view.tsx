@@ -367,7 +367,7 @@ function StatCard({
     <Card className={style}>
       <CardContent className="pt-5">
         <p className="text-xs font-medium uppercase tracking-wide opacity-80">{title}</p>
-        <p className="mt-1 text-3xl font-bold tabular-nums">{typeof value === "number" ? value.toLocaleString("pt-BR") : value}</p>
+        <p className="mt-1 num text-[32px] font-semibold leading-none">{typeof value === "number" ? value.toLocaleString("pt-BR") : value}</p>
         <p className="mt-1 text-xs opacity-80">{detail}</p>
       </CardContent>
     </Card>

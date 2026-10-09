@@ -89,7 +89,7 @@ function KpiCard({
         <div className="mt-0.5 rounded-md bg-muted p-2 text-muted-foreground">{icon}</div>
         <div className="min-w-0 flex-1">
           <div className="text-xs text-muted-foreground">{label}</div>
-          <div className={`text-2xl font-bold tabular-nums leading-tight ${numColor}`}>
+          <div className={`num text-[28px] font-semibold leading-none leading-tight ${numColor}`}>
             {typeof value === "number" ? value.toLocaleString("pt-BR") : value}
           </div>
           {sub && <div className="mt-0.5 text-xs text-muted-foreground">{sub}</div>}
@@ -1267,7 +1267,7 @@ function CompletudeTecnicoTab({ data }: { data: SinanAuditResult }) {
 
       {/* Recomendações — no topo pois são o item mais acionável */}
       {data.recommendations.length > 0 && (
-        <Card className="border-primary/20 bg-primary/5">
+        <Card>
           <CardHeader className="pb-2 pt-4">
             <CardTitle className="text-sm font-semibold text-primary">
               Recomendações prioritárias ({data.recommendations.length})

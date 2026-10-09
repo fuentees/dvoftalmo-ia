@@ -98,30 +98,28 @@ function MetricCard({
   detail?: string;
   tone?: "default" | "red" | "amber" | "green";
 }) {
-  const toneClass = {
+  const valueTone = {
     default: "",
-    red: "border-red-200 bg-red-50",
-    amber: "border-amber-200 bg-amber-50",
-    green: "border-green-200 bg-green-50"
+    red: "text-red-700 dark:text-red-300",
+    amber: "text-orange-700 dark:text-orange-300",
+    green: "text-emerald-700 dark:text-emerald-300"
   }[tone];
   return (
-    <Card className={toneClass}>
-      <CardContent className="pt-4">
-        <div className="text-xs text-muted-foreground">{label}</div>
-        <div className="mt-1 text-2xl font-semibold tabular-nums">
-          {typeof value === "number" || value == null ? num(value) : value}
-        </div>
-        {detail && <div className="mt-1 text-xs text-muted-foreground">{detail}</div>}
-      </CardContent>
-    </Card>
+    <div className="flex flex-col gap-1.5 rounded-xl border bg-card p-[18px]">
+      <span className="text-[13px] font-medium text-muted-foreground">{label}</span>
+      <span className={`num text-[32px] font-semibold leading-none ${valueTone}`}>
+        {typeof value === "number" || value == null ? num(value) : value}
+      </span>
+      {detail && <span className="text-[13px] text-muted-foreground">{detail}</span>}
+    </div>
   );
 }
 
 function SectionIntro({ title, description }: { title: string; description: string }) {
   return (
     <div>
-      <h2 className="text-base font-semibold">{title}</h2>
-      <p className="text-sm text-muted-foreground">{description}</p>
+      <h2 className="text-[20px] font-bold tracking-tight">{title}</h2>
+      <p className="text-[14px] text-muted-foreground">{description}</p>
     </div>
   );
 }
@@ -141,11 +139,11 @@ function ExecutiveSummary({
 }) {
   const missingClinical = demographics ? demographics.totalRows - demographics.withClinicalForm : 0;
   const nextAction = missingClinical > 0 ? "Revisar os registros sem forma clínica na aba Qualidade dos Dados." : "Conferir completude e contexto de busca ativa antes de interpretar o recorte.";
-  const itemClass = "rounded-md border bg-background p-3";
-  const labelClass = "text-xs font-medium uppercase text-muted-foreground";
-  const valueClass = "mt-1 text-sm font-semibold leading-snug";
+  const itemClass = "rounded-lg bg-muted/60 p-3.5";
+  const labelClass = "text-xs font-medium text-muted-foreground";
+  const valueClass = "mt-1 text-[15px] font-semibold leading-snug";
   return (
-    <Card className="border-primary/20 bg-primary/5">
+    <Card>
       <CardHeader className="pb-2">
         <CardTitle className="text-base">Resumo executivo</CardTitle>
         <CardDescription>Resumo dos registros disponíveis no recorte selecionado.</CardDescription>
@@ -359,7 +357,7 @@ function DemographicsPanel({ data, loading, error }: { data?: TracomaDemographic
           Sexo, faixa etária e forma clínica dos registros individuais. Um registro pode ter várias formas; os percentuais de formas usam o total de registros e podem somar mais de 100%.
         </p>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <MetricCard label="Casos individuais" value={data.totalRows} detail="TRACONET no recorte" />
         <MetricCard label="Com sexo mapeado" value={data.withSex} detail={`(${data.totalRows ? ((data.withSex / data.totalRows) * 100).toFixed(1) : "0"}%) dos casos`} tone={data.withSex < data.totalRows ? "amber" : "green"} />
         <MetricCard label="Com idade mapeada" value={data.withAge} detail={`(${data.totalRows ? ((data.withAge / data.totalRows) * 100).toFixed(1) : "0"}%) dos casos`} tone={data.withAge < data.totalRows ? "amber" : "green"} />
@@ -553,7 +551,7 @@ export function TracomaAnaliseView({ externalFilters }: { externalFilters?: Trac
               title="Indicadores principais"
               description="Contagens e positividade do NOTTRACONET no recorte. Não representam prevalência populacional nem confirmam eliminação."
             />
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
               <MetricCard
                 label="Municípios com dados"
                 value={byMuni.length}

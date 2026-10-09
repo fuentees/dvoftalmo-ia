@@ -218,7 +218,7 @@ export function RateMap({
 
       <div className="space-y-4">
         {priorityRows.length > 0 && (
-          <Card className="border-primary/20 bg-primary/5">
+          <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base">{priorityTitle}</CardTitle>
               <CardDescription>{priorityDescription}</CardDescription>

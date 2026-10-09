@@ -268,7 +268,7 @@ export function TerritoriesView() {
           <Card>
             <CardContent className="pt-4">
               <p className="text-xs text-muted-foreground">Total filtrado</p>
-              <p className="mt-1 text-3xl font-bold tabular-nums">{rows.length.toLocaleString("pt-BR")}</p>
+              <p className="mt-1 num text-[32px] font-semibold leading-none">{rows.length.toLocaleString("pt-BR")}</p>
             </CardContent>
           </Card>
         </div>
@@ -303,7 +303,7 @@ export function TerritoriesView() {
                   className="rounded-md border bg-card p-3 text-left transition-colors hover:border-primary/40 hover:bg-muted/40"
                 >
                   <p className="text-xs font-medium text-muted-foreground">{item.agravo}</p>
-                  <p className="mt-1 text-2xl font-semibold tabular-nums">{item.total.toLocaleString("pt-BR")}</p>
+                  <p className="mt-1 num text-[28px] font-semibold leading-none">{item.total.toLocaleString("pt-BR")}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {item.critica.toLocaleString("pt-BR")} crítica(s), {item.alta.toLocaleString("pt-BR")} alta(s)
                   </p>

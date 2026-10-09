@@ -55,7 +55,7 @@ function KpiCard({ label, value, detail, tone = "default" }: {
     <Card className={cls}>
       <CardContent className="pt-4 pb-3">
         <div className="text-xs text-muted-foreground">{label}</div>
-        <div className="mt-1 text-2xl font-semibold tabular-nums">
+        <div className="mt-1 num text-[28px] font-semibold leading-none">
           {typeof value === "number" || value == null ? num(value) : value}
         </div>
         {detail && <div className="mt-1 text-xs text-muted-foreground">{detail}</div>}
