@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import {
@@ -13,7 +14,7 @@ import { PagedTable, type PagedColumn } from "@/components/ui/paged-table";
 import { listarGvesSp, listarMunicipiosPorGve } from "@/lib/municipios-sp";
 import type { InvalidRecord } from "@/services/cevesp-corrections";
 import { currentCalendarYear } from "@/lib/epi-week";
-import type { QualityBucket } from "@/lib/cevesp-quality-buckets";
+import { isQualityBucket, type QualityBucket } from "@/lib/cevesp-quality-buckets";
 import { DuplicateComparePanel, QualityBucketCards } from "@/components/cevesp/qualidade-buckets";
 
 type CevespTab = "registros" | "por_ano" | "por_gve" | "por_municipio" | "completude";
@@ -633,7 +634,9 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
   const qc = useQueryClient();
   const [tab, setTab]             = useState<CevespTab>("registros");
   const [filterType, setFilterType] = useState<string>("todos");
-  const [bucket, setBucket] = useState<QualityBucket | "">("");
+  const searchParams = useSearchParams();
+  const requestedBucket = searchParams.get("bucket");
+  const [bucket, setBucket] = useState<QualityBucket | "">(isQualityBucket(requestedBucket) ? requestedBucket : "");
   const [groupKey, setGroupKey] = useState<string | null>(null);
   const [recordQuery, setRecordQuery] = useState("");
   // Sem ano escolhido, abre no ano atual: auditar a base inteira é pesado demais

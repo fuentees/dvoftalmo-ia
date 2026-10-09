@@ -70,6 +70,7 @@ function summarize(records: InvalidRecord[]) {
   const byType: Record<string, number> = {};
   const byIssueType: Record<string, number> = {};
   const byBucket: Record<QualityBucket, number> = { pronta: 0, decisao: 0, unidade: 0 };
+  const byBucketType: Record<QualityBucket, Record<string, number>> = { pronta: {}, decisao: {}, unidade: {} };
   const gveMap: Record<string, number> = {};
   const anoMap: Record<string, number> = {};
   const municipioMap: Record<string, { gve: string | null; count: number }> = {};
@@ -78,7 +79,9 @@ function summarize(records: InvalidRecord[]) {
     const typeKey = record.issue.split(":")[0].trim();
     byType[typeKey] = (byType[typeKey] ?? 0) + 1;
     byIssueType[record.issueType] = (byIssueType[record.issueType] ?? 0) + 1;
-    byBucket[qualityBucket(record)]++;
+    const recordBucket = qualityBucket(record);
+    byBucket[recordBucket]++;
+    byBucketType[recordBucket][typeKey] = (byBucketType[recordBucket][typeKey] ?? 0) + 1;
 
     if (record.gve) gveMap[record.gve] = (gveMap[record.gve] ?? 0) + 1;
     if (record.ano) anoMap[String(record.ano)] = (anoMap[String(record.ano)] ?? 0) + 1;
@@ -93,6 +96,7 @@ function summarize(records: InvalidRecord[]) {
     byType,
     byIssueType,
     byBucket,
+    byBucketType,
     byGve: Object.entries(gveMap)
       .map(([gve, count]) => ({ gve, count }))
       .sort((a, b) => b.count - a.count),

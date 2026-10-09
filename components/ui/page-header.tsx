@@ -11,7 +11,7 @@ export function PageHeader({ title, description, action }: PageHeaderProps) {
         <h1 className="text-[28px] font-bold leading-tight tracking-tight">{title}</h1>
         {description && <p className="text-[15px] text-muted-foreground">{description}</p>}
       </div>
-      {action && <div className="shrink-0">{action}</div>}
+      {action && <div className="max-w-full shrink-0">{action}</div>}
     </div>
   );
 }
