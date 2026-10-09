@@ -1,8 +1,6 @@
-import { after } from "next/server";
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
-import { processDocument } from "@/services/ai/document-processor";
 
 const ALLOWED_TYPES = new Set([
   "application/pdf",
@@ -33,11 +31,6 @@ export async function POST(request: NextRequest) {
   if (!ALLOWED_TYPES.has(file.type) && !ALLOWED_EXT.test(file.name))
     return NextResponse.json({ error: "Tipo não permitido. Use PDF, DOCX, XLSX, CSV ou TXT." }, { status: 400 });
 
-  // Read file content into memory NOW — before after() callback runs
-  const fileBuffer = Buffer.from(await file.arrayBuffer());
-  const fileName   = file.name;
-  const mimeType   = file.type;
-
   // Upload to storage
   const filePath = `${user.id}/${crypto.randomUUID()}-${file.name}`;
   const { error: uploadError } = await supabase.storage
@@ -45,7 +38,7 @@ export async function POST(request: NextRequest) {
     .upload(filePath, file, { contentType: file.type, upsert: false });
   if (uploadError) return NextResponse.json({ error: uploadError.message }, { status: 500 });
 
-  // Create document record with processing_status = 'pending'
+  // Arquivo só é guardado (sem indexação por IA)
   const { data: document, error: documentError } = await supabase
     .from("documents")
     .insert({
@@ -57,19 +50,11 @@ export async function POST(request: NextRequest) {
       file_name: file.name,
       mime_type: file.type,
       file_size: file.size,
-      processing_status: "pending"
+      processing_status: "done"
     })
     .select("id")
     .single();
   if (documentError) return NextResponse.json({ error: documentError.message }, { status: 500 });
 
-  const documentId = document.id;
-  const userId     = user.id;
-
-  // Schedule background processing — runs after the 201 response is sent
-  after(async () => {
-    await processDocument({ documentId, userId, fileBuffer, fileName, mimeType }).catch(() => {});
-  });
-
-  return NextResponse.json({ id: documentId, status: "pending" }, { status: 201 });
+  return NextResponse.json({ id: document.id, status: "done" }, { status: 201 });
 }

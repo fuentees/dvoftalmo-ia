@@ -1,19 +1,14 @@
 import {
   Activity,
   Bell,
-  Bot,
-  Brain,
   CheckSquare,
   ClipboardList,
   Database,
   Eye,
-  FileText,
-  GraduationCap,
   LayoutDashboard,
   Library,
   Map,
   Newspaper,
-  Settings,
   ShieldAlert
 } from "lucide-react";
 
@@ -78,18 +73,6 @@ export const navigationGroups = [
         label: "Boletins",
         description: "Produção e histórico técnico",
         icon: Newspaper
-      },
-      {
-        href: "/chat",
-        label: "Chat com IA",
-        description: "Perguntas livres e geração de relatórios",
-        icon: Bot
-      },
-      {
-        href: "/templates",
-        label: "Modelos",
-        description: "Ofícios, relatórios e e-mails",
-        icon: FileText
       }
     ]
   },
@@ -109,28 +92,10 @@ export const navigationGroups = [
         icon: ClipboardList
       },
       {
-        href: "/agentes",
-        label: "Agentes IA",
-        description: "Ferramentas de análise especializadas",
-        icon: GraduationCap
-      },
-      {
-        href: "/base-conhecimento",
-        label: "Base de Conhecimento",
-        description: "Documentos para contexto da IA",
-        icon: Brain
-      },
-      {
         href: "/documentos",
         label: "Documentos",
         description: "Arquivos e documentos oficiais",
         icon: Library
-      },
-      {
-        href: "/configuracoes",
-        label: "Configurações",
-        description: "Provedor, modelo e chaves de API",
-        icon: Settings
       }
     ]
   }

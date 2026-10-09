@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getAIConfig } from "@/services/ai/provider";
 
 export const dynamic = "force-dynamic";
 
@@ -15,21 +14,11 @@ export async function GET() {
     checks.supabase = err instanceof Error ? err.message : "error";
   }
 
-  let providerName = "unknown";
-  try {
-    const config = await getAIConfig();
-    providerName = config.provider;
-    checks.ai_key = config.apiKey ? "ok" : "missing";
-  } catch {
-    checks.ai_key = "error";
-  }
-
   const allOk = Object.values(checks).every((v) => v === "ok");
 
   return NextResponse.json(
     {
       status: allOk ? "ok" : "degraded",
-      provider: providerName,
       timestamp: new Date().toISOString(),
       commit: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "local",
       checks

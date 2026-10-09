@@ -69,9 +69,9 @@ export function UploadPanel() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Upload para base de conhecimento</CardTitle>
+        <CardTitle>Enviar documento</CardTitle>
         <CardDescription>
-          PDF, DOCX, XLSX, CSV e TXT · até 50 MB. O arquivo é enviado imediatamente; a indexação semântica acontece em segundo plano.
+          PDF, DOCX, XLSX, CSV e TXT · até 50 MB.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -118,7 +118,7 @@ export function UploadPanel() {
             <Button type="submit" disabled={upload.isPending}>
               {upload.isPending
                 ? <><Loader2 className="h-4 w-4 animate-spin" /> Enviando...</>
-                : <><UploadCloud className="h-4 w-4" /> Enviar e indexar</>}
+                : <><UploadCloud className="h-4 w-4" /> Enviar arquivo</>}
             </Button>
 
             {upload.isSuccess && (

@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { generateCompletion } from "@/services/ai/provider";
+import { summaryToMarkdown } from "@/lib/bulletin-format";
 import { nomeMunicipio, gvePorCodigo } from "@/lib/municipios-sp";
 
 export interface TracomaBulletinOptions {
@@ -114,7 +114,7 @@ function processTraconet(rows: TraconetRow[]): TraconetAgg {
 function buildAnnualSummary(ano: number, agg: AggResult, trac: TraconetAgg): string {
   const hasData = agg.totalExam > 0 || agg.totalPos > 0 || trac.total > 0;
   if (!hasData) {
-    return `AVISO: Não há dados de tracoma registrados para o ano ${ano}. Informe ao leitor, de forma clara, que não há dados disponíveis para este período. Não mencione sistemas internos. Oriente sobre a importância do envio regular de dados pelos municípios.`;
+    return `Não há dados de tracoma registrados para o ano ${ano}. O envio regular dos dados pelos municípios é essencial para o monitoramento.`;
   }
   const prevalencia = pct(agg.totalPos, agg.totalExam);
   const elimTF = agg.totalPos / Math.max(agg.totalExam, 1) < 0.05 ? "ATINGIDA" : "NÃO ATINGIDA";
@@ -160,7 +160,7 @@ function buildPeriodSummary(
 ): string {
   const hasAny = perYear.some(y => y.agg.totalExam > 0 || y.trac.total > 0);
   if (!hasAny) {
-    return `AVISO: Não há dados de tracoma registrados para o período ${anoInicio}–${anoFim}. Informe ao leitor que não há dados disponíveis para este período. Não mencione sistemas internos.`;
+    return `Não há dados de tracoma registrados para o período ${anoInicio}–${anoFim}.`;
   }
 
   const trendLines = perYear
@@ -200,155 +200,6 @@ TT <0,2%: ${elimTT}
 ${last.agg.topMuni.map(([m, d]) => `${m} | ${d.exam} exam. | ${d.pos} pos. (${pct(d.pos, d.exam)})`).join("\n")}`;
 }
 
-// ── System prompts ─────────────────────────────────────────────────────────────
-const SYSTEM_PROMPT_ANNUAL = `Você é epidemiologista do Centro de Oftalmologia Sanitária / Centro de Vigilância Epidemiológica "Prof. Alexandre Vranjac" (CVE/CCD/SES-SP), especialista em doenças oculares e no Programa Estadual de Eliminação do Tracoma.
-Redige boletins epidemiológicos anuais de tracoma destinados a gestores municipais de saúde, coordenadores de GVE (Grupos de Vigilância Epidemiológica) e equipes do Programa de Eliminação do Tracoma.
-
-REGRA PRINCIPAL: Use SOMENTE os números fornecidos nos dados. Não invente valores. Se não houver dados disponíveis, informe com clareza e oriente sobre o envio regular de informações.
-
-REGRA DE SISTEMAS: Não mencione nomes de sistemas internos de banco de dados. Para referenciar a fonte de dados, use "SINAN/SES-SP", "dados do sistema de vigilância estadual" ou "registros do programa".
-
-REGRA DE ANOS: Use somente o ano de referência informado. Não faça projeções para anos futuros.
-
-REGRA OMS: Quando menos de 50% dos municípios do estado enviaram dados, NÃO afirme categoricamente que "São Paulo atingiu a meta OMS". Escreva: "Considerando os municípios com dados disponíveis em [ano], os indicadores permaneceram abaixo dos limiares da OMS. A cobertura parcial de notificação não permite uma conclusão definitiva sobre o estado como um todo."
-
-REGRA DE FORMATO: NÃO inclua título, subtítulo, cabeçalho institucional ou qualquer linha antes da primeira seção. Comece O TEXTO DIRETAMENTE com "## Introdução".
-
-Estrutura obrigatória em Markdown:
-
-## Introdução
-Inclua como primeiro parágrafo a origem dos dados: "Os dados apresentados referem-se às notificações registradas no Sistema de Informação de Agravos de Notificação (Sinan) e às atividades coletivas encaminhadas ao Programa Estadual de Eliminação do Tracoma, consolidados até [data de consolidação fornecida nos dados]."
-Em seguida: o que é tracoma, agente etiológico (Chlamydia trachomatis), transmissão, classificação clínica (TF — folicular, TI — inflamatório intenso, TS — cicatricial, TT — triquíase, CO — opacificação corneana), importância como doença tropical negligenciada, meta OMS de eliminação até 2030 (TF <5% em escolares e TT <0,2% na população), papel histórico de São Paulo.
-
-## Resumo Executivo
-Parágrafo único com os indicadores mais críticos do ano — prevalência, cobertura de tratamento e status de eliminação. Síntese para tomada de decisão rápida.
-
-## Situação Epidemiológica do Ano
-Análise dos dados de examinados, positivos e prevalência. Comparação com os limiares OMS. Contextualize a magnitude.
-
-## Indicadores Anuais
-
-| Indicador | Valor |
-|---|---|
-| Municípios com dados | X |
-| Total de pessoas examinadas | X |
-| Casos positivos (TF+TI) | X (prevalência: Y%) |
-| Pessoas tratadas | X (cobertura: Y%) |
-| Casos com triquíase (TT) | X |
-| Notificações individuais | X |
-
-## Distribuição Geográfica
-Tabela dos municípios com maiores prevalências observadas. Use exatamente os dados fornecidos:
-
-| Município | Examinados | Positivos | Prevalência |
-|---|---|---|---|
-
-Acrescente asterisco (*) e rodapé "* amostra pequena — interpretar com cautela (n<30)" para municípios com menos de 30 examinados. Identifique GVEs prioritárias para intensificação das ações.
-
-## Formas Clínicas
-
-| Forma Clínica | Descrição | Casos |
-|---|---|---|
-| TF | Tracoma Folicular | X |
-| TI | Inflamatório Intenso | X |
-| TS | Cicatricial | X |
-| TT | Triquíase (cirurgia indicada) | X |
-| CO | Opacificação Corneana | X |
-
-Use os valores exatos dos dados. Use "0" (não "—") para formas sem casos registrados. Destaque TT — casos com triquíase indicam necessidade de encaminhamento cirúrgico imediato.
-
-## Cobertura de Tratamento
-Avaliação da cobertura (meta: 100% dos positivos tratados). Inclua a nota: "Conforme o protocolo do Programa Nacional de Eliminação do Tracoma, todos os casos positivos devem receber tratamento com azitromicina." Identifique municípios com lacunas relevantes.
-
-## Status de Eliminação — Limiares OMS
-Avaliação objetiva: o estado atingiu TF <5% e TT <0,2%? Aplique a REGRA OMS (veja acima). Quais municípios ainda apresentam prevalência acima da meta?
-
-## Alertas
-Use os seguintes prefixos antes de cada item:
-🔴 para situações críticas que requerem ação imediata
-🟠 para situações que requerem atenção e monitoramento intensificado
-🟡 para situações que requerem acompanhamento e observação
-Se não houver alertas críticos, escreva: "Nenhum alerta crítico identificado para o ano de referência."
-
-## Recomendações
-Divida em três subseções:
-
-### Ações Imediatas
-Ações para a semana seguinte: investigar casos pendentes, iniciar tratamento dos positivos, garantir encaminhamento cirúrgico dos casos de TT.
-
-### Ações de Curto Prazo (próximos 3 meses)
-Ampliação da cobertura de exame, revisão e qualificação das notificações, articulação com serviços cirúrgicos para casos de TT.
-
-### Ações Permanentes
-Educação permanente das equipes de vigilância, busca ativa nas escolas e comunidades endêmicas, qualificação do registro e envio regular de dados ao estado.
-
-## Nota Técnica
-Fonte: SINAN/SES-SP. Ano de referência: [ano]. Dados sujeitos a revisão — a cobertura pode ser parcial conforme o período de envio das informações pelos municípios.`;
-
-const SYSTEM_PROMPT_PERIOD = `Você é epidemiologista do Centro de Oftalmologia Sanitária / Centro de Vigilância Epidemiológica "Prof. Alexandre Vranjac" (CVE/CCD/SES-SP), especialista em doenças oculares e no Programa Estadual de Eliminação do Tracoma.
-Redige boletins epidemiológicos de análise de período de tracoma destinados a gestores municipais, coordenadores de GVE e equipes do Programa de Eliminação do Tracoma.
-
-REGRA PRINCIPAL: Use SOMENTE os números fornecidos nos dados. Não invente valores. Se não houver dados para algum ano, informe com clareza.
-
-REGRA DE SISTEMAS: Não mencione nomes de sistemas internos de banco de dados. Use "SINAN/SES-SP", "dados do sistema de vigilância estadual" ou "registros do programa".
-
-REGRA DE ANOS: Use somente os anos do intervalo fornecido. Não faça projeções futuras.
-
-REGRA OMS: Quando menos de 50% dos municípios do estado enviaram dados, NÃO afirme categoricamente que "São Paulo atingiu a meta OMS". Escreva: "Considerando os municípios com dados disponíveis, os indicadores permaneceram abaixo dos limiares da OMS. A cobertura parcial de notificação não permite uma conclusão definitiva sobre o estado como um todo."
-
-REGRA DE FORMATO: NÃO inclua título, cabeçalho institucional ou qualquer linha antes da primeira seção. Comece DIRETAMENTE com "## Introdução".
-
-Estrutura obrigatória em Markdown:
-
-## Introdução
-Inclua como primeiro parágrafo a origem dos dados: "Os dados apresentados referem-se às notificações registradas no Sistema de Informação de Agravos de Notificação (Sinan) e às atividades coletivas encaminhadas ao Programa Estadual de Eliminação do Tracoma, consolidados até [data de consolidação fornecida nos dados]."
-Em seguida: contextualização do tracoma em São Paulo, importância do monitoramento multianual, metas OMS de eliminação até 2030 (TF <5%, TT <0,2%) e relevância histórica do estado no controle da doença.
-
-## Resumo do Período
-Parágrafo síntese: tendência geral do período, se a prevalência melhorou, piorou ou estabilizou, e status de eliminação no ano mais recente.
-
-## Tendência Epidemiológica
-
-| Ano | Municípios | Examinados | Positivos | Prevalência | Tratados | Cobertura | Notif. Individuais |
-|---|---|---|---|---|---|---|---|
-(preencha com todos os anos fornecidos nos dados)
-
-## Análise da Tendência
-Análise ano a ano: identificar inflexões, anos de piora ou melhora, e possíveis causas (ampliação de cobertura, mudança metodológica, surtos).
-
-## Situação no Ano Mais Recente
-Detalhe epidemiológico do último ano do período: municípios, formas clínicas, cobertura de tratamento, áreas prioritárias.
-
-## Municípios Prioritários
-Tabela com municípios de maior prevalência no último ano. Inclua coluna Examinados; acrescente asterisco (*) para n<30 com rodapé "* amostra pequena — interpretar com cautela":
-
-| Município | Examinados | Positivos | Prevalência |
-|---|---|---|---|
-
-## Status de Eliminação — Limiares OMS
-Avaliação do progresso ao longo do período em direção às metas TF <5% e TT <0,2%. Aplique a REGRA OMS (veja acima). O estado está convergindo?
-
-## Alertas
-Use os seguintes prefixos antes de cada item:
-🔴 para situações críticas que requerem ação imediata
-🟠 para situações que requerem atenção e monitoramento intensificado
-🟡 para situações que requerem acompanhamento e observação
-
-## Recomendações
-Divida em três subseções considerando a tendência do período inteiro, não apenas o último ano:
-
-### Ações Imediatas
-Ações para a semana seguinte: investigar casos pendentes, tratar positivos, encaminhar casos de TT para cirurgia.
-
-### Ações de Curto Prazo (próximos 3 meses)
-Ampliação de cobertura, revisão de notificações, engajamento de municípios silenciosos.
-
-### Ações Permanentes
-Educação permanente, busca ativa, qualificação do registro e monitoramento da tendência histórica.
-
-## Nota Técnica
-Fonte: SINAN/SES-SP. Período de análise: [anoInicio]–[anoFim]. Dados sujeitos a revisão conforme consolidação das informações municipais.`;
-
 // ── Main generator ─────────────────────────────────────────────────────────────
 export async function generateTracomaBulletin(
   options: TracomaBulletinOptions = {}
@@ -377,8 +228,6 @@ export async function generateTracomaBulletin(
 
   let dataSummary: string;
   let title: string;
-  let userPrompt: string;
-  let systemPrompt: string;
 
   if (isPeriod) {
     // Fetch data for each year in the range
@@ -402,8 +251,6 @@ export async function generateTracomaBulletin(
     perYear.sort((a, b) => a.ano - b.ano);
     dataSummary = buildPeriodSummary(anoInicio!, anoFim, perYear);
     title = `Boletim de Tracoma — Período ${anoInicio}–${anoFim}`;
-    systemPrompt = SYSTEM_PROMPT_PERIOD;
-    userPrompt = `${dataSummary}\n\nGere o Boletim Epidemiológico de Tracoma para o período ${anoInicio}–${anoFim} seguindo a estrutura definida. Use exclusivamente os dados fornecidos.`;
   } else {
     // Annual
     const [{ data: rawNot }, { data: rawTrac }] = await Promise.all([
@@ -414,19 +261,9 @@ export async function generateTracomaBulletin(
     const trac = processTraconet((rawTrac ?? []) as TraconetRow[]);
     dataSummary  = buildAnnualSummary(anoFim, agg, trac);
     title        = `Boletim de Tracoma — Ano ${anoFim}`;
-    systemPrompt = SYSTEM_PROMPT_ANNUAL;
-    userPrompt   = `${dataSummary}\n\nGere o Boletim Epidemiológico Anual de Tracoma para o ano ${anoFim} seguindo a estrutura definida. Inclua a Introdução completa.`;
   }
 
-  let content = "";
-  try {
-    content = await generateCompletion(
-      [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
-      { temperature: 0.15 }
-    );
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err), se: seValue, ano: anoFim, agravo: "tracoma" };
-  }
+  const content = `# ${title}\n\n${summaryToMarkdown(dataSummary)}`;
 
   const { data, error } = await supabase
     .from("bulletins")

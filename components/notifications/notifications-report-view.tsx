@@ -754,12 +754,6 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
               <Download className="h-4 w-4" />
               Boletim Word
             </Button>
-            <Button asChild>
-              <Link href="/chat">
-                <MessageSquareText className="h-4 w-4" />
-                Perguntar ao agente
-              </Link>
-            </Button>
           </div>}
         </div>
 
@@ -1095,15 +1089,6 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
                     <Download className="h-4 w-4" />
                     Baixar boletim
                   </Button>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Chat epidemiológico</CardTitle>
-                  <CardDescription>Para perguntas livres, interpretação e redação de relatório.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Button asChild variant="outline"><Link href="/chat">Abrir chat</Link></Button>
                 </CardContent>
               </Card>
               <Card>

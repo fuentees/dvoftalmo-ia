@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import type { CookieOptions } from "@supabase/ssr";
 
-// In-memory rate limiter: 10 requests per minute per user on AI endpoints
+// In-memory rate limiter for upload and CEVESP endpoints
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 
 function checkRateLimit(key: string, limit = 10, windowMs = 60_000): boolean {
@@ -17,7 +17,6 @@ function checkRateLimit(key: string, limit = 10, windowMs = 60_000): boolean {
   return true;
 }
 
-const AI_PATHS     = ["/api/chat", "/api/export", "/api/dados/analyze"];
 const UPLOAD_PATHS = ["/api/documents/upload"];
 const CEVESP_PATHS = ["/api/cevesp"];
 
@@ -25,16 +24,6 @@ export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
-
-  // Rate limit AI endpoints — 10 req/min
-  if (AI_PATHS.some((p) => request.nextUrl.pathname.startsWith(p)) && request.method === "POST") {
-    if (!checkRateLimit(`${ip}:${request.nextUrl.pathname}`, 10, 60_000)) {
-      return NextResponse.json(
-        { error: "Muitas requisições. Aguarde 1 minuto antes de tentar novamente." },
-        { status: 429 }
-      );
-    }
-  }
 
   // Rate limit document uploads — 5 uploads/min per IP
   if (UPLOAD_PATHS.some((p) => request.nextUrl.pathname.startsWith(p)) && request.method === "POST") {

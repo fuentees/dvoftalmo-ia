@@ -1,7 +1,6 @@
 import type { parseCevespFilters } from "@/lib/cevesp-filters";
 import { z } from "zod";
 import { createNotificationConnection, getNotificationTableName } from "@/lib/external/notification-db";
-import { generateCompletion } from "@/services/ai/provider";
 
 const identifierPattern = /^[a-zA-Z0-9_]+$/;
 
@@ -470,47 +469,9 @@ export function parseCevespQuestionDeterministic(question: string): CevespAnalys
   return applyQuestionHints(question, analysisSchema.parse(parseCevespQuestionRaw(question)));
 }
 
+/** Interpreta a pergunta com regras fixas (palavras-chave), sem IA. */
 export async function parseCevespQuestion(question: string): Promise<CevespAnalysis> {
-  const deterministic = parseCevespQuestionDeterministic(question);
-  try {
-    const content = await generateCompletion(
-      [
-        {
-          role: "system",
-          content: `Converta perguntas sobre conjuntivites CEVESP em JSON.
-Data atual do sistema: ${new Date().toISOString().slice(0, 10)}.
-Responda APENAS com JSON valido, sem texto adicional.
-Use apenas:
-metric: total_casos, notificacoes, unidades_notificadoras, municipios_notificadores, surtos, numero_surtos, coletas, acoes_educativas, treinamentos, afastamentos, encaminhamentos, menor_1_ano, faixa_1_4, faixa_5_9, faixa_10_14, faixa_15_mais, sexo_masculino, sexo_feminino, registros_excluidos.
-dimensions: ano_cadastro, mes_cadastro, semana_epidemiologica, gve, gve_numero, macro_gve, subgrupo_ve, drs, drs_numero, municipio, ibge, unidade, cnes, uvis, nome_notificante, cargo_funcao, surto, coleta_biologica, medida_adotada, afastamento, excluido, editavel.
-Variaveis reais do banco: ID, ControlaSubmit, Nome_notificante, cpf, CargoFuncao, fone_notificante, email_notificante, nCNES, Unid_notificacao, IbgeNotificacao, MunicipioNotificacao, UVIS, gve_numero, GVE_NOME, CodMacroGVE, SUBGRUPOS_VE, drs_numero, DRS_NOME, DtNotificacao, ANO, Mes, SemEpidemio, FxMenorUmAno, FxUmQuatro, FxCincoNove, FxDezQuatorze, FxQuizeOuMais, SexMasc, SexFem, TotalCaso, Surto, NuSurto, ColetaMaterialBio, NuColetaMaterialBio, MedidaAdotada, NuAcaoEducativa, NuTreinamento, AfastamentoProfSintomatico, NuEncamimento, Obs, FkQuemInsert, FkQuemExclui, Excluido, editable, created_at, DtUpdate.
-Use drs para perguntas por DRS. Use semana_epidemiologica quando o usuario pedir a variavel de semana epidemiologica registrada no banco. Use week como time_grain quando ele pedir serie temporal semanal.
-time_grain: none, year, month, week, day.
-Use time_grain somente quando o usuario pedir agrupamento temporal, como "por mes", "mensal", "por semana", "por ano". Nao use time_grain year apenas porque ele disse "esse ano".
-date_range: {type: all|current_year|last_year|current_month|last_month|relative_years|relative_months|relative_weeks|between, amount?, start?, end?}.
-"esse ano" ou "este ano" = current_year. "ano passado" = last_year. "este mes" = current_month. "mes passado" = last_month. "ultimas N semanas" = relative_weeks.
-Para perguntas como "teve surto esse ano?", use metric surtos, dimensions [], time_grain none, date_range current_year.
-filters: campo permitido com eq ou contains.
-limit maximo 500. Nao gere SQL.`
-        },
-        { role: "user", content: question }
-      ],
-      { temperature: 0, jsonMode: true }
-    );
-    const json = content.match(/\{[\s\S]*\}/)?.[0] ?? content;
-    const aiAnalysis = analysisSchema.parse(JSON.parse(json));
-    return applyQuestionHints(question, {
-      ...aiAnalysis,
-      metric: deterministic.metric,
-      date_range: deterministic.date_range.type === "all" ? aiAnalysis.date_range : deterministic.date_range,
-      time_grain: deterministic.time_grain === "none" ? aiAnalysis.time_grain : deterministic.time_grain,
-      dimensions: deterministic.dimensions.length > 0 ? deterministic.dimensions : aiAnalysis.dimensions,
-      filters: deterministic.filters.length > 0 ? deterministic.filters : aiAnalysis.filters,
-      limit: Math.max(deterministic.limit ?? 100, aiAnalysis.limit ?? 100)
-    });
-  } catch {
-    return applyQuestionHints(question, deterministic);
-  }
+  return parseCevespQuestionDeterministic(question);
 }
 
 function buildWhere(analysis: CevespAnalysis) {

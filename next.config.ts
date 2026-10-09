@@ -12,7 +12,7 @@ const nextConfig: NextConfig = {
     }
   },
   // Keep native Node.js packages out of the webpack bundle
-  serverExternalPackages: ["mysql2", "pdf-parse", "mammoth"]
+  serverExternalPackages: ["mysql2"]
 };
 
 export default nextConfig;

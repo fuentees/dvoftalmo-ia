@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { BUSINESS_TIME_ZONE, dateToEpiWeekYear, shiftEpiWeek } from "@/lib/epi-week";
-import { generateCompletion } from "@/services/ai/provider";
+import { summaryToMarkdown } from "@/lib/bulletin-format";
 
 export interface ConjuntiviteBulletinOptions {
   se?: number;
@@ -78,9 +78,8 @@ function buildCevespSummary(
 ): string {
   if (!current.length) {
     return (
-      `AVISO: Não há registros de casos de conjuntivite para a SE ${se}/${ano}. ` +
-      `Os dados podem ainda estar em processamento. ` +
-      `Informe ao leitor de forma clara que não há dados disponíveis para esta semana. Não mencione sistemas internos.`
+      `Não há notificações de conjuntivite registradas para a SE ${se}/${ano}. ` +
+      `Os dados desta semana podem ainda estar sendo enviados pelos municípios.`
     );
   }
 
@@ -145,50 +144,6 @@ SE anterior (SE ${se > 1 ? se - 1 : 52}/${se > 1 ? ano : ano - 1}): ${prevCasos}
 Mesma SE ano anterior (SE ${se}/${ano - 1}): ${agoAnosCasos} casos — ${delta(totalCasos, agoAnosCasos)}`;
 }
 
-const SYSTEM_PROMPT = `Você é epidemiologista do Centro de Oftalmologia Sanitária / Centro de Vigilância Epidemiológica "Prof. Alexandre Vranjac" (CVE/CCD/SES-SP).
-Redige boletins epidemiológicos semanais de conjuntivite destinados a gestores municipais de saúde, equipes de vigilância epidemiológica e profissionais de saúde pública.
-
-REGRA PRINCIPAL: Use SOMENTE os números fornecidos nos dados. Não invente valores. Se não houver dados para a semana, informe com clareza.
-
-REGRA DE FORMATO: NÃO inclua título, subtítulo, cabeçalho institucional ou qualquer linha antes da primeira seção. O documento já possui cabeçalho. Comece O TEXTO DIRETAMENTE com "## Introdução".
-
-Estrutura obrigatória em Markdown:
-
-## Introdução
-Contextualização breve: o que é conjuntivite, principais agentes etiológicos (adenovírus, Chlamydia trachomatis, bacteriana), mecanismo de transmissão, importância para a vigilância epidemiológica em São Paulo.
-
-## Situação Epidemiológica da Semana
-Análise narrativa dos casos, notificações e surtos com os números reais. Contextualize a magnitude em relação ao período.
-
-## Indicadores da Semana
-
-| Indicador | Valor |
-|---|---|
-| Total de casos | X |
-| Total de notificações | X |
-| Ocorrências com surto | X |
-| Coletas de material biológico | X |
-| Ações educativas realizadas | X |
-
-## Distribuição Geográfica
-Análise por região: identifique os GVEs (Grupos de Vigilância Epidemiológica) com maior número de casos e regiões de atenção prioritária.
-
-## Perfil dos Casos
-Distribuição por sexo e faixa etária. Destaque grupos de maior risco se os dados indicarem.
-
-## Tendência e Comparação Temporal
-Compare com a semana anterior e com a mesma semana do ano passado. Classifique a tendência (aumento, redução ou estabilidade).
-
-## Alertas
-Se houver situações que demandam atenção imediata, use **ALTO**, **MÉDIO** ou **BAIXO** antes de cada item.
-Se não houver alertas, escreva: "Nenhum alerta crítico identificado nesta semana."
-
-## Recomendações
-Ações concretas e prioritárias para municípios, GVEs e equipes de vigilância epidemiológica.
-
-## Nota Técnica
-Fonte: Sistema de Notificação de Conjuntivite/CEVESP/SES-SP. Semana Epidemiológica [SE]/[ano]. Dados sujeitos a revisão — possível subnotificação por atraso de digitação.`;
-
 export async function generateConjuntiviteBulletin(
   options: ConjuntiviteBulletinOptions = {}
 ): Promise<ConjuntiviteBulletinResult> {
@@ -223,20 +178,7 @@ export async function generateConjuntiviteBulletin(
 
   const dataSummary = buildCevespSummary(se, ano, current, prev, yearAgo);
   const title = `Boletim de Conjuntivite — SE ${se}/${ano}`;
-  const userPrompt = `${dataSummary}\n\nGere o Boletim Epidemiológico de Conjuntivite para a SE ${se}/${ano} seguindo a estrutura definida. Use os números fornecidos acima. Inclua a Introdução com contexto epidemiológico completo.`;
-
-  let content = "";
-  try {
-    content = await generateCompletion(
-      [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: userPrompt }
-      ],
-      { temperature: 0.15 }
-    );
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err), se, ano, agravo: "conjuntivite" };
-  }
+  const content = `# ${title}\n\n${summaryToMarkdown(dataSummary)}`;
 
   const { data, error } = await supabase
     .from("bulletins")

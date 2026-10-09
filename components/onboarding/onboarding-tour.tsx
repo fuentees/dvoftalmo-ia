@@ -1,16 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bot, BarChart2, FileText, Bell, X, ChevronRight } from "lucide-react";
+import { BarChart2, FileText, Bell, ShieldAlert, X, ChevronRight } from "lucide-react";
 
 const STORAGE_KEY = "dvoftalmo_onboarding_done";
 
 const STEPS = [
-  {
-    icon: Bot,
-    title: "Chat com IA epidemiológica",
-    body: "Faça perguntas sobre surtos, casos por GVE, tracoma e mais. O agente busca dados reais do CEVESP e dos seus documentos."
-  },
   {
     icon: BarChart2,
     title: "Dashboard CEVESP",
@@ -22,9 +17,14 @@ const STEPS = [
     body: "Toda segunda-feira o sistema verifica aumentos >50% em qualquer GVE e envia alertas epidemiológicos. Acesse em Alertas."
   },
   {
+    icon: ShieldAlert,
+    title: "Qualidade dos dados",
+    body: "Encontre notificações duplicadas, semanas trocadas ou em branco e anos digitados errado, com a correção sugerida para cada registro."
+  },
+  {
     icon: FileText,
-    title: "Base de conhecimento",
-    body: "Faça upload de protocolos, circulares e artigos. A IA cita as fontes nas respostas e você pode gerenciar tudo em Documentos."
+    title: "Documentos",
+    body: "Guarde protocolos, circulares e ofícios em um só lugar, com categorias, tags e busca."
   }
 ];
 

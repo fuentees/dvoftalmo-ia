@@ -4,7 +4,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { runCevespAnalysis } from "@/services/cevesp-analytics";
-import { getAIConfig } from "@/services/ai/provider";
 
 export const dynamic = "force-dynamic";
 
@@ -48,17 +47,7 @@ export async function GET() {
     results.cevesp_aggregate_2026 = `EXCEPTION: ${e instanceof Error ? e.message : String(e)}`;
   }
 
-  // 3. Check AI config (provider, model, key present)
-  try {
-    const config = await getAIConfig();
-    results.ai_provider = config.provider;
-    results.ai_model = config.model;
-    results.ai_key_present = !!config.apiKey;
-  } catch (e) {
-    results.ai_config = `EXCEPTION: ${e instanceof Error ? e.message : String(e)}`;
-  }
-
-  // 4. Run full cevesp analysis (same path as consultar_cevesp tool)
+  // 3. Run full cevesp analysis (same path as consultar_cevesp tool)
   try {
     const analysis = await runCevespAnalysis("quantos casos de conjuntivite temos em 2026?");
     results.cevesp_analysis = {
