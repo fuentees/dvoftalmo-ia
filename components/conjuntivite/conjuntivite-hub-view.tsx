@@ -29,6 +29,12 @@ export function ConjuntiviteHubView() {
   const [yearEnd, setYearEnd] = useState(searchParams.get("yearEnd") ?? searchParams.get("anoFim") ?? "");
   const [gve, setGve] = useState(searchParams.get("gve") ?? "");
   const [municipio, setMunicipio] = useState(searchParams.get("municipio") ?? "");
+  // "Pergunte aos dados" (situação) abre a consulta já com a pergunta
+  const [pergunta, setPergunta] = useState<string | undefined>(undefined);
+  function perguntar(texto: string) {
+    setPergunta(texto);
+    setTab("consulta");
+  }
   const gveOptions = useMemo(() => listarGvesSp(), []);
   const municipioOptions = useMemo(() => listarMunicipiosPorGve(gve), [gve]);
 
@@ -123,9 +129,9 @@ export function ConjuntiviteHubView() {
 
       <div className="flex-1">
         {filterError && <p role="alert" className="m-6 rounded-md border border-destructive p-4 text-sm text-destructive">{filterError}</p>}
-        {!filterError && tab === "situacao"  && <NotificationsReportView section="situacao" externalFilters={reportFilters} hideFilters />}
+        {!filterError && tab === "situacao"  && <NotificationsReportView section="situacao" externalFilters={reportFilters} hideFilters onAsk={perguntar} />}
         {!filterError && tab === "qualidade" && <div className="px-4 py-6 md:px-7"><CevespQualidadeView externalFilters={reportFilters} /></div>}
-        {!filterError && tab === "consulta"  && <NotificationsReportView section="consulta" externalFilters={reportFilters} hideFilters />}
+        {!filterError && tab === "consulta"  && <NotificationsReportView section="consulta" externalFilters={reportFilters} hideFilters initialQuestion={pergunta} />}
       </div>
     </div>
   );

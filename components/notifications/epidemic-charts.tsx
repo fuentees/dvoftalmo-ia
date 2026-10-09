@@ -46,6 +46,8 @@ interface EpidemicChartsProps {
   sexDistribution: DistItem[];
   topMunicipalities: RankItem[];
   topGves: RankItem[];
+  /** Partes a desenhar (padrão: todas): curva semanal, rankings territoriais e perfil (idade/sexo). */
+  parts?: Array<"curva" | "territorio" | "perfil">;
 }
 
 export function EpidemicCharts({
@@ -55,8 +57,10 @@ export function EpidemicCharts({
   ageDistribution,
   sexDistribution,
   topMunicipalities,
-  topGves
+  topGves,
+  parts
 }: EpidemicChartsProps) {
+  const show = (part: "curva" | "territorio" | "perfil") => !parts || parts.includes(part);
   // Build chart data: always keyed by SE (SE01–SE53) from weeklyAverage.
   // Falls back to weeklySeries when weeklyAverage is not available.
   const chartData =
@@ -92,7 +96,7 @@ export function EpidemicCharts({
 
   return (
     <div className="space-y-4">
-      {chartData.length > 0 && (
+      {show("curva") && chartData.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>Curva epidêmica semanal</CardTitle>
@@ -148,7 +152,7 @@ export function EpidemicCharts({
         </Card>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      {show("territorio") && <div className="grid gap-4 xl:grid-cols-2">
         {topMunicipalities.length > 0 && (
           <Card>
             <CardHeader>
@@ -188,9 +192,9 @@ export function EpidemicCharts({
             </CardContent>
           </Card>
         )}
-      </div>
+      </div>}
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      {show("perfil") && <div className="grid gap-4 xl:grid-cols-2">
         {ageDistribution.length > 0 && (
           <Card>
             <CardHeader>
@@ -244,7 +248,7 @@ export function EpidemicCharts({
             </CardContent>
           </Card>
         )}
-      </div>
+      </div>}
     </div>
   );
 }

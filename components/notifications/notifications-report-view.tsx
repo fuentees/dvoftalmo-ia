@@ -32,6 +32,10 @@ type NotificationsReportViewProps = {
     municipio?: string;
   };
   hideFilters?: boolean;
+  /** Situação: abrir a consulta com uma pergunta pronta. */
+  onAsk?: (question: string) => void;
+  /** Consulta: pergunta a responder ao abrir. */
+  initialQuestion?: string;
 };
 
 type ReportData = {
@@ -304,15 +308,6 @@ function ResultTable({ title, columns, rows, limit = 80 }: {
   );
 }
 
-function SectionIntro({ title, description }: { title: string; description: string }) {
-  return (
-    <div>
-      <h2 className="text-[20px] font-bold tracking-tight">{title}</h2>
-      <p className="text-[14px] text-muted-foreground">{description}</p>
-    </div>
-  );
-}
-
 function CevespRatesPanel({ data }: { data: CevespRatesData }) {
   const hasGve = (data.byGve?.length ?? 0) > 0;
   const [view, setView] = useState<"municipio" | "gve">("municipio");
@@ -392,7 +387,40 @@ function CevespRatesPanel({ data }: { data: CevespRatesData }) {
   );
 }
 
-export function NotificationsReportView({ section, externalFilters, hideFilters = false }: NotificationsReportViewProps = {}) {
+function Segmented<T extends string>({ value, options, onChange, label }: {
+  value: T;
+  options: Array<{ id: T; label: string }>;
+  onChange: (value: T) => void;
+  label: string;
+}) {
+  return (
+    <div role="group" aria-label={label} className="inline-flex rounded-lg border bg-card p-0.5">
+      {options.map((option) => (
+        <button
+          key={option.id}
+          type="button"
+          aria-pressed={value === option.id}
+          onClick={() => onChange(option.id)}
+          className={`h-9 rounded-md px-3 text-[13px] transition-colors ${value === option.id ? "bg-secondary font-semibold text-secondary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Formas que o interpretador por palavras-chave entende (services/cevesp-analytics)
+const PERGUNTAS_PRONTAS = [
+  "Total de casos por GVE este ano",
+  "Surtos por mês este ano",
+  "Total de casos por município nas últimas 4 semanas",
+  "Total de casos por unidade este ano"
+];
+
+export function NotificationsReportView({ section, externalFilters, hideFilters = false, onAsk, initialQuestion }: NotificationsReportViewProps = {}) {
+  const [evolucao, setEvolucao] = useState<"semanas" | "canal" | "anos">("semanas");
+  const [onde, setOnde] = useState<"ranking" | "incidencia" | "unidades">("ranking");
   const [tab, setTab] = useState<HubTab>("situacao");
   const activeTab: HubTab = section ?? tab;
   const [question, setQuestion] = useState("Total de casos por GVE dos últimos 5 anos separado por ano");
@@ -510,18 +538,25 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
     staleTime: 5 * 60 * 1000
   });
 
-  const ask = useMutation<AskData>({
-    mutationFn: async () => {
+  const ask = useMutation<AskData, Error, string | void>({
+    mutationFn: async (override) => {
       const response = await fetch("/api/notificacoes/pergunta", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: question.trim(), filters: buildQueryParams() })
+        body: JSON.stringify({ question: (override || question).trim(), filters: buildQueryParams() })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Erro ao consultar banco");
       return data as AskData;
     }
   });
+
+  const askMutate = ask.mutate;
+  useEffect(() => {
+    if (!initialQuestion) return;
+    setQuestion(initialQuestion);
+    askMutate(initialQuestion);
+  }, [initialQuestion, askMutate]);
 
   const risk = riskFromReport(report.data, quality.data);
   const totalCases = report.data?.indicators.totalCases ?? 0;
@@ -822,6 +857,44 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
               />
             </div>
 
+            <section className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-[20px] font-bold tracking-tight">Evolução</h2>
+                  <p className="text-[14px] text-muted-foreground">Casos por semana, comparação com o canal endêmico e série anual.</p>
+                </div>
+                <Segmented
+                  label="Visão da evolução"
+                  value={evolucao}
+                  onChange={setEvolucao}
+                  options={[{ id: "semanas", label: "Semanas" }, { id: "canal", label: "Canal endêmico" }, { id: "anos", label: "Anos" }]}
+                />
+              </div>
+              {evolucao === "semanas" && (
+                <EpidemicCharts
+                  parts={["curva"]}
+                  weeklySeries={report.data.indicators.weeklySeries ?? []}
+                  weeklyAverage={report.data.indicators.weeklyAverage ?? []}
+                  selectedYear={selectedYear && (!selectedYearEnd || selectedYearEnd === selectedYear) ? selectedYear : undefined}
+                  ageDistribution={[]}
+                  sexDistribution={[]}
+                  topMunicipalities={[]}
+                  topGves={[]}
+                />
+              )}
+              {evolucao === "canal" && <CanalEndemicoView filters={{ gve: selectedGve, municipio: selectedMunicipio, year: selectedYearEnd ?? selectedYear }} />}
+              {evolucao === "anos" && (
+                <ConjuntiviteChartsView
+                  filters={{
+                    gve: selectedGve,
+                    municipio: selectedMunicipio,
+                    yearStart: selectedYear ? String(selectedYear) : undefined,
+                    yearEnd: selectedYearEnd ? String(selectedYearEnd) : undefined,
+                  }}
+                />
+              )}
+            </section>
+
             <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
               <Card>
                 <CardHeader className="pb-2">
@@ -856,61 +929,65 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
               </Card>
             </div>
 
+
             <EpidemicCharts
-              weeklySeries={report.data.indicators.weeklySeries ?? []}
-              weeklyAverage={report.data.indicators.weeklyAverage ?? []}
-              selectedYear={
-                selectedYear && (!selectedYearEnd || selectedYearEnd === selectedYear)
-                  ? selectedYear
-                  : undefined
-              }
+              parts={["perfil"]}
+              weeklySeries={[]}
+              weeklyAverage={[]}
               ageDistribution={report.data.indicators.ageDistribution ?? []}
               sexDistribution={report.data.indicators.sexDistribution ?? []}
-              topMunicipalities={report.data.indicators.topMunicipalities ?? []}
-              topGves={report.data.indicators.topGves ?? []}
+              topMunicipalities={[]}
+              topGves={[]}
             />
 
-            <div className="space-y-4">
-              <SectionIntro
-                title="Série histórica"
-                description="Evolução anual de casos e perfil mensal por ano. Clique em um ano para ocultá-lo da análise."
-              />
-              <ConjuntiviteChartsView
-                filters={{
-                  gve: selectedGve,
-                  municipio: selectedMunicipio,
-                  yearStart: selectedYear ? String(selectedYear) : undefined,
-                  yearEnd: selectedYearEnd ? String(selectedYearEnd) : undefined,
-                }}
-              />
-            </div>
-
-            {rates.data && (
-              <div className="space-y-4">
-                <SectionIntro
-                  title="Território e incidência"
-                  description="Mapa e tabela para priorizar município ou GVE pelo volume e pela taxa populacional."
+            <section className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-[20px] font-bold tracking-tight">Onde</h2>
+                  <p className="text-[14px] text-muted-foreground">Territórios e unidades com mais casos e a incidência por população.</p>
+                </div>
+                <Segmented
+                  label="Visão territorial"
+                  value={onde}
+                  onChange={setOnde}
+                  options={[{ id: "ranking", label: "Municípios e GVEs" }, { id: "incidencia", label: "Incidência" }, { id: "unidades", label: "Unidades" }]}
                 />
-                {rates.data.warnings?.length ? <p role="status" className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">{rates.data.warnings.join(" ")}</p> : null}
-                <CevespRatesPanel data={rates.data} />
               </div>
+              {onde === "ranking" && (
+                <EpidemicCharts
+                  parts={["territorio"]}
+                  weeklySeries={[]}
+                  weeklyAverage={[]}
+                  ageDistribution={[]}
+                  sexDistribution={[]}
+                  topMunicipalities={report.data.indicators.topMunicipalities ?? []}
+                  topGves={report.data.indicators.topGves ?? []}
+                />
+              )}
+              {onde === "incidencia" && (rates.data ? (
+                <>
+                  {rates.data.warnings?.length ? <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">{rates.data.warnings.join(" ")}</p> : null}
+                  <CevespRatesPanel data={rates.data} />
+                </>
+              ) : <p className="rounded-xl border bg-card p-5 text-sm text-muted-foreground">{rates.isLoading ? "Carregando incidência…" : "Incidência indisponível para este recorte."}</p>)}
+              {onde === "unidades" && <RankingList title="Unidades notificadoras" items={report.data.indicators.topUnits ?? []} />}
+            </section>
+
+            {onAsk && (
+              <section className="space-y-3 rounded-xl border bg-card p-5">
+                <div>
+                  <h2 className="text-[17px] font-semibold">Pergunte aos dados</h2>
+                  <p className="text-[14px] text-muted-foreground">Consultas prontas, sem IA. A resposta abre na aba Consulta.</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {PERGUNTAS_PRONTAS.map((pergunta) => (
+                    <Button key={pergunta} type="button" variant="outline" className="h-10 rounded-full" onClick={() => onAsk(pergunta)}>
+                      {pergunta}
+                    </Button>
+                  ))}
+                </div>
+              </section>
             )}
-
-            <div className="space-y-4">
-              <SectionIntro
-                title="Origem das notificações"
-                description="Unidades com maior volume no recorte, úteis para retorno técnico e checagem de oportunidade."
-              />
-              <RankingList title="Unidades notificadoras" items={report.data.indicators.topUnits ?? []} />
-            </div>
-
-            <div className="space-y-4">
-              <SectionIntro
-                title="Canal endêmico"
-                description="Série histórica para detectar semanas acima do esperado e apoiar decisão de investigação."
-              />
-              <CanalEndemicoView filters={{ gve: selectedGve, municipio: selectedMunicipio, year: selectedYearEnd ?? selectedYear }} />
-            </div>
           </div>
         )}
 
