@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PagedTable, type PagedColumn } from "@/components/ui/paged-table";
 import { listarGvesSp, listarMunicipiosPorGve } from "@/lib/municipios-sp";
 import type { InvalidRecord } from "@/services/cevesp-corrections";
+import { currentCalendarYear } from "@/lib/epi-week";
 
 type CevespTab = "registros" | "por_ano" | "por_gve" | "por_municipio" | "completude";
 
@@ -652,7 +653,9 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
   const [tab, setTab]             = useState<CevespTab>("registros");
   const [filterType, setFilterType] = useState<string>("todos");
   const [recordQuery, setRecordQuery] = useState("");
-  const [anoFilter, setAnoFilter] = useState(externalFilters?.year ? String(externalFilters.year) : "");
+  // Sem ano escolhido, abre no ano atual: auditar a base inteira é pesado demais
+  const defaultYear = String(currentCalendarYear());
+  const [anoFilter, setAnoFilter] = useState(externalFilters?.year ? String(externalFilters.year) : defaultYear);
   const [anoFimFilter, setAnoFimFilter] = useState(externalFilters?.yearEnd ? String(externalFilters.yearEnd) : "");
   const [gveFilter, setGveFilter] = useState(externalFilters?.gve ?? "");
   const [municipioFilter, setMunicipioFilter] = useState(externalFilters?.municipio ?? "");
@@ -672,13 +675,13 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
 
   useEffect(() => {
     if (!externalFilters) return;
-    setAnoFilter(externalFilters.year ? String(externalFilters.year) : "");
+    setAnoFilter(externalFilters.year ? String(externalFilters.year) : defaultYear);
     setAnoFimFilter(externalFilters.yearEnd ? String(externalFilters.yearEnd) : "");
     setGveFilter(externalFilters.gve ?? "");
     setMunicipioFilter(externalFilters.municipio ?? "");
     setPage(0);
     setSelected(new Set());
-  }, [externalFilters]);
+  }, [externalFilters, defaultYear]);
 
   function handleSelectAno(ano: number) {
     setRecordQuery(String(ano));
@@ -778,7 +781,7 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
   function resetRecordFilters() {
     setFilterType("todos");
     setRecordQuery("");
-    setAnoFilter("");
+    setAnoFilter(defaultYear);
     setAnoFimFilter("");
     setGveFilter("");
     setMunicipioFilter("");
@@ -881,7 +884,7 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
                 type="number"
                 value={anoFilter}
                 onChange={(event) => { setAnoFilter(event.target.value); setPage(0); setSelected(new Set()); }}
-                placeholder="Todos"
+                placeholder={defaultYear}
                 className="h-9 w-28 rounded-md border bg-background px-2 text-sm"
               />
             </div>
@@ -912,7 +915,7 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
                 {municipioOptions.map((item) => <option key={item.codigo} value={item.nome}>{item.nome}</option>)}
               </select>
             </div>
-            {(anoFilter || gveFilter || municipioFilter) && (
+            {(anoFilter !== defaultYear || gveFilter || municipioFilter) && (
               <Button variant="ghost" onClick={resetRecordFilters} className="text-muted-foreground">
                 Limpar recorte
               </Button>

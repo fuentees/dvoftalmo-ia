@@ -4,9 +4,17 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { findInvalidRecords, findInvalidRecordsFromCache, isMysqlRecordId, saveCorrectionsToQueue, type InvalidRecord } from "@/services/cevesp-corrections";
 import { getNotificationTableName } from "@/lib/external/notification-db";
+import { currentCalendarYear } from "@/lib/epi-week";
 
 // A auditoria lê o ano filtrado e o anterior inteiros (dezenas de milhares de linhas)
 export const maxDuration = 60;
+
+/** Sem ano informado, audita o ano atual: a base inteira (200 mil+ linhas) estoura o tempo. */
+function withDefaultYear<T extends { ano?: number; anoFim?: number }>(filters: T): T {
+  if (filters.ano != null || filters.anoFim != null) return filters;
+  const year = currentCalendarYear();
+  return { ...filters, ano: year, anoFim: year };
+}
 
 function normalizeSearch(value: string | null | undefined) {
   return String(value ?? "")
@@ -143,7 +151,7 @@ export async function GET(req: NextRequest) {
     const issueFilter = searchParams.get("issue") ?? "todos";
     const query = searchParams.get("q") ?? "";
     const format = searchParams.get("format");
-    const { ano, anoFim, gve, municipio, seInicio, seFim } = parseCevespFilters(searchParams);
+    const { ano, anoFim, gve, municipio, seInicio, seFim } = withDefaultYear(parseCevespFilters(searchParams));
     const source = searchParams.get("source");
 
     const records = source === "cache"
@@ -198,7 +206,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Seleção de registros inválida." }, { status: 400 });
     }
     const params = new URLSearchParams(body.filters ?? "");
-    const { ano, anoFim, gve, municipio, seInicio, seFim } = parseCevespFilters(params);
+    const { ano, anoFim, gve, municipio, seInicio, seFim } = withDefaultYear(parseCevespFilters(params));
     const audited = await findInvalidRecords(undefined, ano, gve, anoFim);
     const records = filterRecords(applyScopeFilters(audited, { municipio, seInicio, seFim }), params.get("issue") ?? "todos", params.get("q") ?? "");
     const tableName = getNotificationTableName();
