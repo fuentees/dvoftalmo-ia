@@ -171,7 +171,8 @@ export function mapInvalidCacheRow(r: Record<string, unknown>, now = new Date())
     semEpidemio: se,
     municipio: r.MunicipioNotificacao ? String(r.MunicipioNotificacao) : null,
     gve: r.GVE_NOME ? String(r.GVE_NOME) : null,
-    ano: toNumber(r.ANO) ?? anoData,
+    // Sem ANO, usa o ano da data só se a data for plausível (evita "4202", "520", NaN)
+    ano: toNumber(r.ANO) ?? (validDate && anoData != null && anoData >= 1990 && rawDt! <= today ? anoData : null),
     totalCaso,
     issue,
     issueType: (DATA_TEMPO.has(problema) ? "data_tempo" : "conteudo") as "data_tempo" | "conteudo",
@@ -244,7 +245,7 @@ const SUPERSEDED_BY_STRUCTURE = new Set(["se_invalida", "se_futura"]);
 export function auditCevespRows(
   rows: Array<Record<string, unknown>>,
   now = new Date(),
-  inScope: (row: Record<string, unknown>) => boolean = () => true
+  inScope: (row: Record<string, unknown>, anoErrado: boolean) => boolean = () => true
 ): InvalidRecord[] {
   const active = rows.filter((r) => excluidoFlag(r.Excluido) === 0);
   const structural = auditStructure(active.map((r, i) => ({
@@ -259,8 +260,8 @@ export function auditCevespRows(
 
   const result: InvalidRecord[] = [];
   active.forEach((r, i) => {
-    if (!inScope(r)) return;
     const found = structural.get(String(i)) ?? [];
+    if (!inScope(r, found.some((f) => f.problem === "ano_errado"))) return;
     const single = mapInvalidCacheRow(r, now);
     if (single && !(SUPERSEDED_BY_STRUCTURE.has(single.problem) && found.some((f) => STRUCTURAL_TYPE[f.problem] === "data_tempo"))) {
       result.push(isMysqlRecordId(single.recordId) ? single : { ...single, suggestions: [], suggestedField: "", suggestedValue: "" });
@@ -343,14 +344,14 @@ export async function findInvalidRecordsFromCache(limit?: number, ano?: number, 
   const rows = await fetchAuditRows(ano, anoFim, gve);
   const lo = ano ?? anoFim;
   const hi = anoFim && (!ano || anoFim > ano) ? anoFim : ano;
-  const inScope = (r: Record<string, unknown>) => {
+  const inScope = (r: Record<string, unknown>, anoErrado: boolean) => {
     if (lo == null || hi == null) return true;
     const a = toNumber(r.ANO);
     if (a != null && a >= lo && a <= hi) return true;
-    // Fora do período pelo ANO: entra só se o ANO for suspeito e foi digitado no período
-    const suspeito = r.ano_suspeito === true || a == null || a > hi;
+    // Fora do período pelo ANO: entra só se a auditoria confirmou ano errado e o registro
+    // foi digitado no período (carga em lote de anos antigos não entra)
     const created = r.created_at_origem ? Number(String(r.created_at_origem).slice(0, 4)) : null;
-    return suspeito && created != null && created >= lo && created <= hi;
+    return anoErrado && created != null && created >= lo && created <= hi;
   };
   const records = auditCevespRows(rows, new Date(), inScope);
   return limit ? records.slice(0, limit) : records;

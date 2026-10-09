@@ -141,18 +141,19 @@ export function auditStructure(rows: AuditRow[], now = new Date()): Map<string, 
     };
   });
 
-  // Semanas ocupadas por unidade (inclui as que serão reservadas pelas sugestões)
-  const occupied = new Map<string, Set<number>>();
-  for (const r of prepared) {
-    if (r.idx == null) continue;
-    if (!occupied.has(r.unidade)) occupied.set(r.unidade, new Set());
-    occupied.get(r.unidade)!.add(r.idx);
-  }
-  const isFree = (unidade: string, idx: number) => !occupied.get(unidade)?.has(idx);
+  // Registros por unidade e semana (inclui as semanas reservadas pelas sugestões)
+  const occupied = new Map<string, Map<number, number>>();
   const reserve = (unidade: string, idx: number) => {
-    if (!occupied.has(unidade)) occupied.set(unidade, new Set());
-    occupied.get(unidade)!.add(idx);
+    if (!occupied.has(unidade)) occupied.set(unidade, new Map());
+    const weeks = occupied.get(unidade)!;
+    weeks.set(idx, (weeks.get(idx) ?? 0) + 1);
   };
+  const release = (unidade: string, idx: number) => {
+    const weeks = occupied.get(unidade);
+    if (weeks?.has(idx)) weeks.set(idx, weeks.get(idx)! - 1);
+  };
+  const isFree = (unidade: string, idx: number) => !occupied.get(unidade)?.get(idx);
+  for (const r of prepared) if (r.idx != null) reserve(r.unidade, r.idx);
   // Última semana fechada no momento da digitação (ou hoje, sem created_at)
   const lastClosed = (r: Prepared) => r.createdIdx ?? todayIdx - 1;
 
@@ -200,6 +201,8 @@ export function auditStructure(rows: AuditRow[], now = new Date()): Map<string, 
       if (gap == null || (gap >= 0 && gap <= YEAR_TYPO_MAX_DAYS)) motivo = `ANO ${r.ANO} digitado em ${r.createdDay}`;
     }
     if (!motivo) continue;
+    // A semana informada é de outro ano: não pode ocupar a agenda da unidade naquele ano
+    if (r.idx != null) release(r.unidade, r.idx);
     const ano = r.createdYear;
     const informed = r.SemEpidemio != null && r.SemEpidemio >= 1 && r.SemEpidemio <= weeksInYear(ano)
       ? weekIndex(ano, r.SemEpidemio) : null;

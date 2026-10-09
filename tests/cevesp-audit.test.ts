@@ -85,6 +85,16 @@ assert.deepEqual(indexToWeek(weekIndex(2026, 1) - 1), { ano: 2025, se: 53 });
   assert.equal(f.get(antigo.key), undefined, "o registro legítimo de 2023 não vira duplicata");
 }
 
+// ── Registro com ano errado não ocupa a semana do ano errado ──
+{
+  // Unidade com duas notificações na SE 22/2023 e a SE 23/2023 ocupada só pelo registro de 2026
+  const a1 = row({ ANO: 2023, SemEpidemio: 22, createdAt: "2023-06-08 10:00:00" });
+  const a2 = row({ ANO: 2023, SemEpidemio: 22, createdAt: "2023-06-12 10:00:00" });
+  const errado = row({ ANO: 2023, SemEpidemio: 23, DtNotificacao: "2023-06-16", createdAt: "2026-06-16 12:00:00" });
+  const f = audit([a1, a2, errado, row({ ANO: 2023, SemEpidemio: 21, createdAt: null })]);
+  assert.deepEqual(f.get(a2.key)![0].suggestion, { ano: 2023, se: 23 }, "SE 23/2023 está livre de verdade");
+}
+
 // ── Semana trocada: dois registros na SE 38, digitados na SE 40 → um vai para a 39 ──
 {
   const a = row({ ANO: 2026, SemEpidemio: 38, createdAt: "2026-09-25 15:09:29" });
