@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Database, Download, FileSearch, Upload } from "lucide-react";
+import { AlertTriangle, Download, FileSearch, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { FreshnessBadge } from "@/components/settings/freshness-badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 type Bank = "traconet" | "nottraconet";
@@ -198,16 +199,16 @@ export function SinanTracomaSyncCard() {
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-sm">
-          <Database className="h-4 w-4 text-primary" />
-          SINAN Tracoma
-        </CardTitle>
-        <CardDescription className="text-xs">
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle className="text-[17px]">SINAN · tracoma</CardTitle>
+          <FreshnessBadge lastSync={status?.lastImports?.[0]?.imported_at} hasData={status?.hasData} />
+        </div>
+        <CardDescription className="text-[13px]">
           Importe TRACONET (casos individuais: sexo, idade, TF/TT) e NOTTRACONET (consolidado: nº examinados/positivos por localidade).
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="grid gap-2 rounded-md border bg-muted/30 p-3 text-xs sm:grid-cols-2">
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 rounded-lg border p-4 text-sm sm:grid-cols-2">
           <Info label="Registros" value={(status?.totalRows ?? 0).toLocaleString("pt-BR")} />
           <Info label="Período" value={status?.minYear && status.maxYear ? `${status.minYear} a ${status.maxYear}` : "sem dados"} />
           <Info label="Municípios" value={(status?.municipalities ?? 0).toLocaleString("pt-BR")} />
@@ -218,13 +219,13 @@ export function SinanTracomaSyncCard() {
         </div>
 
         {status && !status.hasData ? (
-          <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
             Nenhum registro SINAN Tracoma encontrado no cache. Depois de importar, este total deve sair de 0 e o histórico abaixo deve mostrar a última importação.
           </div>
         ) : null}
 
         {status?.lastImports?.length ? (
-          <div className="rounded-md border p-3 text-xs">
+          <div className="rounded-lg border p-4 text-sm">
             <div className="mb-2 font-medium">Últimas importações</div>
             <div className="space-y-1 text-muted-foreground">
               {status.lastImports.map((item, index) => (
@@ -238,11 +239,11 @@ export function SinanTracomaSyncCard() {
           </div>
         ) : null}
 
-        <div className="space-y-2 rounded-md border p-3 text-xs">
+        <div className="space-y-2 rounded-lg border p-4 text-sm">
           <p className="font-medium">Baixar dados do Supabase (CSV)</p>
           <div className="flex flex-wrap items-center gap-2">
             <select
-              className="h-8 rounded-md border bg-background px-2 text-xs"
+              className="h-10 rounded-lg border bg-background px-2.5 text-sm"
               value={downloadBank}
               onChange={e => setDownloadBank(e.target.value as typeof downloadBank)}
               disabled={downloading || busy}
@@ -251,18 +252,18 @@ export function SinanTracomaSyncCard() {
               <option value="traconet">TRACONET</option>
               <option value="nottraconet">NOTTRACONET</option>
             </select>
-            <Button size="sm" variant="outline" className="h-8 text-xs" disabled={downloading || busy} onClick={() => void handleDownload()}>
-              <Download className="mr-1.5 h-3.5 w-3.5" />
+            <Button size="sm" variant="outline" className="h-10" disabled={downloading || busy} onClick={() => void handleDownload()}>
+              <Download className="mr-1.5 h-4 w-4" />
               {downloading ? "Exportando..." : "Baixar CSV"}
             </Button>
           </div>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[13px] text-muted-foreground">
             Exporta os dados atualmente no Supabase. Para atualizar, basta importar um arquivo mais recente — registros existentes são atualizados e novos são adicionados.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <select className="h-8 min-w-0 flex-1 rounded-md border bg-background px-2 text-xs" value={bank} onChange={event => setBank(event.target.value as Bank)}>
+          <select className="h-10 min-w-0 flex-1 rounded-lg border bg-background px-2.5 text-sm" value={bank} onChange={event => setBank(event.target.value as Bank)}>
             <option value="traconet">TRACONET — casos individuais</option>
             <option value="nottraconet">NOTTRACONET — consolidado</option>
           </select>
@@ -276,14 +277,14 @@ export function SinanTracomaSyncCard() {
               if (file) void previewFile(file);
             }}
           />
-          <Button size="sm" variant="outline" className="h-8 text-xs" disabled={busy} onClick={() => fileRef.current?.click()}>
-            <FileSearch className="mr-1.5 h-3.5 w-3.5" />
+          <Button size="sm" variant="outline" className="h-10" disabled={busy} onClick={() => fileRef.current?.click()}>
+            <FileSearch className="mr-1.5 h-4 w-4" />
             {busy ? "Processando..." : "Validar arquivo"}
           </Button>
         </div>
 
         {preview && (
-          <div className="space-y-3 rounded-md border bg-background p-3 text-xs">
+          <div className="space-y-3 rounded-lg border bg-background p-4 text-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <div className="font-medium">{preview.fileName}</div>
@@ -322,20 +323,20 @@ export function SinanTracomaSyncCard() {
               <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
                 Ver colunas reconhecidas
               </summary>
-              <p className="mt-2 max-h-24 overflow-auto break-all font-mono text-[11px] text-muted-foreground">
+              <p className="mt-2 max-h-24 overflow-auto break-all font-mono text-[13px] text-muted-foreground">
                 {preview.columns.join(", ")}
               </p>
             </details>
 
             <div className="flex flex-wrap gap-2">
-              <Button size="sm" className="h-8 text-xs" disabled={busy || !pendingFile} onClick={() => pendingFile && void importFile(pendingFile)}>
-                <Upload className="mr-1.5 h-3.5 w-3.5" />
+              <Button size="sm" className="h-10" disabled={busy || !pendingFile} onClick={() => pendingFile && void importFile(pendingFile)}>
+                <Upload className="mr-1.5 h-4 w-4" />
                 Confirmar importação como {bank.toUpperCase()}
               </Button>
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-8 text-xs"
+                className="h-10"
                 disabled={busy}
                 onClick={() => {
                   setPreview(null);
@@ -350,7 +351,7 @@ export function SinanTracomaSyncCard() {
         )}
 
         {message && (
-          <div className={`rounded-md border px-3 py-2 text-xs ${
+          <div className={`rounded-lg border px-3 py-2.5 text-sm ${
             message.type === "success"
               ? "border-green-300 bg-green-50 text-green-800"
               : message.type === "error"
@@ -384,8 +385,8 @@ function formatDateTime(value: string) {
 function Info({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="text-[10px] uppercase text-muted-foreground">{label}</div>
-      <div className="font-medium">{value}</div>
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="num font-medium">{value}</div>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, Database, DownloadCloud, Info, XCircle } from "lucide-react";
+import { CheckCircle2, DownloadCloud, Info, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { currentCalendarYear } from "@/lib/epi-week";
@@ -79,16 +79,15 @@ export function IbgePopulationCard() {
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-sm">
-          <Database className="h-4 w-4 text-primary" />
-          População IBGE
-        </CardTitle>
-        <CardDescription className="text-xs">
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle className="text-[17px]">População IBGE</CardTitle>
+        </div>
+        <CardDescription className="text-[13px]">
           Base municipal por ano para incidência, taxa de detecção e cobertura.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
+        <div className="rounded-lg bg-blue-50 p-3.5 text-sm text-blue-900">
           <div className="flex gap-2">
             <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <p>
@@ -98,7 +97,7 @@ export function IbgePopulationCard() {
           </div>
         </div>
 
-        <div className="grid gap-2 rounded-md border bg-background p-3 text-xs sm:grid-cols-2">
+        <div className="grid gap-2 rounded-lg border p-4 text-sm sm:grid-cols-2">
           <InfoItem label="Registros" value={(status?.totalRows ?? 0).toLocaleString("pt-BR")} />
           <InfoItem
             label="Período carregado"
@@ -112,28 +111,28 @@ export function IbgePopulationCard() {
         </div>
 
         <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
-          <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+          <label className="grid gap-1 text-[13px] text-muted-foreground">
             Ano inicial
             <input
               type="number"
               value={yearStart}
               onChange={event => setYearStart(event.target.value)}
               disabled={!canSync}
-              className="h-8 rounded-md border bg-background px-2 text-sm text-foreground"
+              className="h-10 rounded-md border bg-background px-2 text-sm text-foreground"
             />
           </label>
-          <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+          <label className="grid gap-1 text-[13px] text-muted-foreground">
             Ano final
             <input
               type="number"
               value={yearEnd}
               onChange={event => setYearEnd(event.target.value)}
               disabled={!canSync}
-              className="h-8 rounded-md border bg-background px-2 text-sm text-foreground"
+              className="h-10 rounded-md border bg-background px-2 text-sm text-foreground"
             />
           </label>
-          <Button size="sm" variant="outline" className="self-end" onClick={syncPopulation} disabled={syncing || !canSync}>
-            <DownloadCloud className="mr-1.5 h-3.5 w-3.5" />
+          <Button variant="outline" className="h-10 self-end" onClick={syncPopulation} disabled={syncing || !canSync}>
+            <DownloadCloud className="mr-1.5 h-4 w-4" />
             {syncing ? "Sincronizando..." : "Sincronizar"}
           </Button>
         </div>
@@ -168,8 +167,8 @@ export function IbgePopulationCard() {
 function InfoItem({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="text-[10px] uppercase text-muted-foreground">{label}</div>
-      <div className="font-medium">{value}</div>
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="num font-medium">{value}</div>
     </div>
   );
 }

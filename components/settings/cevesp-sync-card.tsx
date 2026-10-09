@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AlertCircle, CheckCircle2, Database, Download, Upload } from "lucide-react";
+import { AlertCircle, CheckCircle2, Download, Upload } from "lucide-react";
+import { FreshnessBadge } from "@/components/settings/freshness-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { currentCalendarYear } from "@/lib/epi-week";
@@ -239,17 +240,17 @@ export function CevespSyncCard() {
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-sm">
-          <Database className="h-4 w-4 text-primary" />
-          Sincronização CEVESP
-        </CardTitle>
-        <CardDescription className="text-xs">
-          Sincronize o MySQL (rede SES-SP) com o Supabase para que o agente use dados reais.
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle className="text-[17px]">CEVESP · conjuntivites</CardTitle>
+          <FreshnessBadge lastSync={status?.lastSync} hasData={status?.hasData} />
+        </div>
+        <CardDescription className="text-[13px]">
+          Notificações do banco MySQL da rede SES-SP. O site lê uma cópia; importe um arquivo novo sempre que a origem mudar.
         </CardDescription>
       </CardHeader>
 
       <CardContent className="space-y-4">
-        <div className="rounded-md bg-muted/50 px-3 py-2 text-xs">
+        <div className="rounded-lg bg-muted/50 px-3 py-2 text-[13px]">
           {status === null ? (
             <span className="text-muted-foreground">Verificando cache...</span>
           ) : status.hasData ? (
@@ -269,7 +270,7 @@ export function CevespSyncCard() {
         )}
 
         {status?.hasData && (
-          <div className="grid gap-2 rounded-md border bg-background p-3 text-xs sm:grid-cols-2">
+          <dl className="grid gap-x-6 gap-y-2.5 rounded-lg border p-4 text-sm sm:grid-cols-2">
             <StatusItem label="Período do cache" value={cachePeriod} />
             <StatusItem label="Total de casos" value={status.totalCases.toLocaleString("pt-BR")} />
             <StatusItem label="Municípios" value={status.municipalities.toLocaleString("pt-BR")} />
@@ -277,16 +278,16 @@ export function CevespSyncCard() {
             <StatusItem label="Última notificação" value={status.latestNotificationDate ? new Date(status.latestNotificationDate).toLocaleDateString("pt-BR") : "não informada"} />
             <StatusItem label="Última importação" value={status.lastSync ? new Date(status.lastSync).toLocaleString("pt-BR") : "não registrada"} />
             {status.years.length > 0 && (
-              <div className="text-muted-foreground sm:col-span-2">
+              <div className="text-[13px] text-muted-foreground sm:col-span-2">
                 Anos disponíveis: {status.years.join(", ")}
               </div>
             )}
-          </div>
+          </dl>
         )}
 
         <div className="space-y-2">
-          <p className="text-xs font-medium">
-            <span className="mr-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] text-primary-foreground">1</span>
+          <p className="text-sm font-semibold">
+            <span className="mr-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[11px] text-primary-foreground">1</span>
             No escritório (rede SES-SP) - exporte o MySQL
           </p>
           <div className="flex flex-wrap items-center gap-2">
@@ -294,29 +295,29 @@ export function CevespSyncCard() {
               value={exportYear}
               onChange={e => setExportYear(e.target.value)}
               disabled={exporting || importing || !canSync}
-              className="h-8 rounded-md border bg-background px-2 text-xs"
+              className="h-10 rounded-lg border bg-background px-2.5 text-sm"
             >
               {EXPORT_YEARS.map(y => (
                 <option key={y} value={y}>{y}</option>
               ))}
             </select>
-            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => handleExport("year")} disabled={exporting || importing || !canSync}>
-              <Download className="mr-1.5 h-3.5 w-3.5" />
+            <Button variant="outline" size="sm" className="h-10" onClick={() => handleExport("year")} disabled={exporting || importing || !canSync}>
+              <Download className="mr-1.5 h-4 w-4" />
               {exporting ? "Exportando..." : `Exportar ${exportYear}`}
             </Button>
-            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => handleExport("full")} disabled={exporting || importing || !canSync}>
-              <Download className="mr-1.5 h-3.5 w-3.5" />
+            <Button variant="outline" size="sm" className="h-10" onClick={() => handleExport("full")} disabled={exporting || importing || !canSync}>
+              <Download className="mr-1.5 h-4 w-4" />
               Todos os anos
             </Button>
           </div>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[13px] text-muted-foreground">
             Exporte ano por ano para arquivos menores, ou todos os anos de uma vez.
           </p>
         </div>
 
         <div className="space-y-2">
-          <p className="text-xs font-medium">
-            <span className="mr-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] text-primary-foreground">2</span>
+          <p className="text-sm font-semibold">
+            <span className="mr-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[11px] text-primary-foreground">2</span>
             Em qualquer lugar - importe o arquivo para o Supabase
           </p>
           <input
@@ -329,8 +330,8 @@ export function CevespSyncCard() {
               if (file) void handleImport(file);
             }}
           />
-          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => fileRef.current?.click()} disabled={importing || exporting || !canSync}>
-            <Upload className="mr-1.5 h-3.5 w-3.5" />
+          <Button variant="outline" size="sm" className="h-10" onClick={() => fileRef.current?.click()} disabled={importing || exporting || !canSync}>
+            <Upload className="mr-1.5 h-4 w-4" />
             {importing ? "Importando..." : "Selecionar arquivo (.json ou .csv)"}
           </Button>
 
@@ -344,14 +345,14 @@ export function CevespSyncCard() {
               </p>
             </div>
           )}
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[13px] text-muted-foreground">
             Para atualizar os dados, basta importar um arquivo mais recente — registros existentes são atualizados e novos são adicionados.
           </p>
         </div>
 
         <div className="space-y-2">
-          <p className="text-xs font-medium">
-            <span className="mr-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] text-primary-foreground">3</span>
+          <p className="text-sm font-semibold">
+            <span className="mr-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[11px] text-primary-foreground">3</span>
             Baixar dados do Supabase (CSV)
           </p>
           <div className="flex flex-wrap items-center gap-2">
@@ -359,25 +360,25 @@ export function CevespSyncCard() {
               value={downloadYear}
               onChange={e => setDownloadYear(e.target.value)}
               disabled={downloading || importing || exporting || !canSync}
-              className="h-8 min-w-0 rounded-md border bg-background px-2 text-xs"
+              className="h-10 min-w-0 rounded-lg border bg-background px-2.5 text-sm"
             >
               <option value="all">Todos os anos</option>
               {(status?.years ?? []).map(y => (
                 <option key={y} value={String(y)}>{y}</option>
               ))}
             </select>
-            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => void handleDownloadCache()} disabled={downloading || importing || exporting || !canSync}>
-              <Download className="mr-1.5 h-3.5 w-3.5" />
+            <Button variant="outline" size="sm" className="h-10" onClick={() => void handleDownloadCache()} disabled={downloading || importing || exporting || !canSync}>
+              <Download className="mr-1.5 h-4 w-4" />
               {downloading ? "Exportando..." : "Baixar CSV"}
             </Button>
           </div>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[13px] text-muted-foreground">
             Exporta os dados atualmente no Supabase como CSV.
           </p>
         </div>
 
         {msg && (
-          <div className={`flex items-start gap-2 rounded-md px-3 py-2 text-xs ${
+          <div className={`flex items-start gap-2 rounded-lg px-3 py-2.5 text-sm ${
             msg.type === "success" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
           }`}>
             {msg.type === "success"
@@ -393,9 +394,9 @@ export function CevespSyncCard() {
 
 function StatusItem({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded border bg-muted/30 px-2 py-1">
-      <div className="text-[10px] uppercase text-muted-foreground">{label}</div>
-      <div className="font-medium">{value}</div>
+    <div className="flex items-baseline justify-between gap-3 border-b pb-2 last:border-0">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="num text-right font-medium">{value}</dd>
     </div>
   );
 }
