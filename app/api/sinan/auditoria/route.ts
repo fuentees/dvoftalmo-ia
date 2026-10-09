@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { auditarSinanTracoma, type SinanAuditResult } from "@/services/sinan-tracoma";
+import { currentCalendarYear } from "@/lib/epi-week";
 import { validateTracomaFilters, type TracomaFilter } from "@/lib/tracoma-data";
 
 function csvEscape(value: unknown) {
@@ -128,6 +129,11 @@ export async function GET(req: NextRequest) {
   let filters: TracomaFilter;
   try {
     filters = validateTracomaFilters({ municipio, gve, yearStart: searchParams.get("yearStart"), yearEnd: searchParams.get("yearEnd") });
+    // Sem ano informado, audita os dois últimos anos: a base inteira levava mais de um minuto
+    if (!filters.yearStart && !filters.yearEnd) {
+      const year = currentCalendarYear();
+      filters = { ...filters, yearStart: year - 1, yearEnd: year };
+    }
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message }, { status: 400 });
   }

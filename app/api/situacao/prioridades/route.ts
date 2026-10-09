@@ -6,6 +6,7 @@ import { fetchCevespKpis } from "@/services/cevesp-kpis";
 import { findInvalidRecords } from "@/services/cevesp-corrections";
 import { buildSinanTracomaRates } from "@/services/population-rates";
 import { auditarSinanTracoma } from "@/services/sinan-tracoma";
+import { currentCalendarYear } from "@/lib/epi-week";
 
 type PriorityLevel = "critica" | "alta" | "media";
 type PrioritySource = "alerta" | "cevesp" | "sinan" | "qualidade";
@@ -80,12 +81,18 @@ async function loadAlerts(): Promise<AlertRow[]> {
 async function buildPriorities(filters: { gve?: string; municipio?: string; yearStart?: number; yearEnd?: number }) {
   const items: PriorityItem[] = [];
 
+  // Sem ano escolhido: CEVESP no ano atual e SINAN (anual) nos dois últimos anos.
+  // Auditar as bases inteiras levava minutos e a Sala de Situação não abria.
+  const year = currentCalendarYear();
+  const semAno = !filters.yearStart && !filters.yearEnd;
+  const sinanFilters = semAno ? { ...filters, yearStart: year - 1, yearEnd: year } : filters;
+
   const [alerts, kpisResult, qualityResult, sinanResult, ratesResult] = await Promise.allSettled([
     loadAlerts(),
     fetchCevespKpis(),
-    findInvalidRecords(300, filters.yearStart, filters.gve, filters.yearEnd),
-    auditarSinanTracoma(filters),
-    buildSinanTracomaRates(filters)
+    findInvalidRecords(300, semAno ? year : filters.yearStart, filters.gve, semAno ? year : filters.yearEnd),
+    auditarSinanTracoma(sinanFilters),
+    buildSinanTracomaRates(sinanFilters)
   ]);
   const sources = ["Alertas", "CEVESP", "Qualidade CEVESP", "SINAN", "Taxas SINAN"];
   const unavailableSources = [alerts, kpisResult, qualityResult, sinanResult, ratesResult]
