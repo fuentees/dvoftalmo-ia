@@ -2,12 +2,14 @@
 
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, ArrowRight, CheckCircle2, Map, RefreshCw, Search } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, RefreshCw, Search } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
+import { ChoroplethMap } from "@/components/epidemiology/choropleth-map";
+import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { listarGvesSp, listarMunicipiosPorGve } from "@/lib/municipios-sp";
 
@@ -124,7 +126,7 @@ export function TerritoriesView() {
     () => searchedRows.filter((item) => agravo === "todos" || item.agravo === agravo),
     [agravo, searchedRows]
   );
-  const nextAction = rows[0];
+  const [mapa, setMapa] = useState<"gve" | "municipio">("gve");
   const byAgravo = useMemo(() => {
     return (["Conjuntivite", "Tracoma", "Dados"] as const).map((item) => {
       const items = searchedRows.filter((row) => row.agravo === item);
@@ -137,243 +139,186 @@ export function TerritoriesView() {
     });
   }, [searchedRows]);
 
+  // Mapa: nível de prioridade mais alto de cada território (3 crítica, 2 alta, 1 média)
+  const nivelPorTerritorio = useMemo(() => {
+    const mapa: Record<string, number> = {};
+    for (const row of rows) {
+      const valor = 3 - levelRank(row.level);
+      mapa[row.territorio] = Math.max(mapa[row.territorio] ?? 0, valor);
+    }
+    return mapa;
+  }, [rows]);
+
   return (
-    <div className="mx-auto flex w-full max-w-[1200px] flex-col">
-      <div className="px-4 pt-6 md:px-7 md:pt-7">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              <Badge className="bg-muted text-foreground">{rows.length.toLocaleString("pt-BR")} território(s)</Badge>
-            </div>
-            <h1 className="text-[28px] font-bold tracking-tight">Territórios</h1>
-            <p className="mt-1.5 text-[15px] text-muted-foreground">
-              Ranking operacional por município/GVE, agravo, evidência e ação recomendada.
-            </p>
-          </div>
+    <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6 p-4 md:p-7">
+      <PageHeader
+        title="Territórios"
+        description="Onde agir primeiro: casos, alertas e qualidade do dado por município e GVE, com o motivo de cada posição."
+        action={
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={() => priorities.refetch()} disabled={priorities.isFetching}>
+            <Button variant="outline" className="h-11" onClick={() => priorities.refetch()} disabled={priorities.isFetching}>
               <RefreshCw className={`h-4 w-4 ${priorities.isFetching ? "animate-spin" : ""}`} />
               Atualizar
             </Button>
-            <Button variant="outline" size="sm" asChild>
-              <Link href="/qualidade-dados">Qualidade</Link>
-            </Button>
-            <Button size="sm" asChild>
-              <Link href={nextAction?.evidenciaHref ?? "/dashboard"}>Abrir evidência</Link>
-            </Button>
             <Button
               variant="outline"
-              size="sm"
+              className="h-11"
               onClick={() => downloadCsv(`territorios-priorizados-${new Date().toISOString().slice(0, 10)}.csv`, rows)}
               disabled={!rows.length}
             >
               Exportar CSV
             </Button>
           </div>
-        </div>
+        }
+      />
+
+      <div className="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-4">
+        <label className="flex min-w-[220px] flex-1 flex-col gap-1 text-[13px] text-muted-foreground">
+          Buscar
+          <span className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" aria-hidden="true" />
+            <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Território, motivo ou ação" className="h-10 pl-9" />
+          </span>
+        </label>
+        <label className="flex flex-col gap-1 text-[13px] text-muted-foreground">
+          Ano
+          <input type="number" value={yearStart} onChange={(event) => setYearStart(event.target.value)} placeholder="Atual" className="h-10 w-24 rounded-lg border bg-background px-2.5 text-sm text-foreground" />
+        </label>
+        <label className="flex flex-col gap-1 text-[13px] text-muted-foreground">
+          até
+          <input type="number" value={yearEnd} onChange={(event) => setYearEnd(event.target.value)} className="h-10 w-24 rounded-lg border bg-background px-2.5 text-sm text-foreground" />
+        </label>
+        <label className="flex flex-col gap-1 text-[13px] text-muted-foreground">
+          GVE
+          <select value={gve} onChange={(event) => { setGve(event.target.value); setMunicipio(""); }} className="h-10 min-w-44 rounded-lg border bg-background px-2.5 text-sm text-foreground">
+            <option value="">Todos os GVEs</option>
+            {gveOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-[13px] text-muted-foreground">
+          Município
+          <select value={municipio} onChange={(event) => setMunicipio(event.target.value)} className="h-10 min-w-48 rounded-lg border bg-background px-2.5 text-sm text-foreground">
+            <option value="">Todos os municípios</option>
+            {municipioOptions.map((item) => <option key={item.codigo} value={item.nome}>{item.nome}</option>)}
+          </select>
+        </label>
+        {(yearStart || yearEnd || gve || municipio) && (
+          <Button variant="ghost" className="h-10" onClick={() => { setYearStart(""); setYearEnd(""); setGve(""); setMunicipio(""); }}>Limpar</Button>
+        )}
       </div>
 
-      <div className="space-y-5 px-4 py-6 md:px-7">
-        <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Buscar território, agravo, evidência ou ação"
-              className="pl-9"
-            />
-          </div>
-          <div className="flex flex-wrap gap-2 rounded-md border bg-card p-1">
-            {(["todos", "Conjuntivite", "Tracoma", "Dados"] as const).map((item) => (
-              <button
-                key={item}
-                onClick={() => setAgravo(item)}
-                className={`h-9 rounded px-3 text-sm font-medium transition-colors ${
-                  agravo === item ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                }`}
-              >
-                {item === "todos" ? "Todos" : item}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <Card>
-          <CardContent className="flex flex-wrap items-end gap-3 pt-5">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-muted-foreground">Ano início</label>
-              <input
-                type="number"
-                value={yearStart}
-                onChange={(event) => setYearStart(event.target.value)}
-                className="h-9 w-28 rounded-md border bg-background px-2 text-sm"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-muted-foreground">Ano fim</label>
-              <input
-                type="number"
-                value={yearEnd}
-                onChange={(event) => setYearEnd(event.target.value)}
-                className="h-9 w-28 rounded-md border bg-background px-2 text-sm"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-muted-foreground">GVE</label>
-              <select
-                value={gve}
-                onChange={(event) => { setGve(event.target.value); setMunicipio(""); }}
-                className="h-9 min-w-44 rounded-md border bg-background px-2 text-sm"
-              >
-                <option value="">Todos os GVEs</option>
-                {gveOptions.map((item) => <option key={item} value={item}>{item}</option>)}
-              </select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-muted-foreground">Município</label>
-              <select
-                value={municipio}
-                onChange={(event) => setMunicipio(event.target.value)}
-                className="h-9 min-w-52 rounded-md border bg-background px-2 text-sm"
-              >
-                <option value="">Todos os municípios</option>
-                {municipioOptions.map((item) => <option key={item.codigo} value={item.nome}>{item.nome}</option>)}
-              </select>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => { setYearStart(""); setYearEnd(""); setGve(""); setMunicipio(""); }}
-              disabled={!yearStart && !yearEnd && !gve && !municipio}
+      <div role="group" aria-label="Agravo" className="flex flex-wrap gap-2">
+        {(["todos", "Conjuntivite", "Tracoma", "Dados"] as const).map((item) => {
+          const info = byAgravo.find((b) => b.agravo === item);
+          return (
+            <button
+              key={item}
+              type="button"
+              aria-pressed={agravo === item}
+              onClick={() => setAgravo(item)}
+              className={cn(
+                "h-10 rounded-full border px-4 text-sm transition-colors",
+                agravo === item ? "border-primary bg-primary font-semibold text-primary-foreground" : "border-input bg-card hover:bg-muted"
+              )}
             >
-              Limpar
-            </Button>
-          </CardContent>
-        </Card>
+              {item === "todos" ? "Todos" : item === "Dados" ? "Qualidade do dado" : item}{" "}
+              <span className="num">{(item === "todos" ? searchedRows.length : info?.total ?? 0).toLocaleString("pt-BR")}</span>
+            </button>
+          );
+        })}
+      </div>
 
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Card>
-            <CardContent className="pt-4">
-              <p className="text-xs text-muted-foreground">Críticos</p>
-              <p className="mt-1 text-3xl font-bold text-red-600 tabular-nums">{priorities.data?.summary.critica ?? 0}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4">
-              <p className="text-xs text-muted-foreground">Altos</p>
-              <p className="mt-1 text-3xl font-bold text-amber-700 tabular-nums">{priorities.data?.summary.alta ?? 0}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4">
-              <p className="text-xs text-muted-foreground">Total filtrado</p>
-              <p className="mt-1 num text-[32px] font-semibold leading-none">{rows.length.toLocaleString("pt-BR")}</p>
-            </CardContent>
-          </Card>
-        </div>
+      {priorities.isError && (
+        <p role="alert" className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 p-3.5 text-sm text-amber-900">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          Territórios indisponíveis nesta consulta: {priorities.error.message}
+        </p>
+      )}
 
-        {!priorities.isLoading && !priorities.isError && nextAction && (
-          <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr]">
-            <Link
-              href={nextAction.evidenciaHref}
-              className="group rounded-md border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-primary/5"
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge className={priorityStyle(nextAction.level)}>{nextAction.level}</Badge>
-                <Badge className="bg-muted text-foreground">{nextAction.agravo}</Badge>
-                <span className="text-xs text-muted-foreground">{nextAction.prazo}</span>
-              </div>
-              <p className="mt-3 flex items-center gap-2 text-base font-semibold">
-                <Map className="h-4 w-4 text-primary" />
-                {nextAction.territorio}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">{nextAction.motivo}</p>
-              <div className="mt-3 flex items-center justify-between gap-3 text-sm">
-                <span>{nextAction.acao}</span>
-                <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary" />
-              </div>
-            </Link>
-            <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
-              {byAgravo.map((item) => (
+      <div className="grid items-start gap-4 xl:grid-cols-5">
+        <section className="flex flex-col gap-3 rounded-xl border bg-card p-5 xl:col-span-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-[17px] font-semibold">Mapa de prioridade</h2>
+            <div role="group" aria-label="Nível do mapa" className="inline-flex rounded-lg border p-0.5">
+              {(["gve", "municipio"] as const).map((modo) => (
                 <button
-                  key={item.agravo}
+                  key={modo}
                   type="button"
-                  onClick={() => setAgravo(item.agravo)}
-                  className="rounded-md border bg-card p-3 text-left transition-colors hover:border-primary/40 hover:bg-muted/40"
+                  aria-pressed={mapa === modo}
+                  onClick={() => setMapa(modo)}
+                  className={cn("h-9 rounded-md px-3 text-[13px]", mapa === modo ? "bg-secondary font-semibold text-secondary-foreground" : "text-muted-foreground")}
                 >
-                  <p className="text-xs font-medium text-muted-foreground">{item.agravo}</p>
-                  <p className="mt-1 num text-[28px] font-semibold leading-none">{item.total.toLocaleString("pt-BR")}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {item.critica.toLocaleString("pt-BR")} crítica(s), {item.alta.toLocaleString("pt-BR")} alta(s)
-                  </p>
+                  {modo === "gve" ? "GVE" : "Município"}
                 </button>
               ))}
             </div>
           </div>
-        )}
-
-        {priorities.isLoading && (
-          <div className="flex h-44 items-center justify-center rounded-md border bg-card text-sm text-muted-foreground">
-            <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-            Consolidando territórios...
+          <div className="overflow-hidden rounded-lg border">
+            <ChoroplethMap
+              dataUrl={`/api/geo/shapefiles?type=${mapa}`}
+              valueMap={nivelPorTerritorio}
+              colorScheme={(v) => (v == null ? "#E3E9E7" : v >= 3 ? "#B42318" : v >= 2 ? "#E3A06B" : "#7CC4B7")}
+              label="Nível de prioridade"
+            />
           </div>
-        )}
+          <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-[#B42318]" />Crítica</span>
+            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-[#E3A06B]" />Alta</span>
+            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-[#7CC4B7]" />Média</span>
+            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm border bg-[#E3E9E7]" />Sem prioridade</span>
+          </div>
+        </section>
 
-        {priorities.isError && (
-          <Card className="border-amber-200 bg-amber-50">
-            <CardContent className="flex gap-3 py-4 text-sm text-amber-900">
-              <AlertTriangle className="mt-0.5 h-4 w-4" />
-              <div>
-                <p className="font-medium">Territórios indisponíveis nesta consulta</p>
-                <p className="text-amber-800">{priorities.error.message}</p>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {!priorities.isLoading && !priorities.isError && rows.length === 0 && (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-14 text-center text-sm text-muted-foreground">
-              <CheckCircle2 className="mb-3 h-10 w-10 text-teal-600" />
+        <section className="flex flex-col gap-3 rounded-xl border bg-card p-5 xl:col-span-3">
+          <div className="flex items-baseline justify-between gap-2">
+            <h2 className="text-[17px] font-semibold">Ranking de prioridade</h2>
+            <span className="num text-[13px] text-muted-foreground">{rows.length.toLocaleString("pt-BR")} território(s)</span>
+          </div>
+          {priorities.isLoading ? (
+            <div className="space-y-2" aria-busy="true">{[0, 1, 2, 3].map((i) => <div key={i} className="h-12 animate-pulse rounded-lg bg-muted" />)}</div>
+          ) : rows.length === 0 ? (
+            <p className="flex flex-col items-center py-10 text-center text-sm text-muted-foreground">
+              <CheckCircle2 className="mb-2 h-8 w-8 text-teal-600" aria-hidden="true" />
               Nenhum território priorizado com os filtros atuais.
-            </CardContent>
-          </Card>
-        )}
-
-        <div className="grid gap-3">
-          {rows.map((item, index) => (
-            <Link
-              key={item.id}
-              href={item.evidenciaHref}
-              className="group grid gap-3 rounded-md border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-primary/5 lg:grid-cols-[44px_150px_1fr_240px_auto]"
-            >
-              <div className="flex h-10 w-10 items-center justify-center rounded-md bg-muted text-sm font-semibold tabular-nums">
-                {index + 1}
-              </div>
-              <div className="space-y-1">
-                <Badge className={priorityStyle(item.level)}>{item.level}</Badge>
-                <p className="text-xs text-muted-foreground">{item.agravo}</p>
-              </div>
-              <div className="min-w-0">
-                <p className="flex items-center gap-2 truncate text-sm font-semibold">
-                  <Map className="h-4 w-4 text-primary" />
-                  {item.territorio}
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">{item.motivo}</p>
-                {item.detalhe && <p className="mt-1 text-xs text-muted-foreground">{item.detalhe}</p>}
-              </div>
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Ação recomendada</p>
-                <p className="mt-1 text-sm leading-snug">{item.acao}</p>
-              </div>
-              <div className="flex items-center justify-between gap-3 lg:justify-end">
-                <Badge className="bg-muted text-foreground">{item.prazo}</Badge>
-                <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary" />
-              </div>
-            </Link>
-          ))}
-        </div>
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
+                    <th className="px-2 py-2 font-semibold">#</th>
+                    <th className="px-2 py-2 font-semibold">Território</th>
+                    <th className="px-2 py-2 font-semibold">Motivo</th>
+                    <th className="px-2 py-2 font-semibold">Prazo</th>
+                    <th className="px-2 py-2"><span className="sr-only">Abrir</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((item, index) => (
+                    <tr key={item.id} className="border-t align-top">
+                      <td className="num px-2 py-3 text-muted-foreground">{index + 1}</td>
+                      <td className="px-2 py-3">
+                        <span className="block font-semibold">{item.territorio}</span>
+                        <span className="text-xs text-muted-foreground">{item.agravo}</span>
+                      </td>
+                      <td className="px-2 py-3">
+                        <Badge className={priorityStyle(item.level)}>{item.motivo}</Badge>
+                        <p className="mt-1.5 text-[13px] text-muted-foreground">{item.acao}</p>
+                        {item.detalhe && <p className="text-xs text-muted-foreground">{item.detalhe}</p>}
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-3 text-[13px]">{item.prazo}</td>
+                      <td className="px-2 py-3 text-right">
+                        <Link href={item.evidenciaHref} aria-label={`Abrir evidência de ${item.territorio}`} className="inline-flex h-9 w-9 items-center justify-center rounded-lg hover:bg-muted">
+                          <ArrowRight className="h-4 w-4" />
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );
