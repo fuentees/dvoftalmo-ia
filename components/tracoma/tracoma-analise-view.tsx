@@ -479,7 +479,7 @@ export function TracomaAnaliseView({ externalFilters }: { externalFilters?: Trac
   }
 
   return (
-    <div className="min-w-0 space-y-6 p-4 sm:p-6">
+    <div className="min-w-0 space-y-6 px-4 py-6 md:px-7">
       {/* ── Loading / Error ── */}
       {rates.isLoading && (
         <div className="flex h-32 items-center justify-center gap-2 text-sm text-muted-foreground">
@@ -538,19 +538,7 @@ export function TracomaAnaliseView({ externalFilters }: { externalFilters?: Trac
             </div>
           </div>
 
-          <ExecutiveSummary
-            totalPositivos={totalPositivos}
-            prevMedia={prevMedia}
-            muniAcimaMeta={muniAcimaMeta}
-            topPriorityMuni={topPriorityMuni}
-            demographics={demographics.data}
-          />
-
           <div className="space-y-4">
-            <SectionIntro
-              title="Indicadores principais"
-              description="Contagens e positividade do NOTTRACONET no recorte. Não representam prevalência populacional nem confirmam eliminação."
-            />
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
               <MetricCard
                 label="Municípios com dados"
@@ -580,9 +568,36 @@ export function TracomaAnaliseView({ externalFilters }: { externalFilters?: Trac
             </div>
           </div>
 
+          <p className="rounded-lg bg-blue-50 p-3.5 text-sm leading-relaxed text-blue-900 dark:bg-blue-950/40 dark:text-blue-100">
+            Positividade entre examinados não é prevalência na população e não confirma eliminação. Exames repetidos da mesma pessoa contam mais de uma vez.
+          </p>
+
+          <ExecutiveSummary
+            totalPositivos={totalPositivos}
+            prevMedia={prevMedia}
+            muniAcimaMeta={muniAcimaMeta}
+            topPriorityMuni={topPriorityMuni}
+            demographics={demographics.data}
+          />
+        </>
+      )}
+
+      {hasData && byMuni.length === 0 && !rates.isLoading && (
+        <Card>
+          <CardContent className="py-8 text-center text-sm text-muted-foreground">
+            Nenhum dado NOTTRACONET encontrado para os filtros selecionados.
+          </CardContent>
+        </Card>
+      )}
+      <div className="space-y-4">
+        <SectionIntro title="Série histórica" description="Cada banco conserva sua própria contagem. Lacunas representam ausência de dados disponíveis." />
+        <TracomaChartsView filters={{ gve: gve || undefined, municipio: municipio || undefined, yearStart: yearStart ? String(yearStart) : undefined, yearEnd: yearEnd ? String(yearEnd) : undefined }} />
+      </div>
+
+      {hasData && byMuni.length > 0 && (
           <div className="space-y-4">
             <SectionIntro
-              title="Território e taxas"
+              title="Onde"
               description="Mapa e tabela de positividade, detecção registrada e atividade de exames. Compare considerando o número de examinados e a completude."
             />
             <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -663,21 +678,12 @@ export function TracomaAnaliseView({ externalFilters }: { externalFilters?: Trac
               }
             />
           </div>
-        </>
       )}
 
-      {hasData && byMuni.length === 0 && !rates.isLoading && (
-        <Card>
-          <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            Nenhum dado NOTTRACONET encontrado para os filtros selecionados.
-          </CardContent>
-        </Card>
-      )}
       <div className="space-y-4">
-        <SectionIntro title="Série histórica" description="Cada banco conserva sua própria contagem. Lacunas representam ausência de dados disponíveis." />
-        <TracomaChartsView filters={{ gve: gve || undefined, municipio: municipio || undefined, yearStart: yearStart ? String(yearStart) : undefined, yearEnd: yearEnd ? String(yearEnd) : undefined }} />
+        <SectionIntro title="Perfil dos casos" description="Sexo, faixa etária e forma clínica das notificações individuais (TRACONET)." />
+        <DemographicsPanel data={demographics.data} loading={demographics.isLoading} error={demographics.error} />
       </div>
-      <DemographicsPanel data={demographics.data} loading={demographics.isLoading} error={demographics.error} />
     </div>
   );
 }
