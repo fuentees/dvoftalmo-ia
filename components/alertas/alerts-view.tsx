@@ -117,16 +117,15 @@ export function AlertsView() {
   }, [alerts, filter]);
 
   return (
-    <div className="flex flex-col">
-      <div className="border-b bg-card px-6 py-4">
+    <div className="mx-auto flex w-full max-w-[1200px] flex-col">
+      <div className="px-4 pt-6 md:px-7 md:pt-7">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="mb-2 flex flex-wrap items-center gap-2">
-              <Badge className="border-primary/30 bg-primary/10 text-primary">Resposta</Badge>
               {pending > 0 && <Badge className="border-red-200 bg-red-50 text-red-700">{pending} pendentes</Badge>}
             </div>
-            <h1 className="text-xl font-semibold tracking-tight">Alertas epidemiológicos</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <h1 className="text-[28px] font-bold tracking-tight">Alertas</h1>
+            <p className="mt-1.5 text-[15px] text-muted-foreground">
               Eventos que merecem verificação local, investigação de surto ou reforço das medidas de controle.
             </p>
           </div>

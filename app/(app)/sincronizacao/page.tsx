@@ -1,4 +1,3 @@
-import { Database } from "lucide-react";
 import { CevespSyncCard } from "@/components/settings/cevesp-sync-card";
 import { IbgePopulationCard } from "@/components/settings/ibge-population-card";
 import { SinanTracomaSyncCard } from "@/components/settings/sinan-tracoma-sync-card";
@@ -7,14 +6,11 @@ export const metadata = { title: "Sincronização de Dados" };
 
 export default function SincronizacaoPage() {
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-6">
-      <div className="flex items-center gap-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
-          <Database className="h-5 w-5 text-primary" />
-        </div>
+    <div className="mx-auto w-full max-w-[1200px] space-y-6 p-4 md:p-7">
+      <div>
         <div>
-          <h1 className="text-xl font-semibold">Sincronização de Dados</h1>
-          <p className="text-sm text-muted-foreground">
+          <h1 className="text-[28px] font-bold tracking-tight">Sincronização</h1>
+          <p className="mt-1.5 text-[15px] text-muted-foreground">
             Mantenha os caches do Supabase atualizados com os bancos MySQL da rede SES-SP.
           </p>
         </div>

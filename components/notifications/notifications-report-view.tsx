@@ -651,7 +651,8 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
 
   return (
     <div className="flex flex-col">
-      <div className="border-b bg-card px-6 py-4">
+      {/* Dentro da página da conjuntivite (hideFilters), título e filtros já estão no topo */}
+      {!hideFilters && <div className="border-b bg-card px-6 py-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-2">
@@ -774,9 +775,9 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
             );
           })}
         </div>}
-      </div>
+      </div>}
 
-      <div className="space-y-6 p-6">
+      <div className={hideFilters ? "space-y-6 px-4 py-6 md:px-7" : "space-y-6 p-6"}>
         {(report.isLoading || quality.isLoading) && (
           <div className="flex h-32 items-center justify-center gap-2 text-sm text-muted-foreground">
             <RefreshCw className="h-4 w-4 animate-spin" />

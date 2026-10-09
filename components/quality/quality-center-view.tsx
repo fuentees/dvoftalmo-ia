@@ -419,19 +419,18 @@ export function QualityCenterView() {
   const sinanDivergences = showSinan ? sinan.data?.crossBankDivergences?.filter((item) => item.risco === "alto").length ?? 0 : 0;
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-6">
+    <div className="mx-auto w-full max-w-[1200px] space-y-6 p-4 md:p-7">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            <Badge className="border-primary/30 bg-primary/10 text-primary">Central de Qualidade</Badge>
             {actions.length > 0 ? (
               <Badge className="border-red-200 bg-red-50 text-red-700">{actions.length} frentes de ação</Badge>
             ) : (
               <Badge className="border-teal-200 bg-teal-50 text-teal-700">sem prioridade crítica carregada</Badge>
             )}
           </div>
-          <h1 className="text-xl font-semibold tracking-tight">Central executiva de qualidade dos dados</h1>
-          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+          <h1 className="text-[28px] font-bold tracking-tight">Qualidade dos dados</h1>
+          <p className="mt-1.5 max-w-3xl text-[15px] text-muted-foreground">
             Pendências consolidadas para decidir o que corrigir primeiro. O detalhamento técnico fica nas análises de cada agravo.
           </p>
         </div>

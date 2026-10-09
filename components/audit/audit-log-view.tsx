@@ -58,16 +58,15 @@ export function AuditLogView() {
   }, [entries]);
 
   return (
-    <div className="flex flex-col">
-      <div className="border-b bg-card px-6 py-4">
+    <div className="mx-auto flex w-full max-w-[1200px] flex-col">
+      <div className="px-4 pt-6 md:px-7 md:pt-7">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="mb-2 flex flex-wrap items-center gap-2">
-              <Badge className="border-primary/30 bg-primary/10 text-primary">Dados</Badge>
               <Badge className="bg-muted text-foreground">Rastreabilidade</Badge>
             </div>
-            <h1 className="text-xl font-semibold tracking-tight">Auditoria</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <h1 className="text-[28px] font-bold tracking-tight">Auditoria</h1>
+            <p className="mt-1.5 text-[15px] text-muted-foreground">
               Historico das propostas, aprovacoes, rejeicoes e aplicacoes realizadas nas bases.
             </p>
           </div>
