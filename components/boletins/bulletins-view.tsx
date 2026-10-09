@@ -1409,16 +1409,13 @@ export function BulletinsView() {
   ];
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-4 md:p-6">
+    <div className="mx-auto w-full max-w-[1200px] space-y-6 p-4 md:p-7">
 
       {/* Page header */}
-      <div className="space-y-1">
-        <div className="flex items-center gap-2">
-          <Newspaper className="h-6 w-6 text-blue-700" />
-          <h1 className="text-2xl font-semibold text-foreground">Boletins Epidemiológicos</h1>
-        </div>
-        <p className="max-w-3xl text-sm text-muted-foreground">
-          Boletins gerados automaticamente com base nos dados do CEVESP (conjuntivite) e SINAN (tracoma) — CVE/SES-SP.
+      <div className="space-y-1.5">
+        <h1 className="text-[28px] font-bold tracking-tight">Boletins</h1>
+        <p className="max-w-3xl text-[15px] text-muted-foreground">
+          Montados direto dos números do CEVESP (conjuntivite) e do SINAN (tracoma). Revise antes de divulgar.
         </p>
       </div>
 
