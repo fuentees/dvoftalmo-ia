@@ -35,9 +35,22 @@ const config: Config = {
         card: {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))"
+        },
+        sidebar: {
+          DEFAULT: "hsl(var(--sidebar))",
+          foreground: "hsl(var(--sidebar-foreground))",
+          muted: "hsl(var(--sidebar-muted))",
+          active: "hsl(var(--sidebar-active))",
+          border: "hsl(var(--sidebar-border))",
+          brand: "hsl(var(--sidebar-brand))"
         }
       },
+      fontFamily: {
+        sans: ["var(--font-sans)", "system-ui", "sans-serif"],
+        mono: ["var(--font-mono)", "ui-monospace", "monospace"]
+      },
       borderRadius: {
+        xl: "12px",
         lg: "8px",
         md: "6px",
         sm: "4px"

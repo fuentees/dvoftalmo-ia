@@ -4,43 +4,57 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222 31% 10%;
+    /* Paleta do redesenho (analise-cevesp/design): verde-azulado institucional */
+    --background: 160 12% 96%;
+    --foreground: 164 33% 9%;
     --card: 0 0% 100%;
-    --card-foreground: 222 31% 10%;
-    --primary: 174 78% 24%;
+    --card-foreground: 164 33% 9%;
+    --primary: 176 79% 20%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 210 16% 93%;
-    --secondary-foreground: 222 31% 12%;
-    --muted: 210 16% 95%;
-    --muted-foreground: 215 16% 42%;
-    --accent: 40 92% 92%;
-    --accent-foreground: 32 70% 22%;
-    --destructive: 0 72% 50%;
+    --secondary: 171 30% 92%;
+    --secondary-foreground: 176 79% 20%;
+    --muted: 165 14% 94%;
+    --muted-foreground: 162 9% 35%;
+    --accent: 25 93% 95%;
+    --accent-foreground: 25 92% 37%;
+    --destructive: 4 76% 40%;
     --destructive-foreground: 0 0% 100%;
-    --border: 214 18% 88%;
-    --input: 214 18% 88%;
-    --ring: 174 78% 32%;
+    --border: 154 11% 88%;
+    --input: 158 11% 81%;
+    --ring: 176 79% 26%;
+    /* Menu lateral (escuro nos dois temas) */
+    --sidebar: 171 50% 11%;
+    --sidebar-foreground: 166 22% 86%;
+    --sidebar-muted: 166 14% 62%;
+    --sidebar-active: 172 47% 22%;
+    --sidebar-border: 170 32% 20%;
+    --sidebar-brand: 171 48% 48%;
   }
 
   .dark {
-    --background: 220 22% 9%;
-    --foreground: 210 20% 96%;
-    --card: 220 20% 12%;
-    --card-foreground: 210 20% 96%;
-    --primary: 174 70% 36%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 220 16% 18%;
-    --secondary-foreground: 210 20% 96%;
-    --muted: 220 16% 17%;
-    --muted-foreground: 215 18% 68%;
-    --accent: 38 60% 20%;
-    --accent-foreground: 45 80% 88%;
-    --destructive: 0 68% 45%;
+    --background: 168 22% 8%;
+    --foreground: 160 15% 94%;
+    --card: 168 18% 11%;
+    --card-foreground: 160 15% 94%;
+    --primary: 172 55% 42%;
+    --primary-foreground: 168 40% 8%;
+    --secondary: 172 30% 18%;
+    --secondary-foreground: 166 40% 85%;
+    --muted: 168 14% 16%;
+    --muted-foreground: 160 10% 68%;
+    --accent: 25 60% 18%;
+    --accent-foreground: 30 90% 80%;
+    --destructive: 4 70% 52%;
     --destructive-foreground: 0 0% 100%;
-    --border: 220 15% 22%;
-    --input: 220 15% 22%;
-    --ring: 174 70% 45%;
+    --border: 168 12% 22%;
+    --input: 168 12% 26%;
+    --ring: 172 55% 48%;
+    --sidebar: 170 40% 7%;
+    --sidebar-foreground: 166 22% 86%;
+    --sidebar-muted: 166 12% 58%;
+    --sidebar-active: 172 40% 18%;
+    --sidebar-border: 170 25% 15%;
+    --sidebar-brand: 171 48% 48%;
   }
 
   * {
@@ -49,7 +63,13 @@
 
   body {
     @apply bg-background text-foreground;
-    font-family: Arial, Helvetica, sans-serif;
+    font-family: var(--font-sans), system-ui, sans-serif;
+  }
+
+  /* Números em tabelas e indicadores ficam alinhados */
+  .num {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
   }
 }
 
