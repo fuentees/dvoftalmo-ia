@@ -7,6 +7,7 @@ import { NotificationsReportView } from "@/components/notifications/notification
 import { CevespQualidadeView } from "@/components/cevesp/cevesp-qualidade-view";
 import { listarGvesSp, listarMunicipiosPorGve } from "@/lib/municipios-sp";
 import { parseCevespFilters } from "@/lib/cevesp-filters";
+import { currentCalendarYear } from "@/lib/epi-week";
 import { EpidemicZoneBanner } from "@/components/conjuntivite/epidemic-zone-banner";
 
 type OuterTab = "situacao" | "qualidade" | "consulta";
@@ -25,7 +26,9 @@ export function ConjuntiviteHubView() {
       ? requestedTab
       : "situacao";
   const [tab, setTab] = useState<OuterTab>(initialTab);
-  const [yearStart, setYearStart] = useState(searchParams.get("yearStart") ?? searchParams.get("ano") ?? "");
+  // Abre no ano atual (carrega rápido); "todos os anos" é buscado em segundo plano pela situação
+  const anoAtual = String(currentCalendarYear());
+  const [yearStart, setYearStart] = useState(searchParams.get("yearStart") ?? searchParams.get("ano") ?? anoAtual);
   const [yearEnd, setYearEnd] = useState(searchParams.get("yearEnd") ?? searchParams.get("anoFim") ?? "");
   const [gve, setGve] = useState(searchParams.get("gve") ?? "");
   const [municipio, setMunicipio] = useState(searchParams.get("municipio") ?? "");
@@ -45,7 +48,7 @@ export function ConjuntiviteHubView() {
     } catch (error) { return { reportFilters: undefined, filterError: (error as Error).message }; }
   }, [yearStart, yearEnd, gve, municipio]);
 
-  const hasFilters = yearStart || yearEnd || gve || municipio;
+  const hasFilters = yearStart !== anoAtual || yearEnd || gve || municipio;
 
   return (
     <div className="mx-auto flex w-full max-w-[1480px] flex-col">
@@ -118,7 +121,7 @@ export function ConjuntiviteHubView() {
           {hasFilters && (
             <button
               type="button"
-              onClick={() => { setYearStart(""); setYearEnd(""); setGve(""); setMunicipio(""); }}
+              onClick={() => { setYearStart(anoAtual); setYearEnd(""); setGve(""); setMunicipio(""); }}
               className="h-10 rounded-lg px-3 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               Limpar

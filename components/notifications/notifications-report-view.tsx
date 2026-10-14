@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   BarChart3,
@@ -418,6 +418,31 @@ const PERGUNTAS_PRONTAS = [
   "Total de casos por unidade este ano"
 ];
 
+async function buscarRelatorio(qs: string): Promise<ReportData> {
+  const response = await fetch(`/api/notificacoes/relatorio${qs ? `?${qs}` : ""}`);
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error ?? "Erro ao gerar relatorio");
+  return data as ReportData;
+}
+
+function parametrosTaxas(ano?: number, anoFim?: number, gve?: string, municipio?: string, seInicio?: number, seFim?: number) {
+  const params = new URLSearchParams();
+  if (ano) params.set("ano", String(ano));
+  if (anoFim) params.set("anoFim", String(anoFim));
+  if (gve) params.set("gve", gve);
+  if (municipio) params.set("municipio", municipio);
+  if (seInicio != null) params.set("seInicio", String(seInicio));
+  if (seFim != null) params.set("seFim", String(seFim));
+  return params.toString();
+}
+
+async function buscarTaxas(qs: string): Promise<CevespRatesData> {
+  const response = await fetch(`/api/cevesp/taxas${qs ? `?${qs}` : ""}`);
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error ?? "Erro ao calcular taxas");
+  return data as CevespRatesData;
+}
+
 export function NotificationsReportView({ section, externalFilters, hideFilters = false, onAsk, initialQuestion }: NotificationsReportViewProps = {}) {
   const [evolucao, setEvolucao] = useState<"semanas" | "canal" | "anos">("semanas");
   const [onde, setOnde] = useState<"ranking" | "incidencia" | "unidades">("ranking");
@@ -427,12 +452,13 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
   const [structuredMetric, setStructuredMetric] = useState("Total de casos");
   const [structuredDimension, setStructuredDimension] = useState("por GVE");
   const [structuredPeriod, setStructuredPeriod] = useState("últimos 5 anos");
-  const [selectedYear, setSelectedYear] = useState<number | undefined>(undefined);
-  const [selectedYearEnd, setSelectedYearEnd] = useState<number | undefined>(undefined);
-  const [selectedGve, setSelectedGve] = useState<string>("");
+  // Começa já com os filtros do hub: senão a primeira busca sai sem ano (todos os anos, a mais pesada)
+  const [selectedYear, setSelectedYear] = useState<number | undefined>(externalFilters?.year);
+  const [selectedYearEnd, setSelectedYearEnd] = useState<number | undefined>(externalFilters?.yearEnd);
+  const [selectedGve, setSelectedGve] = useState<string>(externalFilters?.gve ?? "");
   const [seInicio, setSeInicio] = useState<number | undefined>(undefined);
   const [seFim, setSeFim] = useState<number | undefined>(undefined);
-  const [selectedMunicipio, setSelectedMunicipio] = useState<string>("");
+  const [selectedMunicipio, setSelectedMunicipio] = useState<string>(externalFilters?.municipio ?? "");
   const municipioOptions = useMemo(() => listarMunicipiosPorGve(selectedGve), [selectedGve]);
   const seStart = seInicio != null && seFim != null ? Math.min(seInicio, seFim) : seInicio;
   const seEnd = seInicio != null && seFim != null ? Math.max(seInicio, seFim) : seFim;
@@ -491,13 +517,7 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
 
   const report = useQuery<ReportData>({
     queryKey: ["notifications-report", selectedYear, selectedYearEnd, selectedGve, selectedMunicipio, seStart, seEnd],
-    queryFn: async () => {
-      const qs = buildQueryParams();
-      const response = await fetch(`/api/notificacoes/relatorio${qs ? `?${qs}` : ""}`);
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Erro ao gerar relatorio");
-      return data as ReportData;
-    },
+    queryFn: () => buscarRelatorio(buildQueryParams()),
     staleTime: 5 * 60 * 1000
   });
 
@@ -521,22 +541,39 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
 
   const rates = useQuery<CevespRatesData>({
     queryKey: ["cevesp-taxas", selectedYear, selectedYearEnd, selectedGve, selectedMunicipio, seStart, seEnd],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (selectedYear) params.set("ano", String(selectedYear));
-      if (selectedYearEnd) params.set("anoFim", String(selectedYearEnd));
-      if (selectedGve) params.set("gve", selectedGve);
-      if (selectedMunicipio) params.set("municipio", selectedMunicipio);
-      if (seStart != null) params.set("seInicio", String(seStart));
-      if (seEnd != null) params.set("seFim", String(seEnd));
-      const qs = params.toString();
-      const response = await fetch(`/api/cevesp/taxas${qs ? `?${qs}` : ""}`);
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Erro ao calcular taxas");
-      return data as CevespRatesData;
-    },
+    queryFn: () => buscarTaxas(parametrosTaxas(selectedYear, selectedYearEnd, selectedGve, selectedMunicipio, seStart, seEnd)),
     staleTime: 5 * 60 * 1000
   });
+
+  // Depois que o ano escolhido carregar, busca em segundo plano "todos os anos" e o ano anterior
+  // (mesmo GVE/município): trocar o filtro para eles fica instantâneo.
+  const queryClient = useQueryClient();
+  const relatorioPronto = report.isSuccess;
+  useEffect(() => {
+    if (!relatorioPronto || seStart != null || seEnd != null) return;
+    const alvos: Array<number | undefined> = [];
+    if (selectedYear != null) alvos.push(undefined);
+    if (selectedYear != null && (selectedYearEnd == null || selectedYearEnd === selectedYear)) alvos.push(selectedYear - 1);
+    const timer = window.setTimeout(() => {
+      for (const ano of alvos) {
+        const relatorio = new URLSearchParams();
+        if (ano) relatorio.set("ano", String(ano));
+        if (selectedGve) relatorio.set("gve", selectedGve);
+        if (selectedMunicipio) relatorio.set("municipio", selectedMunicipio);
+        void queryClient.prefetchQuery({
+          queryKey: ["notifications-report", ano, undefined, selectedGve, selectedMunicipio, undefined, undefined],
+          queryFn: () => buscarRelatorio(relatorio.toString()),
+          staleTime: 5 * 60 * 1000
+        });
+        void queryClient.prefetchQuery({
+          queryKey: ["cevesp-taxas", ano, undefined, selectedGve, selectedMunicipio, undefined, undefined],
+          queryFn: () => buscarTaxas(parametrosTaxas(ano, undefined, selectedGve, selectedMunicipio)),
+          staleTime: 5 * 60 * 1000
+        });
+      }
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [relatorioPronto, queryClient, selectedYear, selectedYearEnd, selectedGve, selectedMunicipio, seStart, seEnd]);
 
   const ask = useMutation<AskData, Error, string | void>({
     mutationFn: async (override) => {
