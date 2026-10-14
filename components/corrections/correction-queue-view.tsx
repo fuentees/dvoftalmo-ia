@@ -229,7 +229,7 @@ export function CorrectionQueueView() {
   const selecionadas = visibleItems.filter((i) => selected.has(i.id));
 
   return (
-    <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-5 p-4 md:p-7">
+    <div className="mx-auto flex w-full max-w-[1480px] flex-col gap-5 p-4 md:p-7">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="space-y-1.5">
           <h1 className="text-[28px] font-bold tracking-tight">Correções</h1>

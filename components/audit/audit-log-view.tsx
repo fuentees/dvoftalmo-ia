@@ -105,7 +105,7 @@ export function AuditLogView() {
   const filtrosAtivos = periodo !== "30" || acao || quem || registro;
 
   return (
-    <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6 p-4 md:p-7">
+    <div className="mx-auto flex w-full max-w-[1480px] flex-col gap-6 p-4 md:p-7">
       <PageHeader
         title="Auditoria"
         description="Quem fez o quê, quando e com qual valor antes e depois."

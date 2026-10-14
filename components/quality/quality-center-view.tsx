@@ -468,7 +468,7 @@ export function QualityCenterView() {
   const filtrosAtivos = Boolean(filters.yearStart || filters.yearEnd || filters.gve || filters.municipio || filters.agravo !== "todos");
 
   return (
-    <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6 p-4 md:p-7">
+    <div className="mx-auto flex w-full max-w-[1480px] flex-col gap-6 p-4 md:p-7">
       <PageHeader
         title="Qualidade dos dados"
         description="Pendências dos dois bancos separadas por quem resolve. O detalhe de cada registro fica na análise do agravo."

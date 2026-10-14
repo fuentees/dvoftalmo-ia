@@ -23,8 +23,9 @@
 
 import { config } from "dotenv";
 import { existsSync, writeFileSync, readFileSync } from "fs";
+// .env.local tem prioridade; o .env completa o que faltar (dotenv não sobrescreve o que já veio)
 if (existsSync(".env.local")) config({ path: ".env.local" });
-else config();
+config();
 
 import mysql from "mysql2/promise";
 import { createClient } from "@supabase/supabase-js";

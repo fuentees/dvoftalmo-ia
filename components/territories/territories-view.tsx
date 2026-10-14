@@ -150,7 +150,7 @@ export function TerritoriesView() {
   }, [rows]);
 
   return (
-    <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6 p-4 md:p-7">
+    <div className="mx-auto flex w-full max-w-[1480px] flex-col gap-6 p-4 md:p-7">
       <PageHeader
         title="Territórios"
         description="Onde agir primeiro: casos, alertas e qualidade do dado por município e GVE, com o motivo de cada posição."

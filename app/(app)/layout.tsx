@@ -11,7 +11,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!user) redirect("/login");
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex min-h-[calc(100vh/var(--escala,1))] bg-background">
       {/* Sidebar — desktop */}
       <div className="hidden md:block">
         <AppSidebar />

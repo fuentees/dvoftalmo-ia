@@ -138,7 +138,7 @@ export function AlertsView() {
   const aviso = data?.warning || error || updateStatus.error || generateAlerts.error || generateAlerts.data?.warning || generateAlerts.data?.reason;
 
   return (
-    <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6 p-4 md:p-7">
+    <div className="mx-auto flex w-full max-w-[1480px] flex-col gap-6 p-4 md:p-7">
       <PageHeader
         title="Alertas"
         description="Aumentos acima do esperado, verificados toda segunda-feira. Cada alerta precisa de uma decisão registrada."

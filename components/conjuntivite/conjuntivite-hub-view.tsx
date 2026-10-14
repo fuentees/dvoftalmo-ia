@@ -48,7 +48,7 @@ export function ConjuntiviteHubView() {
   const hasFilters = yearStart || yearEnd || gve || municipio;
 
   return (
-    <div className="mx-auto flex w-full max-w-[1200px] flex-col">
+    <div className="mx-auto flex w-full max-w-[1480px] flex-col">
       <EpidemicZoneBanner gve={gve || undefined} municipio={municipio || undefined} year={reportFilters?.yearEnd ?? reportFilters?.year} />
       <div className="px-4 pt-6 md:px-7 md:pt-7">
         <span className="text-[13px] font-semibold uppercase tracking-[0.04em] text-primary">Agravo · CEVESP</span>

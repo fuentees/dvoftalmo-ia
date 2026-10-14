@@ -4,10 +4,8 @@ import {
   Area,
   AreaChart,
   Bar,
-  BarChart,
   CartesianGrid,
   ComposedChart,
-  LabelList,
   Legend,
   Line,
   ResponsiveContainer,
@@ -17,6 +15,7 @@ import {
 } from "recharts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { CHART } from "@/lib/chart-palette";
+import { BarList, SplitBar } from "@/components/charts/bar-list";
 
 interface WeekPoint {
   week: string;
@@ -48,6 +47,12 @@ interface EpidemicChartsProps {
   topGves: RankItem[];
   /** Partes a desenhar (padrão: todas): curva semanal, rankings territoriais e perfil (idade/sexo). */
   parts?: Array<"curva" | "territorio" | "perfil">;
+}
+
+/** Faixas etárias na ordem das idades ("Menor de 1 ano", "1 a 4 anos", ..., "15 anos ou mais"). */
+function ordenarFaixas(itens: DistItem[]) {
+  const idade = (rotulo: string) => (/menor|< ?1/i.test(rotulo) ? -1 : Number(rotulo.match(/\d+/)?.[0] ?? 999));
+  return [...itens].sort((a, b) => idade(a.label) - idade(b.label));
 }
 
 export function EpidemicCharts({
@@ -82,18 +87,6 @@ export function EpidemicCharts({
   const chartDesc = showYearBars
     ? `Barras: total ${selectedYear} · Linha: média histórica`
     : "Média de casos por semana epidemiológica (todos os anos)";
-  const ageTotal = ageDistribution.reduce((sum, item) => sum + Number(item.total ?? 0), 0);
-  const sexTotal = sexDistribution.reduce((sum, item) => sum + Number(item.total ?? 0), 0);
-  const ageChartData = ageDistribution.map((item) => ({
-    ...item,
-    percent: ageTotal ? (item.total / ageTotal) * 100 : 0
-  }));
-  const sexChartData = sexDistribution.map((item) => ({
-    ...item,
-    percent: sexTotal ? (item.total / sexTotal) * 100 : 0,
-    percentLabel: sexTotal ? `${((item.total / sexTotal) * 100).toFixed(1)}%` : "0%"
-  }));
-
   return (
     <div className="space-y-4">
       {show("curva") && chartData.length > 0 && (
@@ -102,13 +95,13 @@ export function EpidemicCharts({
             <CardTitle>Curva epidêmica semanal</CardTitle>
             <CardDescription>{chartDesc}</CardDescription>
           </CardHeader>
-          <CardContent className="h-[280px]">
+          <CardContent className="h-[340px]">
             <ResponsiveContainer width="100%" height="100%">
               {showYearBars ? (
                 <ComposedChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="se" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
-                  <YAxis />
+                  <CartesianGrid stroke={CHART.grid} vertical={false} />
+                  <XAxis dataKey="se" tick={{ fontSize: 12, fill: CHART.muted }} tickLine={false} axisLine={{ stroke: CHART.grid }} interval="preserveStartEnd" minTickGap={18} />
+                  <YAxis tick={{ fontSize: 12, fill: CHART.muted }} tickLine={false} axisLine={false} width={56} tickFormatter={(v: number) => v.toLocaleString("pt-BR")} />
                   <Tooltip
                     formatter={(value: number, name: string) => [
                       value,
@@ -133,15 +126,16 @@ export function EpidemicCharts({
                 </ComposedChart>
               ) : (
                 <AreaChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="se" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
-                  <YAxis />
+                  <CartesianGrid stroke={CHART.grid} vertical={false} />
+                  <XAxis dataKey="se" tick={{ fontSize: 12, fill: CHART.muted }} tickLine={false} axisLine={{ stroke: CHART.grid }} interval="preserveStartEnd" minTickGap={18} />
+                  <YAxis tick={{ fontSize: 12, fill: CHART.muted }} tickLine={false} axisLine={false} width={56} tickFormatter={(v: number) => v.toLocaleString("pt-BR")} />
                   <Tooltip formatter={(value: number) => [value, "Média"]} />
                   <Area
                     type="monotone"
                     dataKey="average"
                     stroke={CHART.primary}
-                    fill={CHART.primaryFill}
+                    fill={CHART.primary}
+                    fillOpacity={0.1}
                     name="Média histórica"
                     strokeWidth={2}
                   />
@@ -156,19 +150,11 @@ export function EpidemicCharts({
         {topMunicipalities.length > 0 && (
           <Card>
             <CardHeader>
-              <CardTitle>Top municípios</CardTitle>
-              <CardDescription>Municípios com mais casos no período</CardDescription>
+              <CardTitle>Municípios com mais casos</CardTitle>
+              <CardDescription>Os 10 primeiros no período, com a parte de cada um no total</CardDescription>
             </CardHeader>
-            <CardContent className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={topMunicipalities.slice(0, 10)} layout="vertical" margin={{ left: 8 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number" tick={{ fontSize: 11 }} />
-                  <YAxis dataKey="name" type="category" width={130} tick={{ fontSize: 11 }} />
-                  <Tooltip formatter={(value: number) => [value, "Casos"]} />
-                  <Bar dataKey="total" fill={CHART.accent} name="Casos" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+            <CardContent>
+              <BarList items={topMunicipalities.map((i) => ({ label: i.name, value: i.total }))} maxItems={10} />
             </CardContent>
           </Card>
         )}
@@ -176,19 +162,11 @@ export function EpidemicCharts({
         {topGves.length > 0 && (
           <Card>
             <CardHeader>
-              <CardTitle>Top GVEs</CardTitle>
-              <CardDescription>GVEs com mais casos no período</CardDescription>
+              <CardTitle>GVEs com mais casos</CardTitle>
+              <CardDescription>Os 10 primeiros no período, com a parte de cada um no total</CardDescription>
             </CardHeader>
-            <CardContent className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={topGves.slice(0, 10)} layout="vertical" margin={{ left: 8 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number" tick={{ fontSize: 11 }} />
-                  <YAxis dataKey="name" type="category" width={130} tick={{ fontSize: 11 }} />
-                  <Tooltip formatter={(value: number) => [value, "Casos"]} />
-                  <Bar dataKey="total" fill={CHART.primary} name="Casos" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+            <CardContent>
+              <BarList items={topGves.map((i) => ({ label: i.name, value: i.total }))} maxItems={10} />
             </CardContent>
           </Card>
         )}
@@ -198,26 +176,11 @@ export function EpidemicCharts({
         {ageDistribution.length > 0 && (
           <Card>
             <CardHeader>
-              <CardTitle>Distribuição por faixa etária</CardTitle>
-              <CardDescription>Casos e participação percentual no recorte</CardDescription>
+              <CardTitle>Faixa etária</CardTitle>
+              <CardDescription>Casos por faixa, na ordem das idades</CardDescription>
             </CardHeader>
-            <CardContent className="h-[240px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={ageChartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                  <YAxis />
-                  <Tooltip
-                    formatter={(value: number, name: string, item) => [
-                      name === "total"
-                        ? `${value.toLocaleString("pt-BR")} (${Number(item.payload.percent ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%)`
-                        : value,
-                      "Casos"
-                    ]}
-                  />
-                  <Bar dataKey="total" fill={CHART.primary} name="Casos" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+            <CardContent>
+              <BarList items={ordenarFaixas(ageDistribution).map((i) => ({ label: i.label, value: Number(i.total) || 0 }))} />
             </CardContent>
           </Card>
         )}
@@ -225,26 +188,23 @@ export function EpidemicCharts({
         {sexDistribution.length > 0 && (
           <Card>
             <CardHeader>
-              <CardTitle>Distribuição por sexo</CardTitle>
-              <CardDescription>Comparação em barras para evitar leitura ambígua</CardDescription>
+              <CardTitle>Sexo</CardTitle>
+              <CardDescription>Parte de cada sexo no total de casos do recorte</CardDescription>
             </CardHeader>
-            <CardContent className="h-[240px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={sexChartData} layout="vertical" margin={{ left: 12, right: 48 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                  <XAxis type="number" tick={{ fontSize: 11 }} />
-                  <YAxis dataKey="label" type="category" width={110} tick={{ fontSize: 11 }} />
-                  <Tooltip
-                    formatter={(value: number, name: string, item) => [
-                      `${value.toLocaleString("pt-BR")} (${Number(item.payload.percent ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%)`,
-                      "Casos"
-                    ]}
-                  />
-                  <Bar dataKey="total" fill={CHART.primary} name="Casos" radius={[0, 4, 4, 0]}>
-                    <LabelList dataKey="percentLabel" position="right" className="fill-muted-foreground text-[11px]" />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+            <CardContent>
+              <SplitBar items={sexDistribution.map((i) => ({ label: i.label, value: Number(i.total) || 0 }))} />
+              {(() => {
+                // A soma por sexo deve bater com a soma por faixa etária (as duas somam os mesmos casos)
+                const somaSexo = sexDistribution.reduce((s, i) => s + (Number(i.total) || 0), 0);
+                const somaIdade = ageDistribution.reduce((s, i) => s + (Number(i.total) || 0), 0);
+                if (!somaIdade || Math.abs(somaSexo - somaIdade) / somaIdade < 0.1) return null;
+                return (
+                  <p role="status" className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-900">
+                    A soma por sexo ({somaSexo.toLocaleString("pt-BR")}) não bate com a soma por faixa etária ({somaIdade.toLocaleString("pt-BR")}).
+                    Há registros com sexo digitado errado; a lista está em Qualidade dos dados.
+                  </p>
+                );
+              })()}
             </CardContent>
           </Card>
         )}

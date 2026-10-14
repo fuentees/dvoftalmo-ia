@@ -11,7 +11,12 @@ export const CHART = {
   blue: "#1E4FD8",         // terceira série quando necessária
   ink: "#0F1E1A",          // linhas de referência fortes
   muted: "#52625D",        // médias e textos de apoio
-  grid: "#E3E9E7"          // linhas de grade
+  grid: "#E3E9E7",         // linhas de grade
+  // Par categórico para partes de um todo (ex.: sexo). Validado: claridade, croma,
+  // separação para daltonismo (protan ΔE ≥ 8) e contraste com o fundo.
+  catTeal: "#00917E",
+  catOrange: "#C4620F",
+  neutral: "#A9B3AF"       // "ignorado"/"não informado"
 } as const;
 
 /** Paleta categórica para gráficos com muitas séries (ordem de uso). */

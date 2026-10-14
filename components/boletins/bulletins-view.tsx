@@ -1409,7 +1409,7 @@ export function BulletinsView() {
   ];
 
   return (
-    <div className="mx-auto w-full max-w-[1200px] space-y-6 p-4 md:p-7">
+    <div className="mx-auto w-full max-w-[1480px] space-y-6 p-4 md:p-7">
 
       {/* Page header */}
       <div className="space-y-1.5">

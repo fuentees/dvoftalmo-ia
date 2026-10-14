@@ -81,7 +81,7 @@ export function SidebarContent({ onNavigate, showEpiWeek = true }: { onNavigate?
       <nav aria-label="Menu principal" className="flex-1 space-y-5 overflow-y-auto">
         {navigationGroups.map((group) => (
           <div key={group.label} className="space-y-0.5">
-            <p className="px-2.5 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-sidebar-muted">
+            <p className="px-3 pb-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-sidebar-muted">
               {group.label}
             </p>
             {group.items.map((item) => {
@@ -95,7 +95,7 @@ export function SidebarContent({ onNavigate, showEpiWeek = true }: { onNavigate?
                   aria-current={active ? "page" : undefined}
                   onClick={onNavigate}
                   className={cn(
-                    "flex min-h-10 items-center gap-2.5 rounded-lg px-2.5 text-sm transition-colors",
+                    "flex min-h-11 items-center gap-3 rounded-lg px-3 text-[15px] transition-colors",
                     active
                       ? "bg-sidebar-active font-semibold text-white"
                       : "font-medium text-sidebar-foreground hover:bg-sidebar-active/60 hover:text-white"

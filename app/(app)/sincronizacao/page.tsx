@@ -28,7 +28,7 @@ const PASSOS = [
 
 export default function SincronizacaoPage() {
   return (
-    <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6 p-4 md:p-7">
+    <div className="mx-auto flex w-full max-w-[1480px] flex-col gap-6 p-4 md:p-7">
       <PageHeader
         title="Sincronização"
         description="O site lê uma cópia das bases. Aqui você vê se a cópia está em dia e atualiza quando precisar."

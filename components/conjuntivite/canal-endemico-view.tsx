@@ -335,12 +335,12 @@ export function CanalEndemicoView({ filters }: Props) {
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div>
-              <CardTitle className="flex items-center gap-2 text-sm">
+              <CardTitle className="flex items-center gap-2 text-[17px]">
                 <TrendingUp className="h-4 w-4 text-primary" />
-                Canal Endêmico — Conjuntivites CEVESP
+                Canal endêmico — incidência por 100 mil habitantes
               </CardTitle>
-              <CardDescription className="text-xs">
-                Faixa azul = incidência histórica por 100 mil habitantes. {CHANNEL_METHODOLOGY} Azul escuro = {refYear}. Roxo tracejado = {refYear - 1}. Cinza pontilhado = média histórica. A projeção linear é exploratória e não é uma previsão validada. Casos absolutos aparecem no tooltip.
+              <CardDescription className="text-[13px]">
+                Faixa verde clara = faixa histórica esperada ({CHANNEL_METHODOLOGY}). Linha verde escura = {refYear}. Laranja tracejado = {refYear - 1}. Cinza pontilhado = média histórica. A projeção é exploratória, não é previsão. Passe o mouse para ver os casos.
                 {xAxisMode === "mes" && " Estatísticas calculadas por mês, independente da visão por SE."}
               </CardDescription>
             </div>
@@ -367,25 +367,26 @@ export function CanalEndemicoView({ filters }: Props) {
           </div>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={360}>
+          <ResponsiveContainer width="100%" height={420}>
             <ComposedChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={CHART.grid} />
+              <CartesianGrid vertical={false} stroke={CHART.grid} />
               <XAxis
                 dataKey="label"
-                tick={{ fontSize: 11 }}
+                tick={{ fontSize: 12, fill: CHART.muted }}
                 tickLine={false}
+                minTickGap={14}
                 label={{ value: xAxisMode === "se" ? "Semana Epidemiológica" : "Mês", position: "insideBottom", offset: -2, fontSize: 11, fill: "#6b7280" }}
                 height={36}
               />
               <YAxis
-                tick={{ fontSize: 11 }}
+                tick={{ fontSize: 12, fill: CHART.muted }}
                 tickLine={false}
                 axisLine={false}
                 tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)}
                 width={48}
               />
               <Tooltip content={<CanalTooltip mode={xAxisMode} />} />
-              <Legend verticalAlign="top" height={28} iconSize={10} wrapperStyle={{ fontSize: 11 }} />
+              <Legend verticalAlign="top" height={32} iconSize={12} wrapperStyle={{ fontSize: 13 }} />
 
               {/* Faixa esperada (média ± 2 DP) — única área sombreada, sem amarelo */}
               <Area
@@ -468,16 +469,18 @@ export function CanalEndemicoView({ filters }: Props) {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Tabela de conferência do cálculo</CardTitle>
-          <CardDescription className="text-xs">
+      <details className="group rounded-xl border bg-card">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 text-[15px] font-semibold">
+          Ver como o canal foi calculado (tabela de conferência)
+          <span className="text-sm font-normal text-muted-foreground group-open:hidden">mostrar</span>
+          <span className="hidden text-sm font-normal text-muted-foreground group-open:inline">esconder</span>
+        </summary>
+        <div className="px-5 pb-5">
+          <p className="mb-3 text-[13px] text-muted-foreground">
             Valores usados para recalcular o canal e comparar com a planilha. Incidência por 100 mil hab.; DP amostral; limite inferior truncado em 0 quando média − 2 DP fica negativo.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+          </p>
           <div className="max-h-[32rem] overflow-auto rounded-md border">
-            <table className="w-full min-w-[980px] text-xs">
+            <table className="w-full min-w-[980px] text-[13px]">
               <thead className="sticky top-0 bg-muted">
                 <tr className="text-left">
                   <th className="px-3 py-2 font-semibold">{xAxisMode === "se" ? "SE" : "Mês"}</th>
@@ -519,8 +522,8 @@ export function CanalEndemicoView({ filters }: Props) {
               </tbody>
             </table>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </details>
 
       {/* ── Legenda das zonas ────────────────────────────────────────────── */}
       <div className="grid gap-3 sm:grid-cols-3">

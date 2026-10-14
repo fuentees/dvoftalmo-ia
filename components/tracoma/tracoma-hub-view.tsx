@@ -34,7 +34,7 @@ export function TracomaHubView() {
   }, [filters]);
 
   return (
-    <div className="mx-auto flex w-full max-w-[1200px] flex-col">
+    <div className="mx-auto flex w-full max-w-[1480px] flex-col">
       <div className="px-4 pt-6 md:px-7 md:pt-7">
         <span className="text-[13px] font-semibold uppercase tracking-[0.04em] text-primary">Agravo · SINAN</span>
         <h1 className="text-[28px] font-bold tracking-tight">Tracoma</h1>
