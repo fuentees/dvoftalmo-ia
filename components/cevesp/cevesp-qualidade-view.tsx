@@ -16,6 +16,7 @@ import type { InvalidRecord } from "@/services/cevesp-corrections";
 import { currentCalendarYear } from "@/lib/epi-week";
 import { isQualityBucket, type QualityBucket } from "@/lib/cevesp-quality-buckets";
 import { DuplicateComparePanel, QualityBucketCards } from "@/components/cevesp/qualidade-buckets";
+import { currentQueryData, fetchJson } from "@/lib/query-result";
 
 type CevespTab = "registros" | "por_ano" | "por_gve" | "por_municipio" | "completude";
 
@@ -170,11 +171,11 @@ function buildCevespQualityReport(data: QualidadeData) {
 
 function TabsBar({ tab, setTab, counts }: {
   tab: CevespTab; setTab: (t: CevespTab) => void;
-  counts: Record<CevespTab, number>;
+  counts: Record<CevespTab, number | null>;
 }) {
   const items: Array<{ id: CevespTab; label: string }> = [
     { id: "registros",    label: "Registros"    },
-    { id: "por_ano",      label: "Por Ano"      },
+    { id: "por_ano",      label: "Por ano declarado" },
     { id: "por_gve",      label: "Por GVE"      },
     { id: "por_municipio",label: "Por Município" },
     { id: "completude",   label: "Completude"   }
@@ -195,7 +196,7 @@ function TabsBar({ tab, setTab, counts }: {
           <span className={`rounded-full px-1.5 py-0.5 text-[10px] tabular-nums ${
             tab === item.id ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
           }`}>
-            {counts[item.id]}
+            {counts[item.id] ?? "—"}
           </span>
         </button>
       ))}
@@ -622,6 +623,8 @@ function CompletudeCevespPanel({ data }: { data: CompletudeCevespData }) {
 }
 
 type CevespQualidadeViewProps = {
+  hideFilters?: boolean;
+  onSelectYear?: (year: number) => void;
   externalFilters?: {
     year?: number;
     yearEnd?: number;
@@ -630,7 +633,7 @@ type CevespQualidadeViewProps = {
   };
 };
 
-export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProps = {}) {
+export function CevespQualidadeView({ externalFilters, hideFilters = false, onSelectYear }: CevespQualidadeViewProps = {}) {
   const qc = useQueryClient();
   const [tab, setTab]             = useState<CevespTab>("registros");
   const [filterType, setFilterType] = useState<string>("todos");
@@ -639,12 +642,17 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
   const [bucket, setBucket] = useState<QualityBucket | "">(isQualityBucket(requestedBucket) ? requestedBucket : "");
   const [groupKey, setGroupKey] = useState<string | null>(null);
   const [recordQuery, setRecordQuery] = useState("");
-  // Sem ano escolhido, abre no ano atual: auditar a base inteira é pesado demais
+  // Sem ano escolhido, abre no ano atual; o recorte controlado vem diretamente do hub.
   const defaultYear = String(currentCalendarYear());
-  const [anoFilter, setAnoFilter] = useState(externalFilters?.year ? String(externalFilters.year) : defaultYear);
-  const [anoFimFilter, setAnoFimFilter] = useState(externalFilters?.yearEnd ? String(externalFilters.yearEnd) : "");
-  const [gveFilter, setGveFilter] = useState(externalFilters?.gve ?? "");
-  const [municipioFilter, setMunicipioFilter] = useState(externalFilters?.municipio ?? "");
+  const [localAnoFilter, setAnoFilter] = useState(externalFilters?.year ? String(externalFilters.year) : defaultYear);
+  const [localAnoFimFilter, setAnoFimFilter] = useState(externalFilters?.yearEnd ? String(externalFilters.yearEnd) : "");
+  const [localGveFilter, setGveFilter] = useState(externalFilters?.gve ?? "");
+  const [localMunicipioFilter, setMunicipioFilter] = useState(externalFilters?.municipio ?? "");
+  const controlledScope = hideFilters && externalFilters;
+  const anoFilter = controlledScope ? String(controlledScope.year ?? "") : localAnoFilter;
+  const anoFimFilter = controlledScope ? String(controlledScope.yearEnd ?? "") : localAnoFimFilter;
+  const gveFilter = controlledScope ? controlledScope.gve ?? "" : localGveFilter;
+  const municipioFilter = controlledScope ? controlledScope.municipio ?? "" : localMunicipioFilter;
   const [page, setPage] = useState(0);
   const [selected, setSelected]   = useState<Set<string>>(new Set());
   const [proposeMsg, setProposeMsg] = useState<{ type: "ok" | "error"; text: string } | null>(null);
@@ -667,12 +675,15 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
     setMunicipioFilter(externalFilters.municipio ?? "");
     setPage(0);
     setSelected(new Set());
+    setCrossGve(undefined);
+    setProposeMsg(null);
   }, [externalFilters, defaultYear]);
 
   function handleSelectAno(ano: number) {
-    setRecordQuery(String(ano));
+    setRecordQuery("");
     setAnoFilter(String(ano));
     setAnoFimFilter(String(ano));
+    onSelectYear?.(ano);
     setPage(0);
     setSelected(new Set());
     setTab("registros");
@@ -707,21 +718,24 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
     staleTime: 2 * 60 * 1000
   });
 
-  const { data: completudeData, isError: completudeError, error: completudeErrorDetail } = useQuery<CompletudeCevespData>({
+  const completudeQuery = useQuery<CompletudeCevespData>({
     queryKey: ["cevesp-qualidade-completude", anoFilter, anoFimFilter, gveFilter, municipioFilter],
-    queryFn: async () => {
+    queryFn: ({ signal }) => {
       const params = new URLSearchParams();
       if (anoFilter) params.set("ano", anoFilter);
       if (anoFimFilter) params.set("anoFim", anoFimFilter);
       if (gveFilter) params.set("gve", gveFilter);
       if (municipioFilter) params.set("municipio", municipioFilter);
-      const res = await fetch(`/api/cevesp/qualidade/completude?${params}`);
-      const json = await res.json();
-      if (!res.ok) throw new Error((json as ApiError).message ?? (json as ApiError).error);
-      return json as CompletudeCevespData;
+      return fetchJson<CompletudeCevespData>(`/api/cevesp/qualidade/completude?${params}`, "Não foi possível carregar a completude.", { signal });
     },
     staleTime: 10 * 60 * 1000
   });
+  const completudeData = currentQueryData(completudeQuery);
+  const completudeError = completudeQuery.isError;
+  const completudeErrorDetail = completudeQuery.error;
+  function refreshQuality() {
+    return Promise.all([refetch(), completudeQuery.refetch()]);
+  }
 
   const proposeMutation = useMutation({
     mutationFn: async (recordIds: string[] | undefined) => {
@@ -811,10 +825,12 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
   function resetRecordFilters() {
     setFilterType("todos");
     setRecordQuery("");
-    setAnoFilter(defaultYear);
-    setAnoFimFilter("");
-    setGveFilter("");
-    setMunicipioFilter("");
+    if (!hideFilters) {
+      setAnoFilter(defaultYear);
+      setAnoFimFilter("");
+      setGveFilter("");
+      setMunicipioFilter("");
+    }
     setPage(0);
     setSelected(new Set());
   }
@@ -828,7 +844,7 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
     if (anoFimFilter) params.set("anoFim", anoFimFilter);
     if (gveFilter) params.set("gve", gveFilter);
     if (municipioFilter) params.set("municipio", municipioFilter);
-    window.location.href = `/api/cevesp/qualidade?${params.toString()}`;
+    window.location.assign(new URL(`/api/cevesp/qualidade?${params.toString()}`, window.location.origin).href);
   }
 
   if (isLoading) {
@@ -849,7 +865,7 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
           {err.error === "conexao_falhou" && (
             <p className="mt-2 text-xs">Verifique as variáveis de ambiente NOTIFY_DB_* e a conectividade com o servidor MySQL.</p>
           )}
-          <Button size="sm" variant="outline" className="mt-3" onClick={() => void refetch()}>
+          <Button size="sm" variant="outline" className="mt-3" disabled={isFetching || completudeQuery.isFetching} onClick={() => void refreshQuality()}>
             <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Tentar novamente
           </Button>
         </div>
@@ -864,12 +880,12 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
 
 
   const completudeCritica = Object.values(completudeData?.fieldCompleteness ?? {}).filter((e) => e.pct < 90 && e.total > 0).length;
-  const tabCounts: Record<CevespTab, number> = {
+  const tabCounts: Record<CevespTab, number | null> = {
     registros:    total,
     por_ano:      data?.byAno.length ?? 0,
     por_gve:      data?.byGve.length ?? 0,
     por_municipio: data?.byMunicipio.length ?? 0,
-    completude:   completudeCritica
+    completude:   completudeData ? completudeCritica : null
   };
 
   const groupRecord = groupKey ? records.find((r) => r.group === groupKey && r.groupMembers?.length) ?? null : null;
@@ -891,11 +907,12 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
           <p className="text-sm text-muted-foreground">
             Tela técnica para corrigir inconsistências detectadas na base CEVESP.
           </p>
+          {(anoFilter || anoFimFilter) && <p className="mt-2 max-w-3xl text-xs text-muted-foreground">A auditoria também inclui registros com ano suspeito digitados no período selecionado. A aba “Por ano declarado” mostra o ANO informado na origem, que pode divergir do período do painel e precisa ser conferido.</p>}
           <Link href="/conjuntivite" className="mt-1 inline-flex text-xs font-medium text-primary underline">
             Voltar para Conjuntivite — CEVESP
           </Link>
         </div>
-        <Button size="sm" variant="outline" onClick={() => void refetch()}>
+        <Button size="sm" variant="outline" disabled={isFetching || completudeQuery.isFetching} onClick={() => void refreshQuality()}>
           <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Atualizar
         </Button>
         {data && !isFetching && (
@@ -909,7 +926,7 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
         )}
       </div>
 
-      <Card>
+      {!hideFilters && <Card>
         <CardContent className="pt-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="flex flex-col gap-1">
@@ -956,8 +973,13 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
             )}
           </div>
         </CardContent>
-      </Card>
+      </Card>}
       </>}
+
+      {embedded && <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="max-w-3xl text-xs text-muted-foreground">A auditoria inclui anos suspeitos digitados no período selecionado. “Por ano declarado” mostra o ano informado na origem, que pode divergir do recorte.</p>
+        <Button size="sm" variant="outline" disabled={isFetching || completudeQuery.isFetching} onClick={() => void refreshQuality()}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Atualizar auditoria</Button>
+      </div>}
 
       <QualityBucketCards
         counts={data?.byBucket ?? { pronta: 0, decisao: 0, unidade: 0 }}
@@ -1059,7 +1081,7 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
                     className="h-8 text-xs"
                     onClick={resetRecordFilters}
                   >
-                    Limpar filtros
+                    {hideFilters ? "Limpar busca e tipo de problema" : "Limpar filtros"}
                   </Button>
                 )}
               </div>
@@ -1273,7 +1295,8 @@ export function CevespQualidadeView({ externalFilters }: CevespQualidadeViewProp
       )}
 
       {tab === "completude" && completudeData && <CompletudeCevespPanel data={completudeData} />}
-      {tab === "completude" && completudeError && <p role="alert" className="rounded border border-destructive p-4 text-sm text-destructive">{completudeErrorDetail instanceof Error ? completudeErrorDetail.message : "Não foi possível carregar a completude."}</p>}
+      {tab === "completude" && completudeError && <div role="alert" className="space-y-3 rounded border border-destructive p-4 text-sm text-destructive"><p>{completudeErrorDetail instanceof Error ? completudeErrorDetail.message : "Não foi possível carregar a completude."}</p><Button size="sm" variant="outline" disabled={completudeQuery.isFetching} onClick={() => void completudeQuery.refetch()}>{completudeQuery.isFetching ? "Consultando..." : "Tentar completude novamente"}</Button></div>}
+      {tab === "completude" && completudeData && completudeQuery.isFetching && <p role="status" className="text-xs text-muted-foreground">Atualizando a completude. Os valores exibidos são da última consulta concluída.</p>}
       {tab === "completude" && !completudeData && !completudeError && (
         <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
           <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Carregando completude...

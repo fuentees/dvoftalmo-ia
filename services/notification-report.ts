@@ -1,4 +1,5 @@
-import { dateToEpiWeek, dateToEpiWeekYear } from "@/lib/epi-week";
+import { dateToEpiWeek, dateToEpiWeekYear, weeksInEpiYear } from "@/lib/epi-week";
+import { distributionQuality, distributionQualityFromAggregate, distributionWarning, isCaseCount, type DistributionQuality } from "@/lib/cevesp-distribution";
 interface ColumnSummary {
   name: string;
   missing: number;
@@ -24,6 +25,7 @@ type NotificationIndicators = {
   topUnits: RankItem[];
   sexDistribution: DistributionItem[];
   ageDistribution: DistributionItem[];
+  distributionQuality: { sex: DistributionQuality; age: DistributionQuality };
   outbreakNotifications: number;
   outbreakTotal: number;
   biologicalCollectionNotifications: number;
@@ -108,9 +110,10 @@ function groupSum(rows: Row[], groupKey: string, valueKey = "TotalCaso", limit =
 function weekKeyFromRow(row: Row) {
   const ano = toNumber(row.ANO);
   const se = toNumber(row.SemEpidemio);
-  if (ano > 1900 && se >= 1 && se <= 53) {
+  if (Number.isInteger(ano) && ano > 1900 && ano < 10000 && Number.isInteger(se) && se >= 1 && se <= weeksInEpiYear(ano)) {
     return `${ano}-SE${String(se).padStart(2, "0")}`;
   }
+  if (row.ANO != null && row.ANO !== "" && row.SemEpidemio != null && row.SemEpidemio !== "") return null;
 
   const rawDate = String(row.DtNotificacao ?? "");
   const match = rawDate.match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -240,7 +243,7 @@ function buildAlerts(rows: Row[], indicators: NotificationIndicators) {
     });
   }
 
-  const dominantAge = indicators.ageDistribution.find((item) => item.total > 0);
+  const dominantAge = indicators.distributionQuality.age.status === "complete" ? indicators.ageDistribution.find((item) => item.total > 0) : undefined;
   if (dominantAge && dominantAge.total / totalCases > 0.45) {
     alerts.push({
       severity: "baixa",
@@ -255,7 +258,7 @@ function buildAlerts(rows: Row[], indicators: NotificationIndicators) {
 function buildInterpretation(indicators: NotificationIndicators, alerts: ReportAlert[]) {
   const topMunicipality = indicators.topMunicipalities[0];
   const topGve = indicators.topGves[0];
-  const dominantAge = indicators.ageDistribution.find((item) => item.total > 0);
+  const dominantAge = indicators.distributionQuality.age.status === "complete" ? indicators.ageDistribution.find((item) => item.total > 0) : undefined;
   const outbreakRate = indicators.notifications > 0 ? (indicators.outbreakNotifications / indicators.notifications) * 100 : 0;
 
   return [
@@ -268,12 +271,13 @@ function buildInterpretation(indicators: NotificationIndicators, alerts: ReportA
       : "Nao foi possivel identificar GVE predominante nos dados analisados.",
     dominantAge
       ? `Observa-se maior ocorrencia na faixa etaria ${dominantAge.label}, com ${dominantAge.total} casos, o que orienta medidas educativas direcionadas aos ambientes frequentados por esse grupo.`
-      : "A distribuicao etaria nao pode ser interpretada por ausencia ou baixa completude dos campos de faixa etaria.",
+      : distributionWarning(indicators.distributionQuality.age, "faixa etária") ?? "A distribuicao etaria nao pode ser interpretada por ausencia dos campos de faixa etaria.",
+    distributionWarning(indicators.distributionQuality.sex, "sexo"),
     `A proporcao de notificacoes classificadas como surto foi de ${outbreakRate.toFixed(1)}%, parametro importante para monitoramento de agregados e resposta oportuna.`,
     alerts.length > 0
       ? "Os alertas identificados apontam situacoes que merecem investigacao epidemiologica, especialmente quanto a recorrencia de surtos, baixa coleta laboratorial e ausencia de medidas educativas."
       : "Nenhum alerta foi apresentado neste relatorio. A ausencia de alerta nao confirma ausencia de risco e nao substitui a avaliacao tecnica local."
-  ];
+  ].filter((item): item is string => Boolean(item));
 }
 
 // ── Types for RPC path ────────────────────────────────────────────────────────
@@ -292,6 +296,8 @@ export type RpcRelatorioData = {
   specialized_referrals: number;
   sex_masc: number;
   sex_fem: number;
+  sex_invalid_rows?: unknown;
+  age_invalid_rows?: unknown;
   fx_menor_um: number;
   fx_1_4: number;
   fx_5_9: number;
@@ -330,16 +336,20 @@ export function summarizeFromRpc(
     .map((f, i) => ({ label: f.label, total: Number(fxValues[i] ?? 0) }))
     .sort((a, b) => b.total - a.total);
 
-  const weeklySeries: WeeklyPoint[] = (rpc.weekly_series ?? []).map((w) => ({
+  const weeklySeries: WeeklyPoint[] = (rpc.weekly_series ?? []).filter(w => Number.isInteger(Number(w.ano)) && Number(w.ano) > 1900 && Number(w.ano) < 10000 && Number.isInteger(Number(w.se)) && Number(w.se) >= 1 && Number(w.se) <= weeksInEpiYear(Number(w.ano))).map((w) => ({
     week: `${w.ano}-SE${String(w.se).padStart(2, "0")}`,
     total: Number(w.total)
   }));
 
-  const weeklyAverage: WeeklyAvgPoint[] = weeklyAvgRpc.map((m) => ({
+  const weeklyAverage: WeeklyAvgPoint[] = weeklyAvgRpc.filter(m => Number.isInteger(Number(m.se)) && Number(m.se) >= 1 && Number(m.se) <= 53).map((m) => ({
     se: `SE${String(m.se).padStart(2, "0")}`,
     average: Number(m.media)
   }));
 
+  const distributionStatus = {
+    sex: distributionQualityFromAggregate(Number(rpc.total_cases), [rpc.sex_masc, rpc.sex_fem], rpc.sex_invalid_rows),
+    age: distributionQualityFromAggregate(Number(rpc.total_cases), fxValues, rpc.age_invalid_rows)
+  };
   const indicators: NotificationIndicators = {
     notifications: Number(rpc.total_notifications),
     sampledRows: Number(rpc.total_notifications),
@@ -349,11 +359,12 @@ export function summarizeFromRpc(
     topMunicipalities: (rpc.top_municipios ?? []).map((m) => ({ name: m.name, total: Number(m.total) })),
     topGves: (rpc.top_gves ?? []).map((g) => ({ name: g.name, total: Number(g.total) })),
     topUnits: (rpc.top_units ?? []).map((u) => ({ name: u.name, total: Number(u.total) })),
-    sexDistribution: [
+    sexDistribution: distributionStatus.sex.status !== "complete" && distributionStatus.sex.status !== "partial" ? [] : [
       { label: "Masculino", total: Number(rpc.sex_masc) },
       { label: "Feminino", total: Number(rpc.sex_fem) }
     ],
-    ageDistribution,
+    ageDistribution: distributionStatus.age.status !== "complete" && distributionStatus.age.status !== "partial" ? [] : ageDistribution,
+    distributionQuality: distributionStatus,
     outbreakNotifications: Number(rpc.outbreak_notifications),
     outbreakTotal: Number(rpc.outbreak_total),
     biologicalCollectionNotifications: Number(rpc.bio_collection_notifications),
@@ -404,6 +415,11 @@ export function summarizeNotificationRows(rows: Row[], total: number, allYearsRo
   const weekly = weeklySeries(rows);
   const weeklyAvg = weeklyAverageSeries(allYearsRows ?? rows);
   const weeklyStats = stats(weekly.map((item) => item.total));
+  const invalidRows = (fields: string[]) => rows.filter(row => !isCaseCount(row.TotalCaso) || distributionQuality(toNumber(row.TotalCaso), fields.map(field => row[field])).status === "inconsistent").length;
+  const distributionStatus = {
+    sex: distributionQuality(totalCases, sexDistribution.map(item => item.total), invalidRows(["SexMasc", "SexFem"])),
+    age: distributionQuality(totalCases, ageDistribution.map(item => item.total), invalidRows(ageFields.map(field => field.key)))
+  };
 
   const indicators = {
     notifications: rows.length,
@@ -416,8 +432,9 @@ export function summarizeNotificationRows(rows: Row[], total: number, allYearsRo
     topMunicipalities: groupSum(rows, "MunicipioNotificacao", "TotalCaso", 10),
     topGves: groupSum(rows, "GVE_NOME", "TotalCaso", 10),
     topUnits: groupSum(rows, "Unid_notificacao", "TotalCaso", 10),
-    sexDistribution,
-    ageDistribution,
+    sexDistribution: distributionStatus.sex.status === "inconsistent" || distributionStatus.sex.status === "unavailable" ? [] : sexDistribution,
+    ageDistribution: distributionStatus.age.status === "inconsistent" || distributionStatus.age.status === "unavailable" ? [] : ageDistribution,
+    distributionQuality: distributionStatus,
     outbreakNotifications: rows.filter((row) => isYes(row.Surto) || toNumber(row.NuSurto) > 0).length,
     outbreakTotal: sumBy(rows, "NuSurto"),
     biologicalCollectionNotifications: rows.filter((row) => isYes(row.ColetaMaterialBio) || toNumber(row.NuColetaMaterialBio) > 0).length,

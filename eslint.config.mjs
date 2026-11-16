@@ -7,6 +7,7 @@ const eslintConfig = [
       ".next/**",
       "node_modules/**",
       "out/**",
+      "analise-cevesp/**",
       "next-env.d.ts"
     ]
   },

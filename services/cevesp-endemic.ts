@@ -3,6 +3,7 @@ import { currentCalendarYear } from "@/lib/epi-week";
 import { createNotificationConnection, getNotificationTableName, isNotificationConnectionError } from "@/lib/external/notification-db";
 import { loadCevespTerritoryPopulation } from "@/lib/cevesp-population";
 import { MIN_BASELINE_YEARS } from "@/lib/cevesp-channel";
+import { isObservedBucket } from "@/lib/cevesp-time-boundary";
 
 const identifierPattern = /^[a-zA-Z0-9_]+$/;
 
@@ -17,6 +18,7 @@ export interface EndemicChannelPoint {
   baselineValid: boolean;
   invalidBaselineYears: number;
   invalidCurrentCaseRecords: number;
+  futureCurrentCaseRecords?: number;
   min: number;
   /** Limite inferior do coeficiente de incidencia por 100 mil hab. = media − 2×DP. */
   q1: number;
@@ -71,7 +73,7 @@ function bucketCountFor(grain: EndemicChannelGrain) {
   return grain === "month" ? 12 : 53;
 }
 
-type EndemicCaseGroup = { yr: number; se: number; cases: number | null; invalidCaseRecords: number };
+type EndemicCaseGroup = { yr: number; se: number; cases: number | null; invalidCaseRecords: number; sourceRecordCount: number };
 
 function appendEndemicCaseRows(groups: Map<string, EndemicCaseGroup>, rows: Array<Record<string, unknown>>, grain: EndemicChannelGrain) {
   const maximum = bucketCountFor(grain);
@@ -82,7 +84,8 @@ function appendEndemicCaseRows(groups: Map<string, EndemicCaseGroup>, rows: Arra
     if (grain === "month" && !(bucket >= 1 && bucket <= 12)) bucket = Number(String(row.DtNotificacao ?? "").slice(5, 7));
     if (!Number.isInteger(year) || year <= 1900 || !Number.isInteger(bucket) || bucket < 1 || bucket > maximum) continue;
     const key = `${year}-${bucket}`;
-    const group = groups.get(key) ?? { yr: year, se: bucket, cases: 0, invalidCaseRecords: 0 };
+    const group = groups.get(key) ?? { yr: year, se: bucket, cases: 0, invalidCaseRecords: 0, sourceRecordCount: 0 };
+    group.sourceRecordCount += 1;
     const value = row.TotalCaso == null || String(row.TotalCaso).trim() === "" ? null : Number(row.TotalCaso);
     if (value == null || !Number.isInteger(value) || value < 0) {
       group.invalidCaseRecords += 1;
@@ -110,18 +113,21 @@ export function buildChannel(
   hist: Array<Record<string, unknown>>,
   curr: Array<Record<string, unknown>>,
   grain: EndemicChannelGrain,
-  population: Awaited<ReturnType<typeof loadCevespTerritoryPopulation>>
+  population: Awaited<ReturnType<typeof loadCevespTerritoryPopulation>>,
+  now = new Date()
 ) {
   const maxBucket = bucketCountFor(grain);
 
   // Observed zero is valid; a missing bucket is never synthesized as zero.
   const invalidBaselineYears = new Map<number, number>();
   const invalidCurrentRecords = new Map<number, number>();
+  const futureCurrentRecords = new Map<number, number>();
   const observedBuckets = new Set<number>();
   const seMap = new Map<number, Array<{ year: number; cases: number; population: number; populationYear: number | null; incidence: number }>>();
   for (const row of hist) {
     const se = Number(row.se ?? 0);
     const year = Number(row.yr ?? row.year ?? row.ano ?? 0);
+    if (!isObservedBucket(year, se, grain, now)) continue;
     if (Number.isInteger(se) && se >= 1 && se <= maxBucket) observedBuckets.add(se);
     if (!hasValidAggregatedCases(row)) {
       invalidBaselineYears.set(se, (invalidBaselineYears.get(se) ?? 0) + 1);
@@ -157,6 +163,10 @@ export function buildChannel(
     const se = Number(row.se ?? 0);
     const year = Number(row.yr ?? row.year ?? row.ano ?? 0);
     if (Number.isInteger(se) && se >= 1 && se <= maxBucket) observedBuckets.add(se);
+    if (!isObservedBucket(year, se, grain, now)) {
+      if (Number.isInteger(se) && se >= 1 && se <= maxBucket) futureCurrentRecords.set(se, Number(row.sourceRecordCount ?? row.source_record_count ?? 1));
+      continue;
+    }
     if (!hasValidAggregatedCases(row)) {
       invalidCurrentRecords.set(se, Number(row.invalidCaseRecords ?? row.invalid_case_records ?? 1));
       continue;
@@ -192,6 +202,7 @@ export function buildChannel(
       baselineValid: baseline.length >= MIN_BASELINE_YEARS,
       invalidBaselineYears: invalidBaselineYears.get(se) ?? 0,
       invalidCurrentCaseRecords: invalidCurrentRecords.get(se) ?? 0,
+      futureCurrentCaseRecords: futureCurrentRecords.get(se) ?? 0,
       min: values.length > 0 ? roundIncidence(values[0]) : 0,
       q1: roundIncidence(limiteInferior),
       median: roundIncidence(media),
@@ -306,6 +317,7 @@ export async function runEndemicChannel(options: {
         ${bucketExpr} as se,
         coalesce(ANO, year(DtNotificacao)) as yr,
         sum(TotalCaso) as cases,
+        count(*) as source_record_count,
         sum(case when TotalCaso is null or trim(cast(TotalCaso as char)) = '' or TotalCaso < 0 or TotalCaso <> floor(TotalCaso) then 1 else 0 end) as invalid_case_records
       from ${table}
       where coalesce(Excluido, 0) = 0
@@ -321,6 +333,7 @@ export async function runEndemicChannel(options: {
         ${bucketExpr} as se,
         coalesce(ANO, year(DtNotificacao)) as yr,
         sum(TotalCaso) as cases,
+        count(*) as source_record_count,
         sum(case when TotalCaso is null or trim(cast(TotalCaso as char)) = '' or TotalCaso < 0 or TotalCaso <> floor(TotalCaso) then 1 else 0 end) as invalid_case_records
       from ${table}
       where coalesce(Excluido, 0) = 0

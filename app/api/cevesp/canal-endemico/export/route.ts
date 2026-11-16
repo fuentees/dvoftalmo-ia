@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
     ws.properties.defaultRowHeight = 16;
 
     // Title rows
-    ws.mergeCells("A1:M1");
+    ws.mergeCells("A1:N1");
     const t1 = ws.getCell("A1");
     t1.value = "CANAL ENDÊMICO — VIGILÂNCIA DAS CONJUNTIVITES — CEVESP/SP";
     t1.font  = { bold: true, size: 13, color: { argb: "FFFFFFFF" } };
@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
     t1.alignment = { horizontal: "center", vertical: "middle" };
     ws.getRow(1).height = 22;
 
-    ws.mergeCells("A2:M2");
+    ws.mergeCells("A2:N2");
     const t2 = ws.getCell("A2");
     t2.value = `Gerado em: ${formatBusinessDate(now)}  |  Abrangência: ${scope}  |  Ano de referência: ${year}`;
     t2.font  = { size: 10, italic: true, color: { argb: "FF374151" } };
@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
     ws.addRow([]); // spacer
 
     // Summary row
-    ws.mergeCells("A4:M4");
+    ws.mergeCells("A4:N4");
     const summary = ws.getCell("A4");
     summary.value = lastPt
       ? `Último período observado: ${lastPt.se}  |  Casos: ${lastPt.currentYear ?? "—"}  |  Incidência: ${lastPt.currentIncidence ?? "—"} por 100 mil hab.  |  Zona: ${zonaAtual}  |  Limite inferior=${lastPt.baselineValid ? lastPt.q1 : "—"}  |  Média=${lastPt.baselineValid ? lastPt.median : "—"}  |  Limite superior=${lastPt.baselineValid ? lastPt.q3 : "—"}`
@@ -101,7 +101,8 @@ export async function GET(request: NextRequest) {
       "Anos históricos válidos",
       "Anos com contagem inválida",
       "Registros atuais com contagem inválida",
-      "Ano da população atual"
+      "Ano da população atual",
+      "Registros em períodos futuros excluídos"
     ]);
     headerRow.eachCell((cell) => {
       cell.font  = { bold: true, color: { argb: "FFFFFFFF" }, size: 10 };
@@ -129,7 +130,8 @@ export async function GET(request: NextRequest) {
         pt.baselineCount,
         pt.invalidBaselineYears,
         pt.invalidCurrentCaseRecords,
-        pt.populationYear
+        pt.populationYear,
+        pt.futureCurrentCaseRecords ?? 0
       ]);
       if (fill) {
         const dataCell = row.getCell(2); // "Casos" column
@@ -157,6 +159,7 @@ export async function GET(request: NextRequest) {
     ws.getColumn(11).width = 28;
     ws.getColumn(12).width = 34;
     ws.getColumn(13).width = 24;
+    ws.getColumn(14).width = 38;
 
     // ── Sheet 2: Legenda ─────────────────────────────────────────────────────
     const wl = wb.addWorksheet("Legenda");
@@ -181,6 +184,7 @@ export async function GET(request: NextRequest) {
     wl.addRow([]);
     wl.addRow(["Metodologia", CHANNEL_METHODOLOGY]);
     wl.addRow(["Qualidade", "Contagem ausente, negativa ou fracionária invalida o período antes da soma. Esses grupos não compõem o histórico; zero informado permanece válido."]);
+    wl.addRow(["Períodos futuros", "Registros de períodos ainda não alcançados permanecem na origem e na auditoria, mas não recebem incidência observada nem classificação. A quantidade excluída aparece na primeira aba."]);
     wl.addRow(["População", "O ano efetivo do denominador atual aparece na primeira aba. Pode ser substituto quando não há população do ano solicitado."]);
     wl.addRow(["Fonte", "CEVESP — Centro de Vigilância Epidemiológica / Centro de Oftalmologia Sanitária — SES-SP"]);
     wl.addRow(["Exportado em", formatBusinessDate(now)]);

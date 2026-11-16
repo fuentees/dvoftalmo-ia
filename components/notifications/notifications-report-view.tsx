@@ -10,7 +10,7 @@ import {
   MessageSquareText,
   RefreshCw
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,6 +21,10 @@ import { ConjuntiviteChartsView } from "@/components/conjuntivite/conjuntivite-c
 import { CanalEndemicoView } from "@/components/conjuntivite/canal-endemico-view";
 import { AnalysisChart } from "@/components/analysis-chart";
 import { listarMunicipiosPorGve } from "@/lib/municipios-sp";
+import { ManagementSummary } from "@/components/epidemiology/management-summary";
+import { managementScope, qualityReadout, rateForCsv, type QualityReadout } from "@/lib/management-reading";
+import { canExportQuery, currentConsultationData, currentQueryData, fetchJson } from "@/lib/query-result";
+import { distributionWarning, type DistributionQuality } from "@/lib/cevesp-distribution";
 
 type HubTab = "situacao" | "consulta" | "saidas";
 type NotificationsReportViewProps = {
@@ -36,6 +40,7 @@ type NotificationsReportViewProps = {
   onAsk?: (question: string) => void;
   /** Consulta: pergunta a responder ao abrir. */
   initialQuestion?: string;
+  onReviewQuality?: () => void;
 };
 
 type ReportData = {
@@ -53,6 +58,7 @@ type ReportData = {
     topUnits: Array<{ name: string; total: number }>;
     sexDistribution: Array<{ label: string; total: number }>;
     ageDistribution: Array<{ label: string; total: number }>;
+    distributionQuality?: { sex: DistributionQuality; age: DistributionQuality };
     outbreakNotifications: number;
     outbreakTotal: number;
     biologicalCollectionNotifications: number;
@@ -93,6 +99,7 @@ type QualityRecord = {
 
 type QualityData = {
   total: number;
+  totalRecords?: number;
   filteredTotal?: number;
   records?: QualityRecord[];
   byType: Record<string, number>;
@@ -118,6 +125,7 @@ type CevespRatesData = {
 };
 
 type AskData = {
+  querySignature: string;
   metricLabel?: string;
   timeLabel?: string;
   columns?: string[];
@@ -208,14 +216,6 @@ function sanitizeSe(value: string) {
   return Math.min(53, Math.max(1, Math.trunc(parsed)));
 }
 
-function riskFromReport(report?: ReportData, quality?: QualityData) {
-  const highAlerts = report?.alerts.filter((item) => item.severity === "alta").length ?? 0;
-  const qualityTotal = quality?.total ?? 0;
-  if (highAlerts > 0 || qualityTotal >= 100) return { label: "Atenção alta", cls: "border-red-200 bg-red-50 text-red-700" };
-  if ((report?.alerts.length ?? 0) > 0 || qualityTotal > 0) return { label: "Monitorar", cls: "border-amber-200 bg-amber-50 text-amber-700" };
-  return { label: !quality ? "Qualidade não avaliada" : report?.alertsAvailable === false ? "Alertas não avaliados" : "Sem pendências detectadas", cls: "border-slate-200 bg-slate-50 text-slate-700" };
-}
-
 function MetricCard({ label, value, detail, tone = "default", change, pill }: {
   label: string;
   value: string | number;
@@ -243,6 +243,18 @@ function MetricCard({ label, value, detail, tone = "default", change, pill }: {
       {pill && <span className={`mt-1 self-start rounded-md px-2 py-0.5 text-xs font-medium ${pillClass}`}>{pill}</span>}
     </div>
   );
+}
+
+function ExecutiveSummary({ report, quality, onReviewQuality, territoryAvailable }: { report: ReportData; quality: QualityReadout; onReviewQuality?: () => void; territoryAvailable: boolean }) {
+  const top = report.indicators.topMunicipalities[0] ?? report.indicators.topGves[0];
+  return <ManagementSummary
+    figure={{ value: `${num(report.indicators.totalCases)} casos informados`, detail: `${num(report.indicators.notifications)} notificações no recorte selecionado.` }}
+    territory={{ value: top?.name ?? "Sem território com casos informados", detail: top ? `Maior número de casos: ${num(top.total)}. Compare também a taxa por população.` : "Confira a disponibilidade de registros na análise territorial." }}
+    quality={quality}
+    nextAction={report.alerts.length ? "Investigar o alerta apresentado e conferir as pendências da base." : quality.nextAction}
+    onReviewQuality={onReviewQuality}
+    territoryHref={territoryAvailable ? "#conjuntivite-territorio" : undefined}
+  />;
 }
 
 function RankingList({ title, items, valueLabel = "casos" }: {
@@ -418,11 +430,8 @@ const PERGUNTAS_PRONTAS = [
   "Total de casos por unidade este ano"
 ];
 
-async function buscarRelatorio(qs: string): Promise<ReportData> {
-  const response = await fetch(`/api/notificacoes/relatorio${qs ? `?${qs}` : ""}`);
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error ?? "Erro ao gerar relatorio");
-  return data as ReportData;
+async function buscarRelatorio(qs: string, signal?: AbortSignal): Promise<ReportData> {
+  return fetchJson<ReportData>(`/api/notificacoes/relatorio${qs ? `?${qs}` : ""}`, "Erro ao gerar relatório", { signal });
 }
 
 function parametrosTaxas(ano?: number, anoFim?: number, gve?: string, municipio?: string, seInicio?: number, seFim?: number) {
@@ -436,58 +445,44 @@ function parametrosTaxas(ano?: number, anoFim?: number, gve?: string, municipio?
   return params.toString();
 }
 
-async function buscarTaxas(qs: string): Promise<CevespRatesData> {
-  const response = await fetch(`/api/cevesp/taxas${qs ? `?${qs}` : ""}`);
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error ?? "Erro ao calcular taxas");
-  return data as CevespRatesData;
+async function buscarTaxas(qs: string, signal?: AbortSignal): Promise<CevespRatesData> {
+  return fetchJson<CevespRatesData>(`/api/cevesp/taxas${qs ? `?${qs}` : ""}`, "Erro ao calcular taxas", { signal });
 }
 
-export function NotificationsReportView({ section, externalFilters, hideFilters = false, onAsk, initialQuestion }: NotificationsReportViewProps = {}) {
+export function NotificationsReportView({ section, externalFilters, hideFilters = false, onAsk, initialQuestion, onReviewQuality }: NotificationsReportViewProps = {}) {
   const [evolucao, setEvolucao] = useState<"semanas" | "canal" | "anos">("semanas");
   const [onde, setOnde] = useState<"ranking" | "incidencia" | "unidades">("ranking");
+  const queryClient = useQueryClient();
   const [tab, setTab] = useState<HubTab>("situacao");
   const activeTab: HubTab = section ?? tab;
   const [question, setQuestion] = useState("Total de casos por GVE dos últimos 5 anos separado por ano");
   const [structuredMetric, setStructuredMetric] = useState("Total de casos");
   const [structuredDimension, setStructuredDimension] = useState("por GVE");
   const [structuredPeriod, setStructuredPeriod] = useState("últimos 5 anos");
-  // Começa já com os filtros do hub: senão a primeira busca sai sem ano (todos os anos, a mais pesada)
-  const [selectedYear, setSelectedYear] = useState<number | undefined>(externalFilters?.year);
-  const [selectedYearEnd, setSelectedYearEnd] = useState<number | undefined>(externalFilters?.yearEnd);
-  const [selectedGve, setSelectedGve] = useState<string>(externalFilters?.gve ?? "");
+  const [localYear, setSelectedYear] = useState<number | undefined>(undefined);
+  const [localGve, setSelectedGve] = useState<string>("");
   const [seInicio, setSeInicio] = useState<number | undefined>(undefined);
   const [seFim, setSeFim] = useState<number | undefined>(undefined);
-  const [selectedMunicipio, setSelectedMunicipio] = useState<string>(externalFilters?.municipio ?? "");
+  const [localMunicipio, setSelectedMunicipio] = useState<string>("");
+  const selectedYear = externalFilters ? externalFilters.year : localYear;
+  const selectedYearEnd = externalFilters?.yearEnd !== selectedYear ? externalFilters?.yearEnd : undefined;
+  const selectedGve = externalFilters ? externalFilters.gve ?? "" : localGve;
+  const selectedMunicipio = externalFilters ? externalFilters.municipio ?? "" : localMunicipio;
   const municipioOptions = useMemo(() => listarMunicipiosPorGve(selectedGve), [selectedGve]);
-  const seStart = seInicio != null && seFim != null ? Math.min(seInicio, seFim) : seInicio;
-  const seEnd = seInicio != null && seFim != null ? Math.max(seInicio, seFim) : seFim;
-
-  useEffect(() => {
-    if (!externalFilters) return;
-    setSelectedYear(externalFilters.year);
-    setSelectedYearEnd(externalFilters.yearEnd);
-    setSelectedGve(externalFilters.gve ?? "");
-    setSelectedMunicipio(externalFilters.municipio ?? "");
-    setSeInicio(undefined);
-    setSeFim(undefined);
-  }, [externalFilters]);
+  const seStart = externalFilters ? undefined : seInicio != null && seFim != null ? Math.min(seInicio, seFim) : seInicio;
+  const seEnd = externalFilters ? undefined : seInicio != null && seFim != null ? Math.max(seInicio, seFim) : seFim;
 
   const anosQuery = useQuery<{ anos: number[] }>({
     queryKey: ["cevesp-anos"],
-    queryFn: async () => {
-      const res = await fetch("/api/cevesp/anos");
-      return res.json() as Promise<{ anos: number[] }>;
-    },
+    queryFn: ({ signal }) => fetchJson<{ anos: number[] }>("/api/cevesp/anos", "Não foi possível carregar os anos disponíveis.", { signal }),
     staleTime: 10 * 60 * 1000
   });
 
   const gvesQuery = useQuery<{ gves: string[] }>({
     queryKey: ["cevesp-gves", selectedYear],
-    queryFn: async () => {
+    queryFn: ({ signal }) => {
       const url = selectedYear ? `/api/cevesp/gves?ano=${selectedYear}` : "/api/cevesp/gves";
-      const res = await fetch(url);
-      return res.json() as Promise<{ gves: string[] }>;
+      return fetchJson<{ gves: string[] }>(url, "Não foi possível carregar os GVEs disponíveis.", { signal });
     },
     staleTime: 10 * 60 * 1000
   });
@@ -517,13 +512,16 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
 
   const report = useQuery<ReportData>({
     queryKey: ["notifications-report", selectedYear, selectedYearEnd, selectedGve, selectedMunicipio, seStart, seEnd],
-    queryFn: () => buscarRelatorio(buildQueryParams()),
+    queryFn: ({ signal }) => {
+      const qs = buildQueryParams();
+      return fetchJson<ReportData>(`/api/notificacoes/relatorio${qs ? `?${qs}` : ""}`, "Erro ao gerar relatório", { signal });
+    },
     staleTime: 5 * 60 * 1000
   });
 
   const quality = useQuery<QualityData>({
     queryKey: ["cevesp-qualidade-resumo", selectedYear, selectedYearEnd, selectedGve, selectedMunicipio, seStart, seEnd],
-    queryFn: async () => {
+    queryFn: ({ signal }) => {
       const params = new URLSearchParams({ limit: "200" });
       if (selectedYear) params.set("ano", String(selectedYear));
       if (selectedYearEnd) params.set("anoFim", String(selectedYearEnd));
@@ -531,23 +529,29 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
       if (selectedMunicipio) params.set("municipio", selectedMunicipio);
       if (seStart != null) params.set("seInicio", String(seStart));
       if (seEnd != null) params.set("seFim", String(seEnd));
-      const response = await fetch(`/api/cevesp/qualidade?${params}`);
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message ?? data.error ?? "Erro ao carregar qualidade");
-      return data as QualityData;
+      return fetchJson<QualityData>(`/api/cevesp/qualidade?${params}`, "Erro ao carregar qualidade", { signal });
     },
     staleTime: 5 * 60 * 1000
   });
 
   const rates = useQuery<CevespRatesData>({
     queryKey: ["cevesp-taxas", selectedYear, selectedYearEnd, selectedGve, selectedMunicipio, seStart, seEnd],
-    queryFn: () => buscarTaxas(parametrosTaxas(selectedYear, selectedYearEnd, selectedGve, selectedMunicipio, seStart, seEnd)),
+    queryFn: ({ signal }) => {
+      const params = new URLSearchParams();
+      if (selectedYear) params.set("ano", String(selectedYear));
+      if (selectedYearEnd) params.set("anoFim", String(selectedYearEnd));
+      if (selectedGve) params.set("gve", selectedGve);
+      if (selectedMunicipio) params.set("municipio", selectedMunicipio);
+      if (seStart != null) params.set("seInicio", String(seStart));
+      if (seEnd != null) params.set("seFim", String(seEnd));
+      const qs = params.toString();
+      return fetchJson<CevespRatesData>(`/api/cevesp/taxas${qs ? `?${qs}` : ""}`, "Erro ao calcular taxas", { signal });
+    },
     staleTime: 5 * 60 * 1000
   });
 
   // Depois que o ano escolhido carregar, busca em segundo plano "todos os anos" e o ano anterior
   // (mesmo GVE/município): trocar o filtro para eles fica instantâneo.
-  const queryClient = useQueryClient();
   const relatorioPronto = report.isSuccess;
   useEffect(() => {
     if (!relatorioPronto || seStart != null || seEnd != null) return;
@@ -562,12 +566,12 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
         if (selectedMunicipio) relatorio.set("municipio", selectedMunicipio);
         void queryClient.prefetchQuery({
           queryKey: ["notifications-report", ano, undefined, selectedGve, selectedMunicipio, undefined, undefined],
-          queryFn: () => buscarRelatorio(relatorio.toString()),
+          queryFn: ({ signal }) => buscarRelatorio(relatorio.toString(), signal),
           staleTime: 5 * 60 * 1000
         });
         void queryClient.prefetchQuery({
           queryKey: ["cevesp-taxas", ano, undefined, selectedGve, selectedMunicipio, undefined, undefined],
-          queryFn: () => buscarTaxas(parametrosTaxas(ano, undefined, selectedGve, selectedMunicipio)),
+          queryFn: ({ signal }) => buscarTaxas(parametrosTaxas(ano, undefined, selectedGve, selectedMunicipio), signal),
           staleTime: 5 * 60 * 1000
         });
       }
@@ -575,35 +579,54 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
     return () => window.clearTimeout(timer);
   }, [relatorioPronto, queryClient, selectedYear, selectedYearEnd, selectedGve, selectedMunicipio, seStart, seEnd]);
 
-  const ask = useMutation<AskData, Error, string | void>({
-    mutationFn: async (override) => {
-      const response = await fetch("/api/notificacoes/pergunta", {
+  const consultationFilters = buildQueryParams();
+  const consultationSignature = JSON.stringify({ question: question.trim(), filters: consultationFilters });
+  const ask = useMutation<AskData, Error, { question: string; filters: string; signature: string }>({
+    mutationFn: async (snapshot) => {
+      const data = await fetchJson<Omit<AskData, "querySignature">>("/api/notificacoes/pergunta", "Erro ao consultar banco", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: (override || question).trim(), filters: buildQueryParams() })
+        body: JSON.stringify({ question: snapshot.question, filters: snapshot.filters })
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Erro ao consultar banco");
-      return data as AskData;
+      return { ...data, querySignature: snapshot.signature };
     }
   });
 
+  const reportData = currentQueryData(report);
+  const ratesData = currentQueryData(rates);
+  const askData = currentConsultationData(ask, consultationSignature);
+  const analysisUpdating = report.isFetching || rates.isFetching;
+  const canExportAnalysis = !analysisUpdating && (canExportQuery(report) || canExportQuery(rates));
+  function refreshAnalysis() {
+    return Promise.all([
+      "notifications-report", "cevesp-qualidade-resumo", "cevesp-taxas", "canal-endemico-banner",
+      "canal-endemico", "canal-endemico-prev", "cevesp-historico", "cevesp-sync-info",
+      "cevesp-qualidade", "cevesp-qualidade-completude"
+    ].map((key) => queryClient.invalidateQueries({ queryKey: [key] })));
+  }
+
+  const qualityStatus = qualityReadout({
+    state: quality.isError ? "unavailable" : quality.isLoading ? "loading" : quality.data ? "ready" : "pending",
+    issues: quality.data?.total, affectedRecords: quality.data?.totalRecords
+  });
+  const totalCases = reportData?.indicators.totalCases ?? 0;
+  const outbreakRate = pct(reportData?.indicators.outbreakNotifications ?? 0, reportData?.indicators.notifications ?? 0);
+
+  const lastInitialQuestion = useRef<string | undefined>(undefined);
   const askMutate = ask.mutate;
   useEffect(() => {
-    if (!initialQuestion) return;
-    setQuestion(initialQuestion);
-    askMutate(initialQuestion);
-  }, [initialQuestion, askMutate]);
+    if (!initialQuestion || lastInitialQuestion.current === initialQuestion) return;
+    lastInitialQuestion.current = initialQuestion;
+    const text = initialQuestion.trim();
+    setQuestion(text);
+    askMutate({ question: text, filters: consultationFilters, signature: JSON.stringify({ question: text, filters: consultationFilters }) });
+  }, [initialQuestion, askMutate, consultationFilters]);
 
-  const risk = riskFromReport(report.data, quality.data);
-  const totalCases = report.data?.indicators.totalCases ?? 0;
-  const outbreakRate = pct(report.data?.indicators.outbreakNotifications ?? 0, report.data?.indicators.notifications ?? 0);
-
-  const prevYear = report.data?.previousYear ?? null;
+  const prevYear = reportData?.previousYear ?? null;
   const casesChange = prevYear && prevYear.totalCases > 0
     ? { pct: ((totalCases - prevYear.totalCases) / prevYear.totalCases) * 100, prevAno: prevYear.ano }
     : null;
-  const reportingMunicipalities = report.data?.indicators.reportingMunicipalities ?? 0;
+  const reportingMunicipalities = reportData?.indicators.reportingMunicipalities ?? 0;
   const muniChange = prevYear && prevYear.reportingMunicipalities > 0
     ? { pct: ((reportingMunicipalities - prevYear.reportingMunicipalities) / prevYear.reportingMunicipalities) * 100, prevAno: prevYear.ano }
     : null;
@@ -619,45 +642,51 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
   }
 
   function downloadSituacaoCsv() {
+    if (!canExportAnalysis) return;
     const escape = (v: unknown) => {
       const t = String(v ?? "");
       return /[",;\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
     };
 
     const sections: string[] = [];
+    sections.push(["Recorte", managementScope({ yearStart: selectedYear, yearEnd: selectedYearEnd ?? selectedYear, gve: selectedGve, municipio: selectedMunicipio })].map(escape).join(";"));
+    sections.push("Taxas indisponíveis permanecem vazias. Zero representa valor informado.");
+    if (report.isError) sections.push("Relatório indisponível: exportação contém apenas a análise territorial disponível.");
+    if (rates.isError) sections.push("Taxas indisponíveis: exportação contém apenas contagens do relatório disponível.");
+    sections.push("");
 
-    if (rates.data?.byMunicipality?.length) {
+    if (ratesData?.byMunicipality?.length) {
       sections.push("Incidência por município");
-      sections.push(["Município", "GVE", "Casos", "População", "Incidência/100 mil"].map(escape).join(";"));
-      for (const r of rates.data.byMunicipality) {
+      sections.push(["Município", "GVE", "Casos", "População", "Incidência/100 mil", "Anos IBGE usados", "Anos sem registros"].map(escape).join(";"));
+      for (const r of ratesData.byMunicipality) {
         sections.push([
           r.municipio, r.gve, r.casos, r.populacao,
-          Number(r.incidencia100k ?? 0).toFixed(2).replace(".", ",")
+          rateForCsv(r.incidencia100k), r.populationSourceYears?.join(", "), r.missingYears?.join(", ")
         ].map(escape).join(";"));
       }
-    } else if (report.data?.indicators.topMunicipalities.length) {
+    } else if (reportData?.indicators.topMunicipalities.length) {
       sections.push("Top municípios por casos");
       sections.push(["Município", "Casos"].map(escape).join(";"));
-      for (const r of report.data.indicators.topMunicipalities) {
+      for (const r of reportData.indicators.topMunicipalities) {
         sections.push([r.name, r.total].map(escape).join(";"));
       }
     }
 
-    if (rates.data?.byGve?.length) {
+    if (ratesData?.byGve?.length) {
       if (sections.length) sections.push("");
       sections.push("Incidência por GVE");
-      sections.push(["GVE", "Casos", "População", "Incidência/100 mil"].map(escape).join(";"));
-      for (const r of rates.data.byGve) {
+      sections.push(["GVE", "Casos", "População", "Incidência/100 mil", "Anos IBGE usados", "Anos sem registros"].map(escape).join(";"));
+      for (const r of ratesData.byGve) {
         sections.push([
           r.gve, r.casos, r.populacao,
-          Number(r.incidencia100k ?? 0).toFixed(2).replace(".", ",")
+          rateForCsv(r.incidencia100k), r.populationSourceYears?.join(", "), r.missingYears?.join(", ")
         ].map(escape).join(";"));
       }
-    } else if (report.data?.indicators.topGves.length) {
+    } else if (reportData?.indicators.topGves.length) {
       if (sections.length) sections.push("");
       sections.push("Top GVEs por casos");
       sections.push(["GVE", "Casos"].map(escape).join(";"));
-      for (const r of report.data.indicators.topGves) {
+      for (const r of reportData.indicators.topGves) {
         sections.push([r.name, r.total].map(escape).join(";"));
       }
     }
@@ -669,15 +698,16 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
     const gveSuffix = selectedGve ? `-${selectedGve.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 20)}` : "";
     const muniSuffix = selectedMunicipio ? `-${selectedMunicipio.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 20)}` : "";
     const seSuffix = (seStart || seEnd) ? `-SE${seStart ?? 1}-${seEnd ?? 53}` : "";
-    link.download = `cevesp-situacao${selectedYear ? `-${selectedYear}` : ""}${gveSuffix}${muniSuffix}${seSuffix}.csv`;
+    const yearSuffix = selectedYear ? `-${selectedYear}${selectedYearEnd && selectedYearEnd !== selectedYear ? `-${selectedYearEnd}` : ""}` : selectedYearEnd ? `-ate-${selectedYearEnd}` : "";
+    link.download = `cevesp-situacao${yearSuffix}${gveSuffix}${muniSuffix}${seSuffix}.csv`;
     link.click();
     URL.revokeObjectURL(link.href);
   }
 
   function downloadAskCsv() {
-    if (!ask.data) return;
-    const rows = ask.data.monthlyReport?.statewideRows ?? ask.data.weeklyReport?.pivotRows ?? ask.data.rows ?? [];
-    const columns = ask.data.columns ?? Object.keys(rows[0] ?? {});
+    if (!askData) return;
+    const rows = askData.monthlyReport?.statewideRows ?? askData.weeklyReport?.pivotRows ?? askData.rows ?? [];
+    const columns = askData.columns ?? Object.keys(rows[0] ?? {});
     const escape = (value: unknown) => {
       const text = String(value ?? "");
       return /[",;\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
@@ -702,7 +732,7 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <Badge className="border-primary/30 bg-primary/10 text-primary">Análise por agravo</Badge>
-              <Badge className={risk.cls}>{risk.label}</Badge>
+              <Badge className={qualityStatus.tone === "attention" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-slate-200 bg-slate-50 text-slate-700"}>{qualityStatus.label}</Badge>
             </div>
             <h1 className="mt-2 text-lg font-semibold leading-tight">
               Conjuntivites - CEVESP{selectedYear ? ` · ${selectedYear}` : ""}
@@ -782,11 +812,7 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
             )}
             <Button
               variant="outline"
-              onClick={() => {
-                void report.refetch();
-                void quality.refetch();
-                void rates.refetch();
-              }}
+              onClick={() => void refreshAnalysis()}
               disabled={report.isFetching || quality.isFetching || rates.isFetching}
             >
               <RefreshCw className={`h-4 w-4 ${report.isFetching || quality.isFetching || rates.isFetching ? "animate-spin" : ""}`} />
@@ -841,33 +867,37 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
                 {report.error instanceof Error ? report.error.message : quality.error instanceof Error ? quality.error.message : rates.error instanceof Error ? rates.error.message : "Verifique sincronização, cache ou conexão."}
               </CardDescription>
             </CardHeader>
+            <CardContent className="space-y-3 text-sm text-amber-900">
+              <p>Os módulos que falharam foram ocultados. Os demais resultados disponíveis continuam identificados pelo recorte selecionado.</p>
+              <Button variant="outline" size="sm" disabled={report.isFetching || quality.isFetching || rates.isFetching} onClick={() => void refreshAnalysis()}>Tentar atualizar novamente</Button>
+            </CardContent>
           </Card>
         )}
 
-        {activeTab === "situacao" && report.data && (
+        {analysisUpdating && (reportData || ratesData) && <p role="status" className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">Atualizando a análise. Os números exibidos são da última consulta concluída; a exportação ficará disponível após a atualização.</p>}
+
+        {activeTab === "situacao" && reportData && (
           <div className="space-y-6">
+            <ExecutiveSummary report={reportData} quality={qualityStatus} onReviewQuality={onReviewQuality} territoryAvailable={Boolean(ratesData) && !rates.isError} />
             <div className="flex items-center justify-between gap-2 print-hide" data-print-hide>
               <div className="text-xs text-muted-foreground">
                 {(() => {
-                  const lastWeek = report.data.indicators.weeklySeries.at(-1);
+                  const lastWeek = reportData.indicators.weeklySeries.at(-1);
                   const match = lastWeek?.week.match(/^(\d{4})-SE(\d+)$/);
                   const seLabel = match ? `SE ${match[2]}/${match[1]}` : null;
-                  const genDate = new Date(report.data.generatedAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+                  const genDate = new Date(reportData.generatedAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
                   return seLabel
                     ? `Dados até ${seLabel} · Relatório gerado em ${genDate}`
                     : `Relatório gerado em ${genDate}`;
                 })()}
               </div>
-              <Button variant="outline" size="sm" onClick={downloadSituacaoCsv} disabled={!rates.data && !report.data}>
-                <Download className="h-4 w-4" />
-                Exportar análise CSV
-              </Button>
+              <div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={() => void refreshAnalysis()} disabled={analysisUpdating || quality.isFetching}><RefreshCw className={`h-4 w-4 ${analysisUpdating ? "animate-spin" : ""}`} />Atualizar dados</Button><Button variant="outline" size="sm" onClick={downloadSituacaoCsv} disabled={!canExportAnalysis}><Download className="h-4 w-4" />Exportar análise CSV</Button></div>
             </div>
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <MetricCard
                 label="Casos no recorte"
                 value={totalCases}
-                detail={`${num(report.data.indicators.notifications)} notificações`}
+                detail={`${num(reportData.indicators.notifications)} notificações no recorte`}
                 change={casesChange ?? undefined}
               />
               <MetricCard
@@ -880,17 +910,17 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
               />
               <MetricCard
                 label="Notificações com surto"
-                value={report.data.indicators.outbreakNotifications}
-                detail={`${outbreakRate} das notificações · ${num(report.data.indicators.biologicalCollectionTotal)} materiais coletados`}
-                tone={report.data.indicators.outbreakNotifications > 0 ? "amber" : "default"}
-                pill={report.data.indicators.outbreakNotifications > 0 ? "Investigar surtos" : undefined}
+                value={reportData.indicators.outbreakNotifications}
+                detail={`${outbreakRate} das notificações · ${num(reportData.indicators.biologicalCollectionTotal)} materiais coletados`}
+                tone={reportData.indicators.outbreakNotifications > 0 ? "amber" : "default"}
+                pill={reportData.indicators.outbreakNotifications > 0 ? "Investigar surtos" : undefined}
               />
               <MetricCard
                 label="Pendências de qualidade"
-                value={quality.data?.total ?? "—"}
-                detail="Registros a revisar na aba Qualidade dos dados"
-                tone={(quality.data?.total ?? 0) > 0 ? "red" : "green"}
-                pill={(quality.data?.total ?? 0) > 0 ? "Revisar antes de divulgar" : "Sem pendências"}
+                value={quality.isError ? "Indisponível" : quality.data?.total ?? "Em avaliação"}
+                detail="Um registro pode apresentar vários problemas"
+                tone={qualityStatus.tone === "attention" ? "amber" : "default"}
+                pill={qualityStatus.tone === "attention" ? "Revisar antes de divulgar" : undefined}
               />
             </div>
 
@@ -910,8 +940,8 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
               {evolucao === "semanas" && (
                 <EpidemicCharts
                   parts={["curva"]}
-                  weeklySeries={report.data.indicators.weeklySeries ?? []}
-                  weeklyAverage={report.data.indicators.weeklyAverage ?? []}
+                  weeklySeries={reportData.indicators.weeklySeries ?? []}
+                  weeklyAverage={reportData.indicators.weeklyAverage ?? []}
                   selectedYear={selectedYear && (!selectedYearEnd || selectedYearEnd === selectedYear) ? selectedYear : undefined}
                   ageDistribution={[]}
                   sexDistribution={[]}
@@ -939,18 +969,18 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
                 </CardHeader>
                 <CardContent>
                   <ul className="space-y-2 text-sm text-muted-foreground">
-                    {report.data.interpretation.map((item, index) => <li key={index}>{item}</li>)}
+                    {reportData.interpretation.map((item, index) => <li key={index}>{item}</li>)}
                   </ul>
                 </CardContent>
               </Card>
 
-              <Card className={report.data.alerts.length ? "border-amber-300" : ""}>
+              <Card className={reportData.alerts.length ? "border-amber-300" : ""}>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base">Alertas para investigação</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {report.data.alerts.length ? report.data.alerts.slice(0, 5).map((alert) => (
-                    <div key={alert.title} className="rounded-md border p-3">
+                  {reportData.alerts.length ? reportData.alerts.slice(0, 5).map((alert, index) => (
+                    <div key={`${alert.title}-${index}`} className="rounded-md border p-3">
                       <div className="mb-1 flex items-center gap-2">
                         <Badge className={alert.severity === "alta" ? "border-red-300 bg-red-50 text-red-700" : "border-amber-300 bg-amber-50 text-amber-700"}>
                           {alert.severity}
@@ -960,24 +990,32 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
                       <p className="text-xs text-muted-foreground">{alert.description}</p>
                     </div>
                   )) : (
-                    <p className="text-sm text-muted-foreground">{report.data.alertsAvailable === false ? "Os alertas por registro não foram avaliados neste relatório agregado." : "Nenhum alerta automático detectado nos critérios avaliados."}</p>
+                    <p className="text-sm text-muted-foreground">{reportData.alertsAvailable === false ? "Os alertas por registro não foram avaliados neste relatório agregado." : "Nenhum alerta automático detectado nos critérios avaliados."}</p>
                   )}
                 </CardContent>
               </Card>
             </div>
 
+            {reportData.indicators.distributionQuality && (
+              <div className="space-y-2" role="status">
+                {(["sex", "age"] as const).map(key => {
+                  const warning = distributionWarning(reportData.indicators.distributionQuality![key], key === "sex" ? "sexo" : "faixa etária");
+                  return warning ? <p key={key} className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{warning}</p> : null;
+                })}
+              </div>
+            )}
 
             <EpidemicCharts
               parts={["perfil"]}
               weeklySeries={[]}
               weeklyAverage={[]}
-              ageDistribution={report.data.indicators.ageDistribution ?? []}
-              sexDistribution={report.data.indicators.sexDistribution ?? []}
+              ageDistribution={reportData.indicators.ageDistribution ?? []}
+              sexDistribution={reportData.indicators.sexDistribution ?? []}
               topMunicipalities={[]}
               topGves={[]}
             />
 
-            <section className="space-y-3">
+            <section id="conjuntivite-territorio" className="scroll-mt-24 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h2 className="text-[20px] font-bold tracking-tight">Onde</h2>
@@ -997,17 +1035,17 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
                   weeklyAverage={[]}
                   ageDistribution={[]}
                   sexDistribution={[]}
-                  topMunicipalities={report.data.indicators.topMunicipalities ?? []}
-                  topGves={report.data.indicators.topGves ?? []}
+                  topMunicipalities={reportData.indicators.topMunicipalities ?? []}
+                  topGves={reportData.indicators.topGves ?? []}
                 />
               )}
-              {onde === "incidencia" && (rates.data ? (
+              {onde === "incidencia" && (ratesData ? (
                 <>
-                  {rates.data.warnings?.length ? <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">{rates.data.warnings.join(" ")}</p> : null}
-                  <CevespRatesPanel data={rates.data} />
+                  {ratesData.warnings?.length ? <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">{ratesData.warnings.join(" ")}</p> : null}
+                  <CevespRatesPanel data={ratesData} />
                 </>
               ) : <p className="rounded-xl border bg-card p-5 text-sm text-muted-foreground">{rates.isLoading ? "Carregando incidência…" : "Incidência indisponível para este recorte."}</p>)}
-              {onde === "unidades" && <RankingList title="Unidades notificadoras" items={report.data.indicators.topUnits ?? []} />}
+              {onde === "unidades" && <RankingList title="Unidades notificadoras" items={reportData.indicators.topUnits ?? []} />}
             </section>
 
             {onAsk && (
@@ -1028,7 +1066,7 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
           </div>
         )}
 
-        {activeTab === "situacao" && !report.data && rates.data && <CevespRatesPanel data={rates.data} />}
+        {activeTab === "situacao" && !reportData && ratesData && <div id="conjuntivite-territorio" className="scroll-mt-24 space-y-3"><Button variant="outline" size="sm" onClick={downloadSituacaoCsv} disabled={!canExportAnalysis}><Download className="h-4 w-4" />Exportar análise territorial CSV</Button><CevespRatesPanel data={ratesData} /></div>}
 
         {activeTab === "consulta" && (
           <Card>
@@ -1086,11 +1124,11 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
                 ))}
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button onClick={() => ask.mutate()} disabled={ask.isPending}>
+                <Button onClick={() => ask.mutate({ question: question.trim(), filters: consultationFilters, signature: consultationSignature })} disabled={ask.isPending || !question.trim()}>
                   {ask.isPending ? <RefreshCw className="h-4 w-4 animate-spin" /> : <MessageSquareText className="h-4 w-4" />}
                   Consultar banco
                 </Button>
-                {ask.data && (
+                {askData && (
                   <Button variant="outline" onClick={downloadAskCsv}>
                     <Download className="h-4 w-4" />
                     Exportar CSV
@@ -1099,74 +1137,75 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
               </div>
 
               {ask.isError && <p className="text-sm text-destructive">{(ask.error as Error).message}</p>}
+              {askData && !ask.isError && !ask.isPending && !askData && <p role="status" className="text-sm text-muted-foreground">A pergunta ou os filtros mudaram. Consulte novamente para gerar o resultado deste recorte.</p>}
 
-              {ask.data && (
+              {askData && (
                 <div className="space-y-4">
                   <div className="flex flex-wrap gap-2">
-                    {ask.data.metricLabel && <Badge>{ask.data.metricLabel}</Badge>}
-                    {ask.data.timeLabel && <Badge className="border-primary/50 text-primary">{ask.data.timeLabel}</Badge>}
-                    {(ask.data.understanding?.dimensions ?? []).map((item) => <Badge key={item} className="bg-muted text-foreground">{item}</Badge>)}
+                    {askData.metricLabel && <Badge>{askData.metricLabel}</Badge>}
+                    {askData.timeLabel && <Badge className="border-primary/50 text-primary">{askData.timeLabel}</Badge>}
+                    {(askData.understanding?.dimensions ?? []).map((item) => <Badge key={item} className="bg-muted text-foreground">{item}</Badge>)}
                   </div>
 
-                  {ask.data.understanding && (
+                  {askData.understanding && (
                     <details className="rounded-md border p-3">
                       <summary className="cursor-pointer text-sm font-medium">Critérios entendidos pelo agente</summary>
                       <div className="mt-3 grid gap-2 text-sm md:grid-cols-2">
-                        <InfoItem label="Indicador" value={ask.data.understanding.metric ?? "-"} />
-                        <InfoItem label="Período" value={ask.data.understanding.period ?? "-"} />
-                        <InfoItem label="Tempo" value={ask.data.understanding.temporalGrouping ?? "-"} />
-                        <InfoItem label="Dimensões" value={(ask.data.understanding.dimensions ?? []).join(", ") || "Nenhuma"} />
-                        <InfoItem label="Filtros" value={(ask.data.understanding.filters ?? []).join(", ") || "Nenhum"} />
-                        <InfoItem label="Fonte" value={ask.data.understanding.source ?? "-"} />
+                        <InfoItem label="Indicador" value={askData.understanding.metric ?? "-"} />
+                        <InfoItem label="Período" value={askData.understanding.period ?? "-"} />
+                        <InfoItem label="Tempo" value={askData.understanding.temporalGrouping ?? "-"} />
+                        <InfoItem label="Dimensões" value={(askData.understanding.dimensions ?? []).join(", ") || "Nenhuma"} />
+                        <InfoItem label="Filtros" value={(askData.understanding.filters ?? []).join(", ") || "Nenhum"} />
+                        <InfoItem label="Fonte" value={askData.understanding.source ?? "-"} />
                       </div>
                     </details>
                   )}
 
-                  {(ask.data.interpretation ?? []).length > 0 && (
+                  {(askData.interpretation ?? []).length > 0 && (
                     <Card>
                       <CardHeader className="pb-2">
                         <CardTitle className="text-sm">Interpretação epidemiológica</CardTitle>
                       </CardHeader>
                       <CardContent>
                         <ul className="space-y-2 text-sm text-muted-foreground">
-                          {(ask.data.interpretation ?? []).map((item, index) => <li key={index}>{item}</li>)}
+                          {(askData.interpretation ?? []).map((item, index) => <li key={index}>{item}</li>)}
                         </ul>
                       </CardContent>
                     </Card>
                   )}
 
-                  {ask.data.monthlyReport && (
+                  {askData.monthlyReport && (
                     <div className="space-y-4">
                       <div className="grid gap-3 md:grid-cols-3">
-                        <MetricCard label="Total geral" value={ask.data.monthlyReport.totalCases} />
-                        <MetricCard label="GVEs analisados" value={ask.data.monthlyReport.gveSections.length} />
-                        <MetricCard label="Top GVE" value={ask.data.monthlyReport.topGves[0]?.gve ?? "-"} detail={ask.data.monthlyReport.topGves[0] ? `${num(ask.data.monthlyReport.topGves[0].total)} casos` : undefined} />
+                        <MetricCard label="Total geral" value={askData.monthlyReport.totalCases} />
+                        <MetricCard label="GVEs analisados" value={askData.monthlyReport.gveSections.length} />
+                        <MetricCard label="Top GVE" value={askData.monthlyReport.topGves[0]?.gve ?? "-"} detail={askData.monthlyReport.topGves[0] ? `${num(askData.monthlyReport.topGves[0].total)} casos` : undefined} />
                       </div>
-                      <AnalysisChart columns={ask.data.columns ?? []} rows={ask.data.monthlyReport.statewideRows} title="Série mensal" />
-                      <ResultTable title="Consolidado estadual" columns={ask.data.columns ?? []} rows={ask.data.monthlyReport.statewideRows} />
+                      <AnalysisChart columns={askData.columns ?? []} rows={askData.monthlyReport.statewideRows} title="Série mensal" />
+                      <ResultTable title="Consolidado estadual" columns={askData.columns ?? []} rows={askData.monthlyReport.statewideRows} />
                       <details className="rounded-md border p-3">
                         <summary className="cursor-pointer text-sm font-medium">Abrir tabelas por GVE</summary>
                         <div className="mt-4 space-y-4">
-                          {ask.data.monthlyReport.gveSections.map((section) => (
-                            <ResultTable key={section.gve} title={`GVE: ${section.gve}`} columns={ask.data.columns ?? []} rows={section.rows} limit={24} />
+                          {askData.monthlyReport.gveSections.map((section) => (
+                            <ResultTable key={section.gve} title={`GVE: ${section.gve}`} columns={askData.columns ?? []} rows={section.rows} limit={24} />
                           ))}
                         </div>
                       </details>
                     </div>
                   )}
 
-                  {ask.data.weeklyReport && (
+                  {askData.weeklyReport && (
                     <div className="space-y-4">
-                      <MetricCard label="Total geral" value={ask.data.weeklyReport.totalCases} />
-                      <AnalysisChart columns={ask.data.weeklyReport.columns} rows={ask.data.weeklyReport.pivotRows} title="Série semanal por ano" />
-                      <ResultTable title="Relatório semanal" columns={ask.data.weeklyReport.columns} rows={ask.data.weeklyReport.pivotRows} />
+                      <MetricCard label="Total geral" value={askData.weeklyReport.totalCases} />
+                      <AnalysisChart columns={askData.weeklyReport.columns} rows={askData.weeklyReport.pivotRows} title="Série semanal por ano" />
+                      <ResultTable title="Relatório semanal" columns={askData.weeklyReport.columns} rows={askData.weeklyReport.pivotRows} />
                     </div>
                   )}
 
-                  {!ask.data.monthlyReport && !ask.data.weeklyReport && (
+                  {!askData.monthlyReport && !askData.weeklyReport && (
                     <div className="space-y-6">
-                      <AnalysisChart columns={ask.data.columns ?? Object.keys(ask.data.rows?.[0] ?? {})} rows={ask.data.rows ?? []} title="Série histórica / distribuição" />
-                      <ResultTable columns={ask.data.columns ?? Object.keys(ask.data.rows?.[0] ?? {})} rows={ask.data.rows ?? []} />
+                      <AnalysisChart columns={askData.columns ?? Object.keys(askData.rows?.[0] ?? {})} rows={askData.rows ?? []} title="Série histórica / distribuição" />
+                      <ResultTable columns={askData.columns ?? Object.keys(askData.rows?.[0] ?? {})} rows={askData.rows ?? []} />
                     </div>
                   )}
                 </div>
@@ -1201,14 +1240,14 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
               </Card>
             </div>
 
-            {report.data && (
+            {reportData && (
               <>
                 <Card>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-base">Recomendações para boletim</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-2 text-sm text-muted-foreground">
-                    {report.data.bulletinSections.recomendacoes.map((item, index) => <p key={index}>{item}</p>)}
+                    {reportData.bulletinSections.recomendacoes.map((item, index) => <p key={index}>{item}</p>)}
                   </CardContent>
                 </Card>
 
@@ -1225,7 +1264,7 @@ export function NotificationsReportView({ section, externalFilters, hideFilters 
                         </tr>
                       </thead>
                       <tbody>
-                        {report.data.columns.map((column) => (
+                        {reportData.columns.map((column) => (
                           <tr key={column.name} className="border-b last:border-0">
                             <td className="py-2 font-medium">{column.name}</td>
                             <td>{column.type}</td>

@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { RateMap } from "@/components/epidemiology/rate-map";
 import { TracomaChartsView } from "@/components/tracoma/tracoma-charts-view";
+import { ManagementSummary } from "@/components/epidemiology/management-summary";
+import { qualityReadout, tracomaCountsNeedReview } from "@/lib/management-reading";
 
 type MuniRow = {
   codigoIbge: string;
@@ -22,6 +24,7 @@ type MuniRow = {
   riskColor: string;
   populationSourceYears?: number[];
   missingYears?: number[];
+  invalidPairs?: number;
 };
 
 type GveRow = {
@@ -126,57 +129,37 @@ function SectionIntro({ title, description }: { title: string; description: stri
 
 function ExecutiveSummary({
   totalPositivos,
+  totalExaminados,
   prevMedia,
-  muniAcimaMeta,
   topPriorityMuni,
-  demographics
+  demographics,
+  incompleteCounts,
+  onReviewQuality
 }: {
   totalPositivos: number | null;
+  totalExaminados: number | null;
   prevMedia: number | null;
-  muniAcimaMeta: number;
   topPriorityMuni?: MuniRow;
   demographics?: TracomaDemographics;
+  incompleteCounts: boolean;
+  onReviewQuality?: () => void;
 }) {
-  const missingClinical = demographics ? demographics.totalRows - demographics.withClinicalForm : 0;
-  const nextAction = missingClinical > 0 ? "Revisar os registros sem forma clínica na aba Qualidade dos Dados." : "Conferir completude e contexto de busca ativa antes de interpretar o recorte.";
-  const itemClass = "rounded-lg bg-muted/60 p-3.5";
-  const labelClass = "text-xs font-medium text-muted-foreground";
-  const valueClass = "mt-1 text-[15px] font-semibold leading-snug";
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base">Resumo executivo</CardTitle>
-        <CardDescription>Resumo dos registros disponíveis no recorte selecionado.</CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-3 md:grid-cols-4">
-        <div className={itemClass}>
-          <div className={labelClass}>Positivos informados</div>
-          <div className={valueClass}>{num(totalPositivos)}</div>
-          <div className="mt-1 text-xs text-muted-foreground">consolidado NOTTRACONET</div>
-        </div>
-        <div className={itemClass}>
-          <div className={labelClass}>Maior positividade observada</div>
-          <div className={valueClass}>
-            {topPriorityMuni
-              ? `${topPriorityMuni.municipio} (${pct(topPriorityMuni.prevalencia)})`
-              : "Sem positividade calculável"}
-          </div>
-          <div className="mt-1 text-xs text-muted-foreground">
-            {topPriorityMuni ? `${num(topPriorityMuni.examinados)} examinados; interpretar o tamanho do denominador` : `${num(muniAcimaMeta)} município(s) com indicador calculável`}
-          </div>
-        </div>
-        <div className={itemClass}>
-          <div className={labelClass}>Sinal principal</div>
-          <div className={valueClass}>{prevMedia != null ? pct(prevMedia) : "—"}</div>
-          <div className="mt-1 text-xs text-muted-foreground">positivos / examinados no consolidado</div>
-        </div>
-        <div className={itemClass}>
-          <div className={labelClass}>Próxima ação</div>
-          <div className={valueClass}>{nextAction}</div>
-        </div>
-      </CardContent>
-    </Card>
-  );
+  const missingClinical = demographics && !demographics.missingData ? demographics.totalRows - demographics.withClinicalForm : 0;
+  const pending = qualityReadout({ state: "pending" });
+  const quality = incompleteCounts ? {
+    ...pending, label: "Contagens a conferir", tone: "attention" as const,
+    detail: "Há contagens ausentes ou incompatíveis entre positivos e examinados. Confira os registros na auditoria.",
+    nextAction: "Conferir as contagens de positivos e examinados antes de interpretar as taxas."
+  } : { ...pending, label: "Consulte a auditoria completa" };
+  return <ManagementSummary
+    figure={{ value: `${num(totalPositivos)} positivos em ${num(totalExaminados)} exames`, detail: `Positividade: ${pct(prevMedia)}. Consolidado NOTTRACONET.` }}
+    territory={{ value: topPriorityMuni?.municipio ?? "Sem município com positividade calculável",
+      detail: topPriorityMuni ? `Maior positividade observada: ${pct(topPriorityMuni.prevalencia)} em ${num(topPriorityMuni.examinados)} exames. Considere o tamanho da amostra.` : "Confira a disponibilidade dos registros na análise territorial." }}
+    quality={quality}
+    nextAction={incompleteCounts ? quality.nextAction : missingClinical > 0 ? `Conferir ${num(missingClinical)} registro(s) individual(is) sem forma clínica preenchida na aba Qualidade dos Dados.` : quality.nextAction}
+    onReviewQuality={onReviewQuality}
+    territoryHref="#tracoma-territorio"
+  />;
 }
 
 function DistributionList({ title, rows, denominator }: { title: string; rows: DemographicBucket[]; denominator?: number }) {
@@ -329,7 +312,7 @@ function DemographicsPanel({ data, loading, error }: { data?: TracomaDemographic
     );
   }
 
-  if (!data || data.missingData) {
+  if (error || !data || data.missingData) {
     return (
       <Card className="border-amber-300 bg-amber-50">
         <CardHeader>
@@ -377,7 +360,7 @@ function DemographicsPanel({ data, loading, error }: { data?: TracomaDemographic
   );
 }
 
-export function TracomaAnaliseView({ externalFilters }: { externalFilters?: TracomaFilters } = {}) {
+export function TracomaAnaliseView({ externalFilters, onReviewQuality }: { externalFilters?: TracomaFilters; onReviewQuality?: () => void } = {}) {
   const gve = externalFilters?.gve ?? "";
   const municipio = externalFilters?.municipio ?? "";
   const yearStart = externalFilters?.yearStart ? Number(externalFilters.yearStart) : undefined;
@@ -426,7 +409,8 @@ export function TracomaAnaliseView({ externalFilters }: { externalFilters?: Trac
   const byGveData = rates.data?.byGve ?? [];
   const totalExaminados = byMuni.some((r) => r.examinados == null) ? null : byMuni.reduce((s, r) => s + (r.examinados ?? 0), 0);
   const totalPositivos = byMuni.some((r) => r.positivos == null) ? null : byMuni.reduce((s, r) => s + (r.positivos ?? 0), 0);
-  const prevMedia = byMuni.some((r) => r.prevalencia == null && (r.examinados ?? 0) > 0) ? null : totalExaminados != null && totalExaminados > 0 && totalPositivos != null && totalPositivos <= totalExaminados ? (totalPositivos / totalExaminados) * 100 : null;
+  const incompleteCounts = tracomaCountsNeedReview(byMuni);
+  const prevMedia = incompleteCounts ? null : totalExaminados != null && totalExaminados > 0 && totalPositivos != null && totalPositivos <= totalExaminados ? (totalPositivos / totalExaminados) * 100 : null;
   const muniAcimaMeta = byMuni.filter((r) => r.prevalencia != null).length;
   const topPriorityMuni = [...byMuni]
     .filter((row) => row.prevalencia != null && (row.positivos ?? 0) > 0)
@@ -538,7 +522,23 @@ export function TracomaAnaliseView({ externalFilters }: { externalFilters?: Trac
             </div>
           </div>
 
-          <div className="space-y-4">
+          <ExecutiveSummary
+            totalPositivos={totalPositivos}
+            totalExaminados={totalExaminados}
+            prevMedia={prevMedia}
+            topPriorityMuni={topPriorityMuni}
+            demographics={demographics.isError ? undefined : demographics.data}
+            incompleteCounts={incompleteCounts}
+            onReviewQuality={onReviewQuality}
+          />
+
+          <details className="rounded-lg border p-4">
+            <summary className="cursor-pointer text-sm font-semibold">Ver todas as contagens do recorte</summary>
+            <div className="mt-4 space-y-4">
+            <SectionIntro
+              title="Indicadores principais"
+              description="Contagens e positividade do NOTTRACONET no recorte. Não representam prevalência populacional nem confirmam eliminação."
+            />
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
               <MetricCard
                 label="Municípios com dados"
@@ -566,19 +566,13 @@ export function TracomaAnaliseView({ externalFilters }: { externalFilters?: Trac
                 detail="municípios com positividade válida"
               />
             </div>
-          </div>
+            </div>
+          </details>
 
           <p className="rounded-lg bg-blue-50 p-3.5 text-sm leading-relaxed text-blue-900 dark:bg-blue-950/40 dark:text-blue-100">
             Positividade entre examinados não é prevalência na população e não confirma eliminação. Exames repetidos da mesma pessoa contam mais de uma vez.
           </p>
 
-          <ExecutiveSummary
-            totalPositivos={totalPositivos}
-            prevMedia={prevMedia}
-            muniAcimaMeta={muniAcimaMeta}
-            topPriorityMuni={topPriorityMuni}
-            demographics={demographics.data}
-          />
         </>
       )}
 
@@ -595,7 +589,7 @@ export function TracomaAnaliseView({ externalFilters }: { externalFilters?: Trac
       </div>
 
       {hasData && byMuni.length > 0 && (
-          <div className="space-y-4">
+          <div id="tracoma-territorio" className="scroll-mt-24 space-y-4">
             <SectionIntro
               title="Onde"
               description="Mapa e tabela de positividade, detecção registrada e atividade de exames. Compare considerando o número de examinados e a completude."
@@ -604,7 +598,7 @@ export function TracomaAnaliseView({ externalFilters }: { externalFilters?: Trac
               <div>
                 <p className="text-sm font-semibold">Mapa de taxas do tracoma</p>
                 <p className="text-xs text-muted-foreground">
-                  O mapa por município usa o shapefile municipal de SP; o mapa por GVE consolida os municípios do grupo.
+                  Compare municípios ou grupos regionais. A tabela apresenta os números usados para colorir o mapa.
                 </p>
               </div>
               <div className="inline-flex w-fit rounded-md border bg-background p-1">

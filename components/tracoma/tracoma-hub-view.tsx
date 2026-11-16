@@ -8,6 +8,8 @@ import { TracomaConsultaView } from "@/components/tracoma/tracoma-consulta-view"
 import { SinanQualidadeView } from "@/components/sinan/sinan-qualidade-view";
 import { listarGvesSp, listarMunicipiosPorGve } from "@/lib/municipios-sp";
 import { validateTracomaFilters } from "@/lib/tracoma-data";
+import { managementScope } from "@/lib/management-reading";
+import { PanelScope } from "@/components/epidemiology/management-summary";
 
 type OuterTab = "situacao" | "qualidade" | "consulta";
 
@@ -115,9 +117,10 @@ export function TracomaHubView() {
         </div>
       </div>
 
+      {!filterError && <PanelScope scope={managementScope(filters)} source="Tracoma: consolidado de exames e positivos (NOTTRACONET) e registros individuais (TRACONET). As fontes são analisadas separadamente." />}
       <div id="tracoma-panel" role="tabpanel" className="min-w-0 flex-1">
         {filterError ? <p role="alert" className="m-4 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">{filterError}</p> : <>
-          {tab === "situacao" && <TracomaAnaliseView externalFilters={filters} />}
+          {tab === "situacao" && <TracomaAnaliseView externalFilters={filters} onReviewQuality={() => setTab("qualidade")} />}
           {tab === "qualidade" && <SinanQualidadeView externalFilters={filters} embedded />}
           {tab === "consulta" && <TracomaConsultaView externalFilters={filters} hideFilters />}
         </>}

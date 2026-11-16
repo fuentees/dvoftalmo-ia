@@ -8,10 +8,11 @@ export async function GET() {
 
   try {
     const supabase = createAdminClient();
-    await supabase.from("app_config").select("key").limit(1);
+    const { error } = await supabase.from("app_config").select("key").limit(1);
+    if (error) throw new Error("Supabase check unavailable");
     checks.supabase = "ok";
-  } catch (err) {
-    checks.supabase = err instanceof Error ? err.message : "error";
+  } catch {
+    checks.supabase = "unavailable";
   }
 
   const allOk = Object.values(checks).every((v) => v === "ok");

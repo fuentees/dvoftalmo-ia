@@ -21,5 +21,5 @@ declare module "shapefile" {
     options?: Record<string, unknown>
   ): Promise<ShapefileSource>;
 
-  export function read(shpPath: string): Promise<FeatureCollection>;
+  export function read(shpPath: string | ArrayBuffer, dbfPath?: string | ArrayBuffer, options?: Record<string, unknown>): Promise<FeatureCollection>;
 }

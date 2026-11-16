@@ -2,13 +2,15 @@ import type { EndemicChannelPoint } from "@/services/cevesp-endemic";
 
 export const BUSINESS_TIME_ZONE = "America/Sao_Paulo";
 
+const datePartsFormatters = new Map<string, Intl.DateTimeFormat>();
+
 function datePartsInTimeZone(date: Date, timeZone = BUSINESS_TIME_ZONE) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).formatToParts(date);
+  let formatter = datePartsFormatters.get(timeZone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
+    datePartsFormatters.set(timeZone, formatter);
+  }
+  const parts = formatter.formatToParts(date);
 
   const get = (type: string) => Number(parts.find((part) => part.type === type)?.value);
   return { year: get("year"), month: get("month"), day: get("day") };

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { parseCevespQuestionDeterministic } from "@/services/cevesp-analytics";
+import { parseCevespQuestionDeterministic, prepareDemographicMetricRows, mysqlExclusionSql } from "@/services/cevesp-analytics";
+import { excluidoFlag } from "@/lib/cevesp-clean";
 
 const cases = [
   {
@@ -209,4 +210,23 @@ for (const item of cases) {
   }
 }
 
-console.log(`CEVESP parser: ${cases.length} casos críticos validados.`);
+const cancelled = [{ Municipio: "A", valor: 20, __demo_total: 20, __demo_informed: 20, __demo_invalid_rows: 1 }];
+assert.deepEqual(prepareDemographicMetricRows("sexo_masculino", cancelled).rows, [], "A plausible selected metric must not hide errors within its source records");
+assert.equal(prepareDemographicMetricRows("sexo_feminino", [{ valor: 10 }]).blocked, true, "Missing row validation must not certify a demographic metric");
+const partialMetric = prepareDemographicMetricRows("faixa_1_4", [{ Ano: 2026, valor: 3, __demo_total: 10, __demo_informed: 5, __demo_invalid_rows: 0 }]);
+assert.deepEqual(partialMetric.rows, [{ Ano: 2026, valor: 3 }]);
+assert.ok(partialMetric.warnings.some(warning => warning.includes("sem distribuição completa")));
+assert.equal(partialMetric.blocked, false);
+assert.equal(prepareDemographicMetricRows("sexo_masculino", [{ valor: 0, __demo_total: 0, __demo_informed: 0, __demo_invalid_rows: 0 }]).blocked, false);
+assert.deepEqual(prepareDemographicMetricRows("total_casos", [{ valor: 10 }]).rows, [{ valor: 10 }]);
+const activeSql = mysqlExclusionSql();
+const excludedSql = mysqlExclusionSql(true);
+assert.equal(activeSql.where, `NOT (${excludedSql.where})`, "Active and excluded queries must use complementary predicates");
+assert.ok(excludedSql.countExpression.includes(excludedSql.where), "The excluded metric must count the same flags that its WHERE selects");
+assert.doesNotMatch(activeSql.where, /coalesce\(Excluido, 0\)/i, "String S must never be converted to numeric zero in MySQL");
+const sqlFlags = Array.from(excludedSql.where.matchAll(/'([^']*)'/g), match => match[1]).filter(Boolean);
+for (const [value, expected] of [["S", 1], [" s ", 1], ["N", 0], ["1", 1], [1, 1], ["0", 0], [0, 0], [null, 0], [true, 1]] as const) {
+  assert.equal(sqlFlags.includes(String(value ?? "").trim().toUpperCase()) ? 1 : 0, expected);
+  assert.equal(excluidoFlag(value), expected, "MySQL query flags must match the cache normalization contract");
+}
+console.log(`CEVESP parser: ${cases.length} casos críticos e validação de métricas demográficas verificados.`);

@@ -1,4 +1,4 @@
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { resolve } from "path";
 import { pathToFileURL } from "url";
 import * as shapefile from "shapefile";
@@ -29,6 +29,8 @@ export async function loadShapefileAsGeoJSON(
   try {
     const shpPath = resolve(SHAPES_DIR, subfolder, filename);
     const dbfPath = resolve(SHAPES_DIR, subfolder, filename.replace(".shp", ".dbf"));
+    const cpgPath = resolve(SHAPES_DIR, subfolder, filename.replace(".shp", ".cpg"));
+    const options = { encoding: existsSync(cpgPath) ? readFileSync(cpgPath, "utf8").replace(/^\uFEFF/, "").trim() : "windows-1252" };
     const shpUrl = pathToFileURL(shpPath).href;
     const dbfUrl = pathToFileURL(dbfPath).href;
 
@@ -36,15 +38,15 @@ export async function loadShapefileAsGeoJSON(
     let source: shapefile.ShapefileSource | null = null;
 
     try {
-      source = await shapefile.open(shpUrl, dbfUrl);
+      source = await shapefile.open(shpUrl, dbfUrl, options);
     } catch (firstErr) {
       attemptErrors.push(errorInfo(firstErr, "fileUrl"));
       try {
-        source = await shapefile.open(shpPath, dbfPath);
+        source = await shapefile.open(shpPath, dbfPath, options);
       } catch (secondErr) {
         attemptErrors.push(errorInfo(secondErr, "localPath"));
         try {
-          const fc = await shapefile.read(shpPath);
+          const fc = await shapefile.read(shpPath, dbfPath, options);
           if (fc?.type === "FeatureCollection") return fc;
         } catch (readErr) {
           attemptErrors.push(errorInfo(readErr, "shapefile.read"));
@@ -55,7 +57,7 @@ export async function loadShapefileAsGeoJSON(
           const dbfBuf = readFileSync(dbfPath);
           const shpArray = shpBuf.buffer.slice(shpBuf.byteOffset, shpBuf.byteOffset + shpBuf.byteLength);
           const dbfArray = dbfBuf.buffer.slice(dbfBuf.byteOffset, dbfBuf.byteOffset + dbfBuf.byteLength);
-          source = await shapefile.open(shpArray, dbfArray);
+          source = await shapefile.open(shpArray, dbfArray, options);
         } catch (memErr) {
           attemptErrors.push(errorInfo(memErr, "inMemory"));
           throw new Error(JSON.stringify({ message: "All shapefile open attempts failed", attempts: attemptErrors }));

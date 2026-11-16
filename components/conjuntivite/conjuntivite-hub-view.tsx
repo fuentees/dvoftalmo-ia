@@ -9,6 +9,8 @@ import { listarGvesSp, listarMunicipiosPorGve } from "@/lib/municipios-sp";
 import { parseCevespFilters } from "@/lib/cevesp-filters";
 import { currentCalendarYear } from "@/lib/epi-week";
 import { EpidemicZoneBanner } from "@/components/conjuntivite/epidemic-zone-banner";
+import { managementScope } from "@/lib/management-reading";
+import { PanelScope } from "@/components/epidemiology/management-summary";
 
 type OuterTab = "situacao" | "qualidade" | "consulta";
 
@@ -130,11 +132,12 @@ export function ConjuntiviteHubView() {
         </div>
       </div>
 
+      {!filterError && <PanelScope scope={managementScope({ yearStart: reportFilters?.year, yearEnd: reportFilters?.yearEnd, gve, municipio })} source="Conjuntivite: notificações CEVESP. A auditoria de qualidade consulta a base sincronizada." />}
       <div className="flex-1">
         {filterError && <p role="alert" className="m-6 rounded-md border border-destructive p-4 text-sm text-destructive">{filterError}</p>}
-        {!filterError && tab === "situacao"  && <NotificationsReportView section="situacao" externalFilters={reportFilters} hideFilters onAsk={perguntar} />}
-        {!filterError && tab === "qualidade" && <div className="px-4 py-6 md:px-7"><CevespQualidadeView externalFilters={reportFilters} /></div>}
-        {!filterError && tab === "consulta"  && <NotificationsReportView section="consulta" externalFilters={reportFilters} hideFilters initialQuestion={pergunta} />}
+        {!filterError && tab === "situacao" && <NotificationsReportView section="situacao" externalFilters={reportFilters} hideFilters onAsk={perguntar} onReviewQuality={() => setTab("qualidade")} />}
+        {!filterError && tab === "qualidade" && <div className="px-4 py-6 md:px-7"><CevespQualidadeView externalFilters={reportFilters} hideFilters onSelectYear={(year) => { setYearStart(String(year)); setYearEnd(String(year)); }} /></div>}
+        {!filterError && tab === "consulta" && <NotificationsReportView section="consulta" externalFilters={reportFilters} hideFilters initialQuestion={pergunta} />}
       </div>
     </div>
   );

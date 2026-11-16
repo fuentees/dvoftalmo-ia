@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
 
     // ── Tabela completa por SE ────────────────────────────────────────────────
     lines.push(csvRow([grain === "month" ? "SÉRIE TEMPORAL MENSAL" : "SÉRIE TEMPORAL SEMANAL"]));
-    lines.push(csvRow([bucketLabel, "Casos " + year, "Incidência " + year + " por 100 mil hab.", "Limite inferior incidência (média − 2 DP)", "Média histórica incidência", "Limite superior incidência (média + 2 DP)", "Mínimo histórico incidência", "Máximo histórico incidência", "Zona " + year]));
+    lines.push(csvRow([bucketLabel, "Casos " + year, "Incidência " + year + " por 100 mil hab.", "Limite inferior incidência (média − 2 DP)", "Média histórica incidência", "Limite superior incidência (média + 2 DP)", "Mínimo histórico incidência", "Máximo histórico incidência", "Zona " + year, "Registros em períodos futuros excluídos"]));
     for (const pt of data) {
       lines.push(csvRow([
         pt.se,
@@ -85,6 +85,7 @@ export async function GET(request: NextRequest) {
         pt.baselineValid ? pt.min : null,
         pt.baselineValid ? pt.max : null,
         CHANNEL_ZONE_LABELS[classifyChannelPoint(pt)],
+        pt.futureCurrentCaseRecords ?? 0,
       ]));
     }
 

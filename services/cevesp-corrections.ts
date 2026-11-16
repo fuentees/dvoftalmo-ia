@@ -97,11 +97,19 @@ function conservativeSuggestion(record: InvalidRecord, now = new Date()): Invali
   return withSuggestions(record);
 }
 
+const auditDayFormatter = new Intl.DateTimeFormat("sv-SE", { timeZone: BUSINESS_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" });
+function auditClock(now: Date) {
+  return { current: officialCurrentEpiWeek(now), today: auditDayFormatter.format(now) };
+}
+
 export function mapInvalidCacheRow(r: Record<string, unknown>, now = new Date()): InvalidRecord | null {
+  return mapInvalidCacheRowAt(r, now, auditClock(now));
+}
+
+function mapInvalidCacheRowAt(r: Record<string, unknown>, now: Date, clock: ReturnType<typeof auditClock>): InvalidRecord | null {
   if (excluidoFlag(r.Excluido) !== 0) return null;
-  const current = officialCurrentEpiWeek(now);
+  const { current, today } = clock;
   const currentSe = current.se;
-  const today = new Intl.DateTimeFormat("sv-SE", { timeZone: BUSINESS_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
   const rawDt = r.DtNotificacao || r.dt_notificacao_raw ? String(r.DtNotificacao || r.dt_notificacao_raw).split("T")[0] : null;
   const dateMatch = rawDt?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   const parsedDate = dateMatch ? new Date(Number(dateMatch[1]), Number(dateMatch[2]) - 1, Number(dateMatch[3])) : null;
@@ -279,6 +287,7 @@ export function auditCevespRows(
   now = new Date(),
   inScope: (row: Record<string, unknown>, anoErrado: boolean) => boolean = () => true
 ): InvalidRecord[] {
+  const clock = auditClock(now);
   const active = rows.filter((r) => excluidoFlag(r.Excluido) === 0);
   const structural = auditStructure(active.map((r, i) => ({
     key: String(i),
@@ -294,7 +303,7 @@ export function auditCevespRows(
   active.forEach((r, i) => {
     const found = structural.get(String(i)) ?? [];
     if (!inScope(r, found.some((f) => f.problem === "ano_errado"))) return;
-    const single = mapInvalidCacheRow(r, now);
+    const single = mapInvalidCacheRowAt(r, now, clock);
     if (single && !(SUPERSEDED_BY_STRUCTURE.has(single.problem) && found.some((f) => STRUCTURAL_TYPE[f.problem] === "data_tempo"))) {
       const withCreated = { ...single, createdAt: createdAtOf(r) };
       result.push(isMysqlRecordId(single.recordId) ? withCreated : { ...withCreated, suggestions: [], suggestedField: "", suggestedValue: "" });
@@ -457,6 +466,19 @@ export async function saveCorrectionsToQueue(
   return { saved: toInsert.length, skipped: proposals.length - toInsert.length };
 }
 
+export function assertRecordedCorrectionReview(item: {
+  status?: unknown;
+  reviewed_by?: unknown;
+  reviewed_at?: unknown;
+}) {
+  if (item.status !== "approved"
+    || typeof item.reviewed_by !== "string" || !item.reviewed_by.trim()
+    || typeof item.reviewed_at !== "string" || !item.reviewed_at.trim()
+    || !Number.isFinite(Date.parse(item.reviewed_at))) {
+    throw new Error("Correção sem aprovação registrada. Envie novamente para revisão antes de aplicar.");
+  }
+}
+
 export async function applyCorrection(correctionId: string, reviewerId: string): Promise<void> {
   const supabase = createAdminClient();
 
@@ -468,6 +490,7 @@ export async function applyCorrection(correctionId: string, reviewerId: string):
     .single();
 
   if (fetchErr || !item) throw new Error("Correção não encontrada ou não aprovada.");
+  assertRecordedCorrectionReview(item);
 
   const conn = await createNotificationConnection();
   try {
@@ -502,15 +525,19 @@ export async function applyCorrection(correctionId: string, reviewerId: string):
   }
 
   const now = new Date().toISOString();
-  await supabase
+  const { data: updated, error: updateError } = await supabase
     .from("correction_queue")
     .update({
       status: "applied",
-      reviewed_by: reviewerId,
-      reviewed_at: now,
       applied_at: now
     })
-    .eq("id", correctionId);
+    .eq("id", correctionId)
+    .eq("status", "approved")
+    .select("id")
+    .maybeSingle();
+  if (updateError || !updated) {
+    throw new Error("A alteração foi aplicada na origem, mas não foi possível registrar a aplicação na fila. Confira o registro e o histórico antes de tentar novamente.");
+  }
 
   // Write audit entry (best-effort — don't fail the apply if this errors)
   try {

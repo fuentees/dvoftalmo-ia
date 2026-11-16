@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Area, ComposedChart, CartesianGrid, Legend, Line,
@@ -11,7 +11,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { EndemicChannelPoint } from "@/services/cevesp-endemic";
 import { CHANNEL_METHODOLOGY, CHANNEL_ZONE_LABELS, MIN_BASELINE_YEARS, classifyChannelPoint } from "@/lib/cevesp-channel";
-import { currentCalendarYear, currentCalendarMonth, currentEpiWeek, pickCurrentPoint } from "@/lib/epi-week";
+import { currentCalendarYear, pickCurrentPoint } from "@/lib/epi-week";
+import { canExportQuery, currentQueryData, fetchJson } from "@/lib/query-result";
+import { assessNotificationDate, businessDateIso, isObservedBucket, observationYears, observedBucketLimit } from "@/lib/cevesp-time-boundary";
 import { CHART } from "@/lib/chart-palette";
 
 const MESES = [
@@ -79,40 +81,39 @@ type Props = {
   filters?: { gve?: string; municipio?: string; year?: number };
 };
 
+type SyncMetadata = { latestNotificationDate: string | null; lastSync: string | null; latestNotificationDateRaw?: string | null; metadataWarnings?: string[] };
+type AvailableYears = { anos: number[]; excludedYears?: number[] };
+
 export function CanalEndemicoView({ filters }: Props) {
   const thisYear = currentCalendarYear();
-  const currentMonth = currentCalendarMonth();
-  const currentWeek = currentEpiWeek();
 
   // ── Ano de referência (qual ano é o "ano atual" da comparação) ──────────────
-  const [refYear, setRefYear] = useState(filters?.year ?? thisYear);
-  useEffect(() => { setRefYear(filters?.year ?? thisYear); }, [filters?.year, thisYear]);
+  const [localRefYear, setRefYear] = useState(thisYear);
+  const refYear = filters?.year ?? localRefYear;
 
   // ── Granularidade do eixo X do gráfico: semana epidemiológica ou mês ────────
   const [xAxisMode, setXAxisMode] = useState<"se" | "mes">("se");
 
-  const anosQuery = useQuery<{ anos: number[] }>({
+  const anosQuery = useQuery<AvailableYears>({
     queryKey: ["cevesp-anos"],
-    queryFn: async () => {
-      const res = await fetch("/api/cevesp/anos");
-      return res.json() as Promise<{ anos: number[] }>;
-    },
+    queryFn: ({ signal }) => fetchJson<AvailableYears>("/api/cevesp/anos", "Não foi possível consultar os anos disponíveis.", { signal }),
     staleTime: 10 * 60 * 1000,
   });
-  const anoOptions = anosQuery.data?.anos?.length ? anosQuery.data.anos : [thisYear];
+  const yearData = currentQueryData(anosQuery);
+  const yearBoundary = observationYears(yearData?.anos ?? []);
+  const excludedYears = [...new Set([...yearBoundary.excludedYears, ...(yearData?.excludedYears ?? [])])];
+  const anoOptions = yearBoundary.years.length ? yearBoundary.years : [refYear];
 
-  const syncInfo = useQuery<{ latestNotificationDate: string | null; lastSync: string | null }>({
+  const syncInfo = useQuery<SyncMetadata>({
     queryKey: ["cevesp-sync-info"],
-    queryFn: async () => {
-      const res = await fetch("/api/admin/cevesp-status");
-      return res.json();
-    },
+    queryFn: ({ signal }) => fetchJson<SyncMetadata>("/api/admin/cevesp-status", "Não foi possível consultar a atualização da base.", { signal }),
     staleTime: 10 * 60 * 1000,
   });
 
   // ── Busca de dados já no grain certo: SE tem estatística própria por semana,
   // Mês tem estatística própria por mês (não é mais soma das SEs do mês) ──────
   const grain = xAxisMode === "mes" ? "month" : "week";
+  const currentBucket = observedBucketLimit(refYear, grain);
 
   const qs = useMemo(() => {
     const p = new URLSearchParams();
@@ -123,7 +124,7 @@ export function CanalEndemicoView({ filters }: Props) {
     return p.toString();
   }, [filters, refYear, grain]);
 
-  // Export sempre usa o grain semanal (é o único formato que os endpoints de export entendem)
+  // A exportação acompanha a granularidade selecionada no gráfico.
   const exportQs = useMemo(() => {
     const p = new URLSearchParams();
     if (filters?.gve)       p.set("gve", filters.gve);
@@ -133,13 +134,12 @@ export function CanalEndemicoView({ filters }: Props) {
     return p.toString();
   }, [filters, refYear, grain]);
 
-  const { data, isLoading, isError, error } = useQuery<EndemicChannelPoint[]>({
+  const channelQuery = useQuery<EndemicChannelPoint[]>({
     queryKey: ["canal-endemico", qs],
-    queryFn: async () => {
-      const res = await fetch(`/api/cevesp/canal-endemico${qs ? `?${qs}` : ""}`);
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Erro ao calcular canal endêmico.");
-      return json as EndemicChannelPoint[];
+    queryFn: async ({ signal }) => {
+      const points = await fetchJson<EndemicChannelPoint[]>(`/api/cevesp/canal-endemico${qs ? `?${qs}` : ""}`, "Erro ao calcular canal endêmico.", { signal });
+      if (!Array.isArray(points)) throw new Error("A resposta do canal histórico está incompleta.");
+      return points;
     },
     staleTime: 10 * 60 * 1000,
   });
@@ -153,25 +153,29 @@ export function CanalEndemicoView({ filters }: Props) {
     return p.toString();
   }, [filters, refYear, grain]);
 
-  const { data: prevData } = useQuery<EndemicChannelPoint[]>({
+  const previousYearQuery = useQuery<EndemicChannelPoint[]>({
     queryKey: ["canal-endemico-prev", prevYearQs],
-    queryFn: async () => {
-      const res = await fetch(`/api/cevesp/canal-endemico?${prevYearQs}`);
-      const json = await res.json();
-      if (!res.ok) return [];
-      return json as EndemicChannelPoint[];
+    queryFn: async ({ signal }) => {
+      const points = await fetchJson<EndemicChannelPoint[]>(`/api/cevesp/canal-endemico?${prevYearQs}`, "Não foi possível consultar o ano anterior.", { signal });
+      if (!Array.isArray(points)) throw new Error("A resposta do ano anterior está incompleta.");
+      return points;
     },
     staleTime: 30 * 60 * 1000,
   });
+
+  const data = currentQueryData(channelQuery);
+  const prevData = currentQueryData(previousYearQuery);
+  const latestSync = currentQueryData(syncInfo);
+  const latestDate = assessNotificationDate(latestSync?.latestNotificationDate);
+  const metadataWarnings = [...(latestSync?.metadataWarnings ?? [])];
+  if (latestDate.issue && latestDate.issue !== "missing") metadataWarnings.push(`A data de atualização informada (${latestDate.raw}) é ${latestDate.issue === "future" ? "futura" : "inválida"} e precisa ser conferida na origem.`);
+  const exportAvailable = canExportQuery(channelQuery);
 
   // ── Derive chart data + projection ─────────────────────────────────────────
   const { chartData, lastSE, lastLabel, currentZona, projStart } = useMemo(() => {
     if (!data) return { chartData: [], lastSE: null, lastLabel: null, currentZona: null, projStart: null };
 
     const bucketLabel = (bucket: number) => xAxisMode === "se" ? String(bucket) : MESES[bucket - 1].slice(0, 3);
-    const currentBucket = refYear === thisYear
-      ? (xAxisMode === "se" ? currentWeek.se : currentMonth)
-      : refYear > thisYear ? 0 : (xAxisMode === "se" ? 53 : 12);
 
     const withData = data.filter((d) => d.currentIncidence !== null && d.se <= currentBucket);
     const currentPt = pickCurrentPoint(data, currentBucket);
@@ -203,14 +207,14 @@ export function CanalEndemicoView({ filters }: Props) {
         "Faixa esperada":   d.baselineValid ? alertBand : undefined,
         "Média":            d.baselineValid ? d.median : undefined,
         "Incidência atual": d.se <= currentBucket ? d.currentIncidence ?? undefined : undefined,
-        "Casos atuais":     d.currentYear ?? undefined,
+        "Casos atuais":     d.se <= currentBucket ? d.currentYear ?? undefined : undefined,
         "Ano anterior":     anoAnterior,
         "Projeção":         projecao,
       };
     });
 
     return { chartData, lastSE, lastLabel, currentZona, projStart };
-  }, [currentMonth, currentWeek.se, data, prevData, refYear, thisYear, xAxisMode]);
+  }, [currentBucket, data, prevData, xAxisMode]);
 
   // ── KPIs ───────────────────────────────────────────────────────────────────
   const kpis = useMemo(() => {
@@ -224,15 +228,22 @@ export function CanalEndemicoView({ filters }: Props) {
     return { atual, casos, q1: seData.q1, q3: seData.q3, median: seData.median, baselineValid: seData.baselineValid, acima };
   }, [data, lastSE]);
 
-  if (isLoading) return (
+  if (channelQuery.isPending) return (
     <div className="flex items-center justify-center py-20 text-sm text-muted-foreground">
       <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Calculando canal endêmico...
     </div>
   );
 
-  if (isError) return (
+  if (channelQuery.isError) return (
     <Card className="border-destructive">
-      <CardContent className="py-8 text-center text-sm text-red-700">{(error as Error).message}</CardContent>
+      <CardContent role="alert" className="space-y-3 py-8 text-center text-sm text-red-700">
+        <p><strong>Canal histórico indisponível.</strong> {channelQuery.error.message}</p>
+        <p className="text-muted-foreground">Os resultados anteriores foram ocultados até que a consulta deste recorte seja concluída.</p>
+        <Button size="sm" variant="outline" disabled={channelQuery.isFetching} onClick={() => void channelQuery.refetch()}>
+          <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${channelQuery.isFetching ? "animate-spin" : ""}`} />
+          {channelQuery.isFetching ? "Consultando..." : "Tentar novamente"}
+        </Button>
+      </CardContent>
     </Card>
   );
 
@@ -246,21 +257,42 @@ export function CanalEndemicoView({ filters }: Props) {
 
   return (
     <div className="space-y-6">
+      {channelQuery.isFetching && <p role="status" className="rounded-md border bg-muted/40 p-3 text-xs text-muted-foreground">Atualizando o canal deste recorte. A exportação ficará disponível após a consulta.</p>}
+      {excludedYears.length > 0 && <p role="alert" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">Anos futuros presentes na origem ({excludedYears.join(", ")}) foram retirados das opções. Confira esses registros na auditoria.</p>}
+      {metadataWarnings.length > 0 && <p role="alert" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">{metadataWarnings.join(" ")}</p>}
+      {data.some((point) => (point.futureCurrentCaseRecords ?? 0) > 0 || (!isObservedBucket(refYear, point.se, grain) && point.currentYear != null)) && <p role="alert" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">Há registros em períodos futuros na origem. Esses valores foram excluídos da incidência observada, dos alertas e da projeção. A curva de projeção usa apenas períodos já alcançados e continua sendo exploratória.</p>}
+      {previousYearQuery.isError ? (
+        <div role="alert" className="flex flex-wrap items-center gap-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+          <span className="flex-1">Comparação com {refYear - 1} indisponível. A linha do ano anterior foi ocultada; o canal de {refYear} continua disponível.</span>
+          <Button size="sm" variant="outline" disabled={previousYearQuery.isFetching} onClick={() => void previousYearQuery.refetch()}>
+            {previousYearQuery.isFetching ? "Consultando..." : "Tentar comparação novamente"}
+          </Button>
+        </div>
+      ) : previousYearQuery.isPending ? (
+        <p role="status" className="text-xs text-muted-foreground">Consultando a comparação com {refYear - 1}...</p>
+      ) : !prevData?.length ? (
+        <p className="rounded-md border bg-muted/40 p-3 text-xs text-muted-foreground">Sem dados para comparar com {refYear - 1} neste recorte.</p>
+      ) : previousYearQuery.isFetching ? (
+        <p role="status" className="text-xs text-muted-foreground">Atualizando a comparação com {refYear - 1}...</p>
+      ) : null}
       {data.some((point) => !point.baselineValid) && <p className="rounded-md border bg-muted/40 p-3 text-xs text-muted-foreground">Períodos com menos de {MIN_BASELINE_YEARS} anos observados não recebem faixa nem classificação. Confira os anos e os denominadores na tabela abaixo.</p>}
       {data.some((point) => point.invalidBaselineYears > 0 || point.invalidCurrentCaseRecords > 0) && <p role="alert" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">Há contagens ausentes ou inválidas. Os períodos afetados foram excluídos do histórico ou ficaram sem indicador atual. Confira a auditoria de qualidade antes de interpretar o canal.</p>}
       {/* ── Ano de referência / eixo X ───────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
+        {anosQuery.isError && <span role="status" className="text-xs text-amber-800">Lista de anos indisponível; exibindo o ano selecionado.</span>}
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-muted-foreground">Ano</span>
           <select
             value={refYear}
+            disabled={filters?.year != null}
             onChange={(e) => setRefYear(Number(e.target.value))}
             className="h-8 rounded-md border bg-background px-2 text-xs"
           >
-            {(anoOptions.includes(refYear) ? anoOptions : [...anoOptions, refYear])
+            {(anoOptions.includes(refYear) ? [...anoOptions] : [...anoOptions, refYear])
               .sort((a, b) => b - a)
               .map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
+          {filters?.year != null && <span className="text-xs text-muted-foreground">Definido pelo período do painel</span>}
         </div>
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-muted-foreground">Eixo X</span>
@@ -285,6 +317,15 @@ export function CanalEndemicoView({ filters }: Props) {
             </button>
           </div>
         </div>
+        <Button size="sm" variant="outline" disabled={channelQuery.isFetching} onClick={() => {
+          void channelQuery.refetch();
+          void previousYearQuery.refetch();
+          void anosQuery.refetch();
+          void syncInfo.refetch();
+        }}>
+          <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${channelQuery.isFetching ? "animate-spin" : ""}`} />
+          Atualizar canal
+        </Button>
       </div>
 
       {/* ── KPI row + export ────────────────────────────────────────────── */}
@@ -312,7 +353,8 @@ export function CanalEndemicoView({ filters }: Props) {
               size="sm"
               variant="outline"
               className="h-8 gap-1.5 text-xs"
-              onClick={() => { window.location.href = `/api/cevesp/canal-endemico/export${exportQs ? `?${exportQs}` : ""}`; }}
+              disabled={!exportAvailable}
+              onClick={() => { if (exportAvailable) window.location.assign(new URL(`/api/cevesp/canal-endemico/export${exportQs ? `?${exportQs}` : ""}`, window.location.origin).href); }}
             >
               <Download className="h-3.5 w-3.5" />
               Exportar XLSX
@@ -321,7 +363,8 @@ export function CanalEndemicoView({ filters }: Props) {
               size="sm"
               variant="outline"
               className="h-8 gap-1.5 text-xs"
-              onClick={() => { window.location.href = `/api/cevesp/relatorio${exportQs ? `?${exportQs}` : ""}`; }}
+              disabled={!exportAvailable}
+              onClick={() => { if (exportAvailable) window.location.assign(new URL(`/api/cevesp/relatorio${exportQs ? `?${exportQs}` : ""}`, window.location.origin).href); }}
             >
               <Download className="h-3.5 w-3.5" />
               Exportar CSV
@@ -340,19 +383,20 @@ export function CanalEndemicoView({ filters }: Props) {
                 Canal endêmico — incidência por 100 mil habitantes
               </CardTitle>
               <CardDescription className="text-[13px]">
-                Faixa verde clara = faixa histórica esperada ({CHANNEL_METHODOLOGY}). Linha verde escura = {refYear}. Laranja tracejado = {refYear - 1}. Cinza pontilhado = média histórica. A projeção é exploratória, não é previsão. Passe o mouse para ver os casos.
+                Faixa verde clara = faixa histórica esperada ({CHANNEL_METHODOLOGY}). Linha verde escura = {refYear}. {prevData?.length ? `Laranja tracejado = ${refYear - 1}. ` : ""}Cinza pontilhado = média histórica. A projeção é exploratória, não é previsão. Passe o mouse para ver os casos.
                 {xAxisMode === "mes" && " Estatísticas calculadas por mês, independente da visão por SE."}
               </CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {syncInfo.data?.latestNotificationDate && (() => {
-                const latest = new Date(syncInfo.data!.latestNotificationDate!);
-                const daysStale = Math.floor((Date.now() - latest.getTime()) / 86_400_000);
+              {syncInfo.isError && <span role="status" className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-800">Atualização da base indisponível</span>}
+              {latestSync && !latestDate.value && <span className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-800">Última notificação válida indisponível</span>}
+              {latestDate.value && (() => {
+                const daysStale = Math.round((Date.parse(businessDateIso()) - Date.parse(latestDate.value!)) / 86_400_000);
                 const stale = daysStale > 14;
                 return (
                   <div className={`flex items-center gap-1 rounded border px-2 py-1 text-xs ${stale ? "border-amber-200 bg-amber-50 text-amber-700" : "border-teal-200 bg-teal-50 text-teal-700"}`}>
                     {stale && <AlertTriangle className="h-3 w-3" />}
-                    Base até {syncInfo.data!.latestNotificationDate!.slice(0, 10).split("-").reverse().join("/")}
+                    Base até {latestDate.value.split("-").reverse().join("/")}
                     {stale && ` (${daysStale} dias sem notificação nova)`}
                   </div>
                 );
@@ -410,7 +454,7 @@ export function CanalEndemicoView({ filters }: Props) {
 
               {/* Ano anterior — atrás das outras linhas, tom neutro. Sem connectNulls:
                   semanas sem notificação sincronizada ficam como lacuna, não como zero. */}
-              <Line
+              {Boolean(prevData?.length) && <Line
                 type="monotone"
                 dataKey="Ano anterior"
                 stroke={CHART.accent}
@@ -418,7 +462,7 @@ export function CanalEndemicoView({ filters }: Props) {
                 strokeDasharray="4 3"
                 dot={false}
                 legendType="line"
-              />
+              />}
 
               {/* Média histórica — linha de referência fina */}
               <Line
@@ -513,8 +557,9 @@ export function CanalEndemicoView({ filters }: Props) {
                       <td className="px-3 py-2 tabular-nums">{pt.baselineValid ? pt.q1.toLocaleString("pt-BR") : "—"}</td>
                       <td className="px-3 py-2 tabular-nums">{pt.baselineValid ? pt.q3.toLocaleString("pt-BR") : "—"}</td>
                       <td className="px-3 py-2 tabular-nums">
-                        {pt.currentIncidence != null ? `${pt.currentIncidence.toLocaleString("pt-BR")} / 100 mil` : "—"}
-                        {pt.currentYear != null ? ` (${pt.currentYear.toLocaleString("pt-BR")} casos)` : ""}
+                        {isObservedBucket(refYear, pt.se, grain) && pt.currentIncidence != null ? `${pt.currentIncidence.toLocaleString("pt-BR")} / 100 mil` : "—"}
+                        {isObservedBucket(refYear, pt.se, grain) && pt.currentYear != null ? ` (${pt.currentYear.toLocaleString("pt-BR")} casos)` : ""}
+                        {(pt.futureCurrentCaseRecords ?? 0) > 0 && <span className="block text-amber-800">{pt.futureCurrentCaseRecords} registro(s) futuro(s) na origem; excluídos da incidência observada.</span>}
                       </td>
                     </tr>
                   );

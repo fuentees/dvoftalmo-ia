@@ -51,6 +51,10 @@ Scripts úteis:
 - `npm run sync-export`
 - `npm run sync-import`
 - `npm run sync-ibge-population`
+- `npm run verify:panel-access` — verifica requisições sem retornar registros.
+- `npm run verify:panel-access:sql` — executa fixtures PostgreSQL isoladas, com runtime externo indicado no documento técnico.
+
+No Windows, `npm run dev:windows` inicia o servidor somente em `127.0.0.1` e usa as raízes já confiáveis do Windows para validar TLS no Node, sem desativar certificados.
 
 ## Banco
 
@@ -73,4 +77,4 @@ Depois de criar/atualizar o banco, confira a tela de sincronização para valida
 - Prioridades informam `partial` e `unavailableSources` quando alguma consulta falha.
 - Autorização no servidor valida o usuário via Supabase Auth; falhas de validação não concedem acesso.
 
-Veja [REVISAO-PAINEIS.md](REVISAO-PAINEIS.md) para a revisão de tracoma/conjuntivite, testes e pendências da base real. [REVISAO.md](REVISAO.md) registra a primeira rodada de confiabilidade e integrações.
+Veja [PAINEIS-CONFIABILIDADE.md](PAINEIS-CONFIABILIDADE.md) para os contratos e a verificação técnica dos painéis. Relatórios locais de conferência das bases não fazem parte desta publicação.

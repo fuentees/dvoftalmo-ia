@@ -1,8 +1,6 @@
 "use client";
 
 import {
-  Area,
-  AreaChart,
   Bar,
   CartesianGrid,
   ComposedChart,
@@ -66,27 +64,25 @@ export function EpidemicCharts({
   parts
 }: EpidemicChartsProps) {
   const show = (part: "curva" | "territorio" | "perfil") => !parts || parts.includes(part);
-  // Build chart data: always keyed by SE (SE01–SE53) from weeklyAverage.
-  // Falls back to weeklySeries when weeklyAverage is not available.
+  // Historical comparison is meaningful for a single selected year.
+  // Otherwise preserve the observed year/week case counts, including explicit zero.
+  const hasHistoricalAverage = selectedYear != null && weeklyAverage.length > 0;
   const chartData =
-    weeklyAverage.length > 0
+    hasHistoricalAverage
       ? weeklyAverage.map((avg) => {
           const yearWeek = selectedYear ? `${selectedYear}-${avg.se}` : null;
           const yearPoint = yearWeek ? weeklySeries.find((w) => w.week === yearWeek) : null;
           return { se: avg.se, average: avg.average, yearTotal: yearPoint?.total ?? null };
         })
       : weeklySeries.map((item) => ({
-          se: item.week.replace(/^\d{4}-/, ""),
-          average: item.total,
-          yearTotal: null as number | null
+          se: selectedYear != null ? item.week.replace(/^\d{4}-/, "") : item.week,
+          average: null as number | null,
+          yearTotal: item.total
         }));
 
-  const showYearBars =
-    selectedYear != null && chartData.some((d) => d.yearTotal != null && d.yearTotal > 0);
-
-  const chartDesc = showYearBars
+  const chartDesc = hasHistoricalAverage
     ? `Barras: total ${selectedYear} · Linha: média histórica`
-    : "Média de casos por semana epidemiológica (todos os anos)";
+    : "Casos informados por ano e semana epidemiológica no recorte. Média histórica indisponível para esta comparação.";
   return (
     <div className="space-y-4">
       {show("curva") && chartData.length > 0 && (
@@ -97,7 +93,6 @@ export function EpidemicCharts({
           </CardHeader>
           <CardContent className="h-[340px]">
             <ResponsiveContainer width="100%" height="100%">
-              {showYearBars ? (
                 <ComposedChart data={chartData}>
                   <CartesianGrid stroke={CHART.grid} vertical={false} />
                   <XAxis dataKey="se" tick={{ fontSize: 12, fill: CHART.muted }} tickLine={false} axisLine={{ stroke: CHART.grid }} interval="preserveStartEnd" minTickGap={18} />
@@ -105,16 +100,16 @@ export function EpidemicCharts({
                   <Tooltip
                     formatter={(value: number, name: string) => [
                       value,
-                      name === "yearTotal" ? String(selectedYear) : "Média histórica"
+                      name === "yearTotal" ? selectedYear != null ? String(selectedYear) : "Casos no recorte" : "Média histórica"
                     ]}
                   />
                   <Legend
                     formatter={(value: string) =>
-                      value === "yearTotal" ? String(selectedYear) : "Média histórica"
+                      value === "yearTotal" ? selectedYear != null ? String(selectedYear) : "Casos no recorte" : "Média histórica"
                     }
                   />
                   <Bar dataKey="yearTotal" fill={CHART.primary} name="yearTotal" opacity={0.85} radius={[3, 3, 0, 0]} />
-                  <Line
+                  {hasHistoricalAverage && <Line
                     type="monotone"
                     dataKey="average"
                     stroke={CHART.ink}
@@ -122,25 +117,8 @@ export function EpidemicCharts({
                     dot={false}
                     name="average"
                     strokeDasharray="6 3"
-                  />
+                  />}
                 </ComposedChart>
-              ) : (
-                <AreaChart data={chartData}>
-                  <CartesianGrid stroke={CHART.grid} vertical={false} />
-                  <XAxis dataKey="se" tick={{ fontSize: 12, fill: CHART.muted }} tickLine={false} axisLine={{ stroke: CHART.grid }} interval="preserveStartEnd" minTickGap={18} />
-                  <YAxis tick={{ fontSize: 12, fill: CHART.muted }} tickLine={false} axisLine={false} width={56} tickFormatter={(v: number) => v.toLocaleString("pt-BR")} />
-                  <Tooltip formatter={(value: number) => [value, "Média"]} />
-                  <Area
-                    type="monotone"
-                    dataKey="average"
-                    stroke={CHART.primary}
-                    fill={CHART.primary}
-                    fillOpacity={0.1}
-                    name="Média histórica"
-                    strokeWidth={2}
-                  />
-                </AreaChart>
-              )}
             </ResponsiveContainer>
           </CardContent>
         </Card>
@@ -189,22 +167,10 @@ export function EpidemicCharts({
           <Card>
             <CardHeader>
               <CardTitle>Sexo</CardTitle>
-              <CardDescription>Parte de cada sexo no total de casos do recorte</CardDescription>
+              <CardDescription>Parte de cada sexo entre os casos com sexo informado</CardDescription>
             </CardHeader>
             <CardContent>
               <SplitBar items={sexDistribution.map((i) => ({ label: i.label, value: Number(i.total) || 0 }))} />
-              {(() => {
-                // A soma por sexo deve bater com a soma por faixa etária (as duas somam os mesmos casos)
-                const somaSexo = sexDistribution.reduce((s, i) => s + (Number(i.total) || 0), 0);
-                const somaIdade = ageDistribution.reduce((s, i) => s + (Number(i.total) || 0), 0);
-                if (!somaIdade || Math.abs(somaSexo - somaIdade) / somaIdade < 0.1) return null;
-                return (
-                  <p role="status" className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-900">
-                    A soma por sexo ({somaSexo.toLocaleString("pt-BR")}) não bate com a soma por faixa etária ({somaIdade.toLocaleString("pt-BR")}).
-                    Há registros com sexo digitado errado; a lista está em Qualidade dos dados.
-                  </p>
-                );
-              })()}
             </CardContent>
           </Card>
         )}

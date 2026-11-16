@@ -63,9 +63,8 @@ function applyAnoFilter<T extends object>(q: T, ano?: number, anoFim?: number): 
   return next as T;
 }
 
-async function readNotificationRowsFromCache(filter: NotificationRowsFilter = {}) {
+export async function readNotificationRowsFromCache(filter: NotificationRowsFilter = {}, supabase = createAdminClient()) {
   const { ano, anoFim, gve, municipio, seInicio, seFim, limit } = filter;
-  const supabase = createAdminClient();
   let q = supabase.from("cevesp_notificacoes").select("id", { count: "exact", head: true }).or("Excluido.is.null,Excluido.eq.0");
   q = applyAnoFilter(q, ano, anoFim);
   if (gve) q = q.eq('"GVE_NOME"', gve) as typeof q;
@@ -74,9 +73,10 @@ async function readNotificationRowsFromCache(filter: NotificationRowsFilter = {}
   if (seFim != null) q = q.lte('"SemEpidemio"', seFim) as typeof q;
   const { count, error: countError } = await q;
   if (countError) throw new Error(`Erro ao consultar cache CEVESP: ${countError.message}`);
+  if (count == null) throw new Error("Contagem do cache CEVESP indisponível.");
 
   const pageSize = 1000;
-  const maxRows = limit ?? count ?? 0;
+  const maxRows = Math.min(limit ?? count, count);
   const rows: Array<Record<string, unknown>> = [];
 
   for (let from = 0; from < maxRows; from += pageSize) {
@@ -89,8 +89,10 @@ async function readNotificationRowsFromCache(filter: NotificationRowsFilter = {}
     if (seFim != null) dq = dq.lte('"SemEpidemio"', seFim) as typeof dq;
     const { data, error } = await dq;
     if (error) throw new Error(`Erro ao ler cache CEVESP: ${error.message}`);
-    rows.push(...((data ?? []) as Array<Record<string, unknown>>));
-    if (!data || data.length < pageSize) break;
+    if (!Array.isArray(data) || data.length !== to - from + 1) {
+      throw new Error("Leitura incompleta do cache CEVESP. Os dados podem ter mudado durante a consulta; tente novamente.");
+    }
+    rows.push(...(data as Array<Record<string, unknown>>));
   }
 
   return {

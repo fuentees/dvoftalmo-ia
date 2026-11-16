@@ -1803,7 +1803,7 @@ export function SinanQualidadeView({ externalFilters, embedded = false }: SinanQ
                 size="sm"
                 onClick={() => {
                   const params = new URLSearchParams({ ...filters, format: "csv" });
-                  window.location.href = `/api/sinan/auditoria?${params.toString()}`;
+                  window.location.assign(new URL(`/api/sinan/auditoria?${params.toString()}`, window.location.origin).href);
                 }}
               >
                 <Download className="mr-1.5 h-4 w-4" />

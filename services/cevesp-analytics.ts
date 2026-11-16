@@ -1,8 +1,18 @@
 import type { parseCevespFilters } from "@/lib/cevesp-filters";
 import { z } from "zod";
 import { createNotificationConnection, getNotificationTableName } from "@/lib/external/notification-db";
+import { distributionQuality, distributionQualityFromAggregate, distributionWarning } from "@/lib/cevesp-distribution";
 
 const identifierPattern = /^[a-zA-Z0-9_]+$/;
+
+/** MySQL stores S/N strings; numeric comparison would coerce both to zero. */
+export function mysqlExclusionSql(onlyExcluded = false) {
+  const excluded = "UPPER(TRIM(COALESCE(Excluido, ''))) IN ('S', '1', 'TRUE')";
+  return {
+    where: onlyExcluded ? excluded : `NOT (${excluded})`,
+    countExpression: `sum(case when ${excluded} then 1 else 0 end)`
+  };
+}
 
 const metrics = {
   total_casos: { label: "Total de casos", sql: "sum(coalesce(TotalCaso, 0))" },
@@ -29,7 +39,7 @@ const metrics = {
   faixa_15_mais: { label: "Casos de 15 anos ou mais", sql: "sum(coalesce(FxQuizeOuMais, 0))" },
   sexo_masculino: { label: "Casos sexo masculino", sql: "sum(coalesce(SexMasc, 0))" },
   sexo_feminino: { label: "Casos sexo feminino", sql: "sum(coalesce(SexFem, 0))" },
-  registros_excluidos: { label: "Registros excluidos", sql: "sum(case when coalesce(Excluido, 0) <> 0 then 1 else 0 end)" }
+  registros_excluidos: { label: "Registros excluidos", sql: mysqlExclusionSql(true).countExpression }
 } as const;
 
 const dimensions = {
@@ -475,7 +485,7 @@ export async function parseCevespQuestion(question: string): Promise<CevespAnaly
 }
 
 function buildWhere(analysis: CevespAnalysis) {
-  const where: string[] = analysis.metric === "registros_excluidos" ? ["coalesce(Excluido, 0) <> 0"] : ["coalesce(Excluido, 0) = 0"];
+  const where: string[] = [mysqlExclusionSql(analysis.metric === "registros_excluidos").where];
   const params: unknown[] = [];
 
   if (analysis.date_range.type === "current_year") {
@@ -563,7 +573,7 @@ export async function runCevespAnalysis(question: string, scope?: ReturnType<typ
     return runMonthlyCasesByGveReport(question, analysis, table);
   }
 
-  if (analysis.time_grain === "week" && analysis.dimensions.length === 0 && ["relative_years", "all"].includes(analysis.date_range.type)) {
+  if (analysis.metric === "total_casos" && analysis.time_grain === "week" && analysis.dimensions.length === 0 && ["relative_years", "all"].includes(analysis.date_range.type)) {
     return runWeeklyCasesByYearReport(question, analysis, table);
   }
 
@@ -587,6 +597,12 @@ export async function runCevespAnalysis(question: string, scope?: ReturnType<typ
   }
 
   selectParts.push(`${metric.sql} as valor`);
+  const demographic = demographicMetricDefinition(analysis.metric);
+  if (demographic) {
+    selectParts.push(`${invalidDistributionSql(demographic.fields)} as __demo_invalid_rows`);
+    selectParts.push("sum(coalesce(TotalCaso, 0)) as __demo_total");
+    selectParts.push(`sum(${demographic.fields.map(field => `coalesce(${field}, 0)`).join(" + ")}) as __demo_informed`);
+  }
   const where = buildWhere(analysis);
   const groupSql = groupParts.length ? `group by ${groupParts.join(", ")}` : "";
   const orderSql = temporalOrderParts.length
@@ -601,7 +617,15 @@ export async function runCevespAnalysis(question: string, scope?: ReturnType<typ
   try {
     connection = await createNotificationConnection();
     const [rows] = await connection.query(sql, where.params);
-    const rawRows = rows as Array<Record<string, unknown>>;
+    const prepared = prepareDemographicMetricRows(analysis.metric, rows as Array<Record<string, unknown>>);
+    if (prepared.blocked) {
+      return {
+        question, analysis, understanding: buildUnderstanding(analysis, "MariaDB CEVESP em tempo real"),
+        metricLabel: metric.label, timeLabel: grain.label, columns: ["Valor"], rows: [],
+        interpretation: prepared.warnings
+      };
+    }
+    const rawRows = prepared.rows;
     const dimensionLabels = selectedDimensions.map((dimension) => dimension.label);
     const transformed = analysis.time_grain === "month"
       ? pivotYearColumns(rawRows, "Mes", "Ano", dimensionLabels)
@@ -616,7 +640,7 @@ export async function runCevespAnalysis(question: string, scope?: ReturnType<typ
       timeLabel: grain.label,
       columns: transformed.columns,
       rows: transformed.rows,
-      interpretation: interpretResult(question, metric.label, transformed.rows)
+      interpretation: [...prepared.warnings, ...interpretResult(question, metric.label, transformed.rows)]
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -684,13 +708,44 @@ async function runOutbreakPresenceReport(question: string, analysis: CevespAnaly
   }
 }
 
+function demographicMetricDefinition(metric: string) {
+  if (["sexo_masculino", "sexo_feminino"].includes(metric)) return { label: "sexo", fields: ["SexMasc", "SexFem"] };
+  if (["menor_1_ano", "faixa_1_4", "faixa_5_9", "faixa_10_14", "faixa_15_mais"].includes(metric)) {
+    return { label: "faixa etária", fields: ["FxMenorUmAno", "FxUmQuatro", "FxCincoNove", "FxDezQuatorze", "FxQuizeOuMais"] };
+  }
+  return null;
+}
+
+/** A selected demographic metric needs the same row validation as a full profile. */
+export function prepareDemographicMetricRows(metric: string, rows: Array<Record<string, unknown>>) {
+  const demographic = demographicMetricDefinition(metric);
+  if (!demographic) return { rows, warnings: [] as string[], blocked: false };
+  const qualities = rows.map(row => distributionQualityFromAggregate(Number(row.__demo_total), [row.__demo_informed], row.__demo_invalid_rows));
+  const blocked = qualities.find(quality => !["complete", "partial"].includes(quality.status));
+  if (blocked) return { rows: [], warnings: [distributionWarning(blocked, demographic.label)!], blocked: true };
+  const warnings = qualities.some(quality => quality.status === "partial")
+    ? [`Há casos sem distribuição completa por ${demographic.label}. As contagens desta consulta refletem apenas os campos informados; confira a qualidade antes de interpretar o perfil.`] : [];
+  return {
+    rows: rows.map(row => Object.fromEntries(Object.entries(row).filter(([key]) => !key.startsWith("__demo_")))),
+    warnings,
+    blocked: false
+  };
+}
+
+function invalidDistributionSql(fields: string[]) {
+  const invalidCounts = ["TotalCaso", ...fields].map(field => `${field} < 0 or ${field} <> floor(${field})`);
+  const categorySum = fields.map(field => `coalesce(${field}, 0)`).join(" + ");
+  return `sum(case when TotalCaso is null or ${invalidCounts.join(" or ")} or (${categorySum}) > TotalCaso then 1 else 0 end)`;
+}
+
 async function runSexDistributionReport(question: string, analysis: CevespAnalysis, table: string) {
   const where = buildWhere(analysis);
   const sql = `
     select
       sum(coalesce(SexMasc, 0)) as masculino,
       sum(coalesce(SexFem, 0)) as feminino,
-      sum(coalesce(TotalCaso, 0)) as total_casos
+      sum(coalesce(TotalCaso, 0)) as total_casos,
+      ${invalidDistributionSql(["SexMasc", "SexFem"])} as invalid_rows
     from ${table}
     ${where.sql}
   `;
@@ -702,6 +757,7 @@ async function runSexDistributionReport(question: string, analysis: CevespAnalys
     const feminino = Number(row.feminino ?? 0);
     const total = Number(row.total_casos ?? 0);
     const informado = masculino + feminino;
+    const quality = distributionQuality(total, [masculino, feminino], Number(row.invalid_rows ?? 0));
     const naoClassificado = Math.max(total - informado, 0);
     const resultRows = [
       { Sexo: "Masculino", Valor: masculino },
@@ -718,14 +774,11 @@ async function runSexDistributionReport(question: string, analysis: CevespAnalys
       metricLabel: "Distribuicao por sexo",
       timeLabel: describeDateRange(analysis),
       columns: ["Sexo", "Valor"],
-      rows: resultRows,
+      rows: quality.status === "inconsistent" || quality.status === "unavailable" ? [] : resultRows,
+      distributionQuality: quality,
       interpretation: [
         `No periodo ${describeDateRange(analysis)}, foram registrados ${total} casos segundo a soma de TotalCaso.`,
-        `A distribuicao informada por sexo totaliza ${informado} casos: ${masculino} masculinos e ${feminino} femininos.`,
-        naoClassificado > 0
-          ? `Ha ${naoClassificado} casos sem correspondencia direta na soma SexMasc + SexFem, sugerindo verificar completude ou consistencia do preenchimento.`
-          : "A soma por sexo corresponde ao total de casos informado.",
-        "Diferencas importantes entre sexos devem ser interpretadas junto ao perfil das unidades notificadoras, faixa etaria e possiveis surtos em ambientes coletivos."
+        distributionWarning(quality, "sexo") ?? "A soma por sexo corresponde ao total de casos informado."
       ]
     };
   } finally {
@@ -742,7 +795,8 @@ async function runAgeDistributionReport(question: string, analysis: CevespAnalys
       sum(coalesce(FxCincoNove, 0)) as faixa_5_9,
       sum(coalesce(FxDezQuatorze, 0)) as faixa_10_14,
       sum(coalesce(FxQuizeOuMais, 0)) as faixa_15_mais,
-      sum(coalesce(TotalCaso, 0)) as total_casos
+      sum(coalesce(TotalCaso, 0)) as total_casos,
+      ${invalidDistributionSql(["FxMenorUmAno", "FxUmQuatro", "FxCincoNove", "FxDezQuatorze", "FxQuizeOuMais"])} as invalid_rows
     from ${table}
     ${where.sql}
   `;
@@ -759,6 +813,7 @@ async function runAgeDistributionReport(question: string, analysis: CevespAnalys
     ];
     const total = Number(row.total_casos ?? 0);
     const informed = ageRows.reduce((sum, item) => sum + item.Valor, 0);
+    const quality = distributionQuality(total, ageRows.map(item => item.Valor), Number(row.invalid_rows ?? 0));
     const peak = [...ageRows].sort((a, b) => b.Valor - a.Valor)[0];
     const resultRows = [
       ...ageRows,
@@ -774,14 +829,11 @@ async function runAgeDistributionReport(question: string, analysis: CevespAnalys
       metricLabel: "Distribuicao por faixa etaria",
       timeLabel: describeDateRange(analysis),
       columns: ["Faixa etaria", "Valor"],
-      rows: resultRows,
+      rows: quality.status === "inconsistent" || quality.status === "unavailable" ? [] : resultRows,
+      distributionQuality: quality,
       interpretation: [
         `No periodo ${describeDateRange(analysis)}, foram registrados ${total} casos segundo a soma de TotalCaso.`,
-        peak ? `A faixa etaria com maior volume foi ${peak["Faixa etaria"]}, com ${peak.Valor} casos.` : "Nao foi possivel identificar faixa etaria predominante.",
-        total > informed
-          ? `Ha ${total - informed} casos sem correspondencia direta na soma das faixas etarias, indicando necessidade de revisar completude.`
-          : "A soma das faixas etarias corresponde ao total de casos informado.",
-        "Predominio em criancas pode sugerir transmissao em ambientes coletivos escolares ou de cuidado infantil; predominio em adultos deve ser analisado junto a exposicao ocupacional e surtos institucionais."
+        quality.status === "complete" && peak ? `A faixa etaria com maior volume foi ${peak["Faixa etaria"]}, com ${peak.Valor} casos.` : distributionWarning(quality, "faixa etária") ?? "Nao foi possivel identificar faixa etaria predominante."
       ]
     };
   } finally {

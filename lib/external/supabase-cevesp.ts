@@ -7,6 +7,8 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadCevespTerritoryPopulation } from "@/lib/cevesp-population";
 import { BUSINESS_TIME_ZONE, dateToEpiWeekYear } from "@/lib/epi-week";
+import { assessNotificationDate, businessDateIso, observationYears } from "@/lib/cevesp-time-boundary";
+import { distributionQuality, distributionQualityFromAggregate, distributionWarning, isCaseCount, type DistributionQuality } from "@/lib/cevesp-distribution";
 
 interface CevespAnalysisInput {
   metric: string;
@@ -127,6 +129,7 @@ export async function runCevespAnalysisCached(
   rows: Array<Record<string, unknown>>;
   interpretation: string[];
   fromCache: true;
+  distributionQuality?: DistributionQuality;
   understanding?: {
     metric: string;
     period: string;
@@ -201,6 +204,9 @@ export async function runCevespAnalysisCached(
       analysis,
       '"ANO","Mes","SemEpidemio","DtNotificacao","TotalCaso","Surto","NuSurto","NuColetaMaterialBio","NuAcaoEducativa","NuTreinamento","AfastamentoProfSintomatico","NuEncamimento","MunicipioNotificacao","GVE_NOME","DRS_NOME","UVIS","Unid_notificacao","nCNES","FxMenorUmAno","FxUmQuatro","FxCincoNove","FxDezQuatorze","FxQuizeOuMais","SexMasc","SexFem","Excluido"'
     );
+    const demographic = cachedDemographicMetricQuality(cacheRows, analysis.metric);
+    const blocked = blockedDemographicMetric(question, analysis, demographic);
+    if (blocked) return blocked;
     const generic = buildCachedGenericResult(cacheRows, analysis);
 
     if (generic.rows.length > 0) {
@@ -227,10 +233,12 @@ export async function runCevespAnalysisCached(
         timeLabel: buildCacheUnderstanding(analysis).period,
         columns: generic.columns,
         rows: generic.rows,
+        distributionQuality: demographic?.quality,
         fromCache: true as const,
         understanding: buildCacheUnderstanding(analysis),
         interpretation: [
           "Dados do cache Supabase importado do CEVESP.",
+          ...(demographic?.warning ? [demographic.warning] : []),
           `Total de ${metricLabels[analysis.metric] ?? "registros"}: ${total.toLocaleString("pt-BR")}.`,
           top3 ? `Destaques: ${top3}.` : "Nao houve destaque numerico para os criterios informados.",
           "A tabela foi estruturada conforme a pergunta: dimensoes nas linhas, periodo nas colunas quando aplicavel, e total consolidado ao final."
@@ -261,6 +269,9 @@ export async function runCevespAnalysisCached(
     ]
   }, '"ANO","Mes","SemEpidemio","DtNotificacao","TotalCaso","Surto","NuSurto","NuColetaMaterialBio","NuAcaoEducativa","NuTreinamento","AfastamentoProfSintomatico","NuEncamimento","MunicipioNotificacao","GVE_NOME","DRS_NOME","UVIS","Unid_notificacao","nCNES","FxMenorUmAno","FxUmQuatro","FxCincoNove","FxDezQuatorze","FxQuizeOuMais","SexMasc","SexFem","Excluido"');
 
+  const demographic = cachedDemographicMetricQuality(cacheRows, analysis.metric);
+  const blocked = blockedDemographicMetric(question, analysis, demographic);
+  if (blocked) return blocked;
   const rows = aggregateCacheRows(cacheRows, analysis.metric, dimension, Math.min(analysis.limit ?? 100, 500));
 
   // Diagnostic: if 0 rows, use a direct count to explain why
@@ -331,10 +342,12 @@ export async function runCevespAnalysisCached(
     timeLabel:   `${dr.anoStart ?? "todos os anos"}${dr.seStart ? ` SE ${dr.seStart}–${dr.seEnd}` : ""}`,
     columns:     [dimLabel, "Valor"],
     rows:        mappedRows,
+    distributionQuality: demographic?.quality,
     fromCache:   true,
     understanding: buildCacheUnderstanding(analysis),
     interpretation: [
       `Dados do cache Supabase (última sincronização da rede SES-SP).`,
+      ...(demographic?.warning ? [demographic.warning] : []),
       `Total de ${metricLabels[analysis.metric] ?? "registros"}: ${total.toLocaleString("pt-BR")}.`,
       `Destaque: ${top3}.`
     ]
@@ -842,6 +855,48 @@ function finishMonthlyCasesByGve(
   };
 }
 
+/** Validate individual source rows so opposing errors cannot cancel in a demographic sum. */
+export function summarizeCachedDistributionRows(rows: Array<Record<string, unknown>>, fields: string[]) {
+  const totals = fields.map(() => 0);
+  const informed = fields.map(() => false);
+  let totalCases = 0;
+  let invalidRows = 0;
+  for (const row of rows) {
+    const values = fields.map(field => row[field]);
+    const present = values.filter(value => value != null && value !== "");
+    const rowSum = present.reduce<number>((sum, value) => sum + (isCaseCount(value) ? Number(value) : 0), 0);
+    if (!isCaseCount(row.TotalCaso) || present.some(value => !isCaseCount(value)) || rowSum > Number(row.TotalCaso)) invalidRows += 1;
+    if (isCaseCount(row.TotalCaso)) totalCases += Number(row.TotalCaso);
+    values.forEach((value, index) => {
+      if (isCaseCount(value)) {
+        totals[index] += Number(value);
+        informed[index] = true;
+      }
+    });
+  }
+  const values = totals.map((total, index) => informed[index] ? total : null);
+  return { totalCases, values, quality: distributionQuality(totalCases, values, invalidRows) };
+}
+
+function cachedDemographicMetricQuality(rows: Array<Record<string, unknown>>, metric: string) {
+  const sex = ["sexo_masculino", "sexo_feminino"].includes(metric);
+  const age = ["menor_1_ano", "faixa_1_4", "faixa_5_9", "faixa_10_14", "faixa_15_mais"].includes(metric);
+  if (!sex && !age) return undefined;
+  const fields = sex ? ["SexMasc", "SexFem"] : ["FxMenorUmAno", "FxUmQuatro", "FxCincoNove", "FxDezQuatorze", "FxQuizeOuMais"];
+  const quality = summarizeCachedDistributionRows(rows, fields).quality;
+  return { quality, warning: distributionWarning(quality, sex ? "sexo" : "faixa etária") };
+}
+
+function blockedDemographicMetric(question: string, analysis: CevespAnalysisInput, demographic: ReturnType<typeof cachedDemographicMetricQuality>) {
+  if (!demographic || demographic.quality.status === "complete" || demographic.quality.status === "partial") return undefined;
+  return {
+    question, analysis, metricLabel: analysis.metric, timeLabel: buildCacheUnderstanding(analysis).period,
+    columns: ["Valor"], rows: [], fromCache: true as const, understanding: buildCacheUnderstanding(analysis),
+    distributionQuality: demographic.quality,
+    interpretation: [demographic.warning ?? "Indicador demográfico indisponível para este recorte."]
+  };
+}
+
 async function runCachedSexDistribution(question: string, analysis: CevespAnalysisInput) {
   const dr = resolveAnalysisDateRange(analysis);
   const gveFilter = analysis.filters?.find((f) => f.field === "gve")?.value ?? null;
@@ -856,28 +911,30 @@ async function runCachedSexDistribution(question: string, analysis: CevespAnalys
         p_se_inicio: dr.seStart ?? null, p_se_fim: dr.seEnd ?? null
       });
       if (!error && data) {
-        const rpc = data as { sex_masc: number; sex_fem: number; total_cases: number };
+        const rpc = data as { sex_masc: number; sex_fem: number; total_cases: number; sex_invalid_rows?: unknown };
         const masculino = Number(rpc.sex_masc ?? 0);
         const feminino  = Number(rpc.sex_fem  ?? 0);
-        const total     = Number(rpc.total_cases ?? 0);
+        const total     = isCaseCount(rpc.total_cases) ? Number(rpc.total_cases) : NaN;
         const informado = masculino + feminino;
+        const quality = distributionQualityFromAggregate(total, [rpc.sex_masc, rpc.sex_fem], rpc.sex_invalid_rows);
         return {
           question, analysis, metricLabel: "Distribuicao por sexo",
           timeLabel: buildCacheUnderstanding(analysis).period,
           columns: ["Sexo", "Valor"],
-          rows: [
+          rows: quality.status !== "complete" && quality.status !== "partial" ? [] : [
             { Sexo: "Masculino", Valor: masculino },
             { Sexo: "Feminino",  Valor: feminino  },
             { Sexo: "Sem classificacao por sexo", Valor: Math.max(total - informado, 0) },
             { Sexo: "Total", Valor: total }
           ],
           fromCache: true as const,
+          distributionQuality: quality,
           understanding: buildCacheUnderstanding(analysis),
           interpretation: [
             `Dados do cache Supabase CEVESP (agregado via RPC).`,
-            `Distribuicao informada por sexo: ${masculino} masculinos e ${feminino} femininos (total informado: ${informado}).`,
-            distributionReconciliationMessage(total, informado, "sexo")
-          ]
+            quality.status === "complete" || quality.status === "partial" ? `Distribuicao informada por sexo: ${masculino} masculinos e ${feminino} femininos (total informado: ${informado}).` : undefined,
+            distributionWarning(quality, "sexo") ?? (quality.status === "complete" ? distributionReconciliationMessage(total, informado, "sexo") : undefined)
+          ].filter((message): message is string => Boolean(message))
         };
       }
     } catch { /* fallback */ }
@@ -885,27 +942,30 @@ async function runCachedSexDistribution(question: string, analysis: CevespAnalys
 
   // Raw rows also enforce date ranges unsupported by the aggregate RPC.
   const rows = await fetchCacheRows(analysis, '"SexMasc","SexFem","TotalCaso","ANO","GVE_NOME","DRS_NOME","MunicipioNotificacao","UVIS","Unid_notificacao","nCNES","FxMenorUmAno","FxUmQuatro","FxCincoNove","FxDezQuatorze","FxQuizeOuMais","SexMasc","SexFem","Excluido"');
-  const masculino = rows.reduce((sum, row) => sum + Number(row.SexMasc ?? 0), 0);
-  const feminino  = rows.reduce((sum, row) => sum + Number(row.SexFem  ?? 0), 0);
-  const total     = rows.reduce((sum, row) => sum + Number(row.TotalCaso ?? 0), 0);
+  const summary = summarizeCachedDistributionRows(rows, ["SexMasc", "SexFem"]);
+  const masculino = summary.values[0] ?? 0;
+  const feminino = summary.values[1] ?? 0;
+  const total = summary.totalCases;
+  const quality = summary.quality;
   const informado = masculino + feminino;
   return {
     question, analysis, metricLabel: "Distribuicao por sexo",
     timeLabel: buildCacheUnderstanding(analysis).period,
     columns: ["Sexo", "Valor"],
-    rows: [
+    rows: quality.status === "inconsistent" || quality.status === "unavailable" ? [] : [
       { Sexo: "Masculino", Valor: masculino },
       { Sexo: "Feminino",  Valor: feminino  },
       { Sexo: "Sem classificacao por sexo", Valor: Math.max(total - informado, 0) },
       { Sexo: "Total", Valor: total }
     ],
     fromCache: true as const,
+    distributionQuality: quality,
     understanding: buildCacheUnderstanding(analysis),
     interpretation: [
       `Dados do cache Supabase CEVESP, com ${rows.length} notificacoes consideradas.`,
-      `A distribuicao informada por sexo totaliza ${informado} casos: ${masculino} masculinos e ${feminino} femininos.`,
-      distributionReconciliationMessage(total, informado, "sexo")
-    ]
+      quality.status === "complete" || quality.status === "partial" ? `A distribuicao informada por sexo totaliza ${informado} casos: ${masculino} masculinos e ${feminino} femininos.` : undefined,
+      distributionWarning(quality, "sexo") ?? (quality.status === "complete" ? distributionReconciliationMessage(total, informado, "sexo") : undefined)
+    ].filter((message): message is string => Boolean(message))
   };
 }
 
@@ -923,7 +983,7 @@ async function runCachedAgeDistribution(question: string, analysis: CevespAnalys
         p_se_inicio: dr.seStart ?? null, p_se_fim: dr.seEnd ?? null
       });
       if (!error && data) {
-        const rpc = data as { fx_menor_um: number; fx_1_4: number; fx_5_9: number; fx_10_14: number; fx_15_mais: number; total_cases: number };
+        const rpc = data as { fx_menor_um: number; fx_1_4: number; fx_5_9: number; fx_10_14: number; fx_15_mais: number; total_cases: number; age_invalid_rows?: unknown };
         const ageRows = [
           { "Faixa etaria": "Menor de 1 ano",    Valor: Number(rpc.fx_menor_um ?? 0) },
           { "Faixa etaria": "1 a 4 anos",         Valor: Number(rpc.fx_1_4     ?? 0) },
@@ -931,21 +991,23 @@ async function runCachedAgeDistribution(question: string, analysis: CevespAnalys
           { "Faixa etaria": "10 a 14 anos",       Valor: Number(rpc.fx_10_14   ?? 0) },
           { "Faixa etaria": "15 anos ou mais",    Valor: Number(rpc.fx_15_mais ?? 0) }
         ];
-        const total    = Number(rpc.total_cases ?? 0);
+        const total = isCaseCount(rpc.total_cases) ? Number(rpc.total_cases) : NaN;
+        const quality = distributionQualityFromAggregate(total, [rpc.fx_menor_um, rpc.fx_1_4, rpc.fx_5_9, rpc.fx_10_14, rpc.fx_15_mais], rpc.age_invalid_rows);
         const informado = ageRows.reduce((s, r) => s + r.Valor, 0);
         const peak = [...ageRows].sort((a, b) => b.Valor - a.Valor)[0];
         return {
           question, analysis, metricLabel: "Distribuicao por faixa etaria",
           timeLabel: buildCacheUnderstanding(analysis).period,
           columns: ["Faixa etaria", "Valor"],
-          rows: [...ageRows, { "Faixa etaria": "Sem classificacao etaria", Valor: Math.max(total - informado, 0) }, { "Faixa etaria": "Total", Valor: total }],
+          rows: quality.status !== "complete" && quality.status !== "partial" ? [] : [...ageRows, { "Faixa etaria": "Sem classificacao etaria", Valor: Math.max(total - informado, 0) }, { "Faixa etaria": "Total", Valor: total }],
           fromCache: true as const,
+          distributionQuality: quality,
           understanding: buildCacheUnderstanding(analysis),
           interpretation: [
             `Dados do cache Supabase CEVESP (agregado via RPC).`,
-            peak ? `A faixa etaria com maior volume foi ${peak["Faixa etaria"]}, com ${peak.Valor} casos.` : "Nao foi possivel identificar faixa etaria predominante.",
-            distributionReconciliationMessage(total, informado, "faixas etárias")
-          ]
+            quality.status === "complete" && peak?.Valor > 0 ? `A faixa etaria com maior volume foi ${peak["Faixa etaria"]}, com ${peak.Valor} casos.` : "Nao foi possivel definir o perfil etario do recorte com estes dados.",
+            distributionWarning(quality, "faixas etárias") ?? (quality.status === "complete" ? distributionReconciliationMessage(total, informado, "faixas etárias") : undefined)
+          ].filter((message): message is string => Boolean(message))
         };
       }
     } catch { /* fallback */ }
@@ -953,28 +1015,25 @@ async function runCachedAgeDistribution(question: string, analysis: CevespAnalys
 
   // Fallback lento
   const rows = await fetchCacheRows(analysis, '"FxMenorUmAno","FxUmQuatro","FxCincoNove","FxDezQuatorze","FxQuizeOuMais","TotalCaso","ANO","GVE_NOME","DRS_NOME","MunicipioNotificacao","UVIS","Unid_notificacao","nCNES","FxMenorUmAno","FxUmQuatro","FxCincoNove","FxDezQuatorze","FxQuizeOuMais","SexMasc","SexFem","Excluido"');
-  const ageRows = [
-    { "Faixa etaria": "Menor de 1 ano",  Valor: rows.reduce((sum, row) => sum + Number(row.FxMenorUmAno  ?? 0), 0) },
-    { "Faixa etaria": "1 a 4 anos",       Valor: rows.reduce((sum, row) => sum + Number(row.FxUmQuatro    ?? 0), 0) },
-    { "Faixa etaria": "5 a 9 anos",       Valor: rows.reduce((sum, row) => sum + Number(row.FxCincoNove   ?? 0), 0) },
-    { "Faixa etaria": "10 a 14 anos",     Valor: rows.reduce((sum, row) => sum + Number(row.FxDezQuatorze ?? 0), 0) },
-    { "Faixa etaria": "15 anos ou mais",  Valor: rows.reduce((sum, row) => sum + Number(row.FxQuizeOuMais ?? 0), 0) }
-  ];
-  const total    = rows.reduce((sum, row) => sum + Number(row.TotalCaso ?? 0), 0);
+  const summary = summarizeCachedDistributionRows(rows, ["FxMenorUmAno", "FxUmQuatro", "FxCincoNove", "FxDezQuatorze", "FxQuizeOuMais"]);
+  const ageRows = ["Menor de 1 ano", "1 a 4 anos", "5 a 9 anos", "10 a 14 anos", "15 anos ou mais"].map((label, index) => ({ "Faixa etaria": label, Valor: summary.values[index] ?? 0 }));
+  const total = summary.totalCases;
+  const quality = summary.quality;
   const informado = ageRows.reduce((sum, row) => sum + row.Valor, 0);
   const peak = [...ageRows].sort((a, b) => b.Valor - a.Valor)[0];
   return {
     question, analysis, metricLabel: "Distribuicao por faixa etaria",
     timeLabel: buildCacheUnderstanding(analysis).period,
     columns: ["Faixa etaria", "Valor"],
-    rows: [...ageRows, { "Faixa etaria": "Sem classificacao etaria", Valor: Math.max(total - informado, 0) }, { "Faixa etaria": "Total", Valor: total }],
+    rows: quality.status === "inconsistent" || quality.status === "unavailable" ? [] : [...ageRows, { "Faixa etaria": "Sem classificacao etaria", Valor: Math.max(total - informado, 0) }, { "Faixa etaria": "Total", Valor: total }],
     fromCache: true as const,
+    distributionQuality: quality,
     understanding: buildCacheUnderstanding(analysis),
     interpretation: [
       `Dados do cache Supabase CEVESP, com ${rows.length} notificacoes consideradas.`,
-      peak ? `A faixa etaria com maior volume foi ${peak["Faixa etaria"]}, com ${peak.Valor} casos.` : "Nao foi possivel identificar faixa etaria predominante.",
-      distributionReconciliationMessage(total, informado, "faixas etárias")
-    ]
+      quality.status === "complete" && peak?.Valor > 0 ? `A faixa etaria com maior volume foi ${peak["Faixa etaria"]}, com ${peak.Valor} casos.` : "Nao foi possivel definir o perfil etario do recorte com estes dados.",
+      distributionWarning(quality, "faixas etárias") ?? (quality.status === "complete" ? distributionReconciliationMessage(total, informado, "faixas etárias") : undefined)
+    ].filter((message): message is string => Boolean(message))
   };
 }
 
@@ -1179,11 +1238,14 @@ export async function getCacheSyncInfo(): Promise<{
   minYear: number | null;
   maxYear: number | null;
   latestNotificationDate: string | null;
+  latestNotificationDateRaw: string | null;
+  excludedYears: number[];
+  metadataWarnings: string[];
   totalCases: number;
   municipalities: number;
   gves: number;
 }> {
-  const empty = { hasData: false, lastSync: null, totalRows: 0, years: [], minYear: null, maxYear: null, latestNotificationDate: null, totalCases: 0, municipalities: 0, gves: 0 };
+  const empty = { hasData: false, lastSync: null, totalRows: 0, years: [], minYear: null, maxYear: null, latestNotificationDate: null, latestNotificationDateRaw: null, excludedYears: [], metadataWarnings: [], totalCases: 0, municipalities: 0, gves: 0 };
   try {
     const supabase = createAdminClient();
 
@@ -1200,15 +1262,27 @@ export async function getCacheSyncInfo(): Promise<{
         total_rows: number; total_cases: number; min_ano: number | null; max_ano: number | null;
         anos: number[] | null; municipios: number; gves: number; last_date: string | null;
       };
-      const years = (r.anos ?? []).filter((a) => a > 1900).sort((a, b) => a - b);
+      const { years, excludedYears } = observationYears(r.anos ?? []);
+      const sourceDate = assessNotificationDate(r.last_date);
+      const metadataWarnings: string[] = [];
+      if (excludedYears.length) metadataWarnings.push(`Anos futuros na origem foram excluídos das opções de análise: ${excludedYears.join(", ")}.`);
+      let latestNotificationDate = sourceDate.value;
+      if (sourceDate.issue && sourceDate.issue !== "missing") {
+        metadataWarnings.push(`A maior data de notificação na origem (${sourceDate.raw}) é ${sourceDate.issue === "future" ? "futura" : "inválida"} e foi desconsiderada como atualização da base.`);
+        const latestValid = await supabase.from("cevesp_notificacoes").select('"DtNotificacao"').or("Excluido.is.null,Excluido.eq.0").gte("DtNotificacao", "1901-01-01").lte("DtNotificacao", businessDateIso()).order("DtNotificacao", { ascending: false }).limit(1);
+        if (!latestValid.error) latestNotificationDate = assessNotificationDate((latestValid.data?.[0] as { DtNotificacao?: unknown } | undefined)?.DtNotificacao).value;
+      }
       return {
         hasData: r.total_rows > 0,
         lastSync: last,
         totalRows: r.total_rows,
         years,
-        minYear: r.min_ano ?? null,
-        maxYear: r.max_ano ?? null,
-        latestNotificationDate: r.last_date ?? null,
+        minYear: years[0] ?? null,
+        maxYear: years.at(-1) ?? null,
+        latestNotificationDate,
+        latestNotificationDateRaw: sourceDate.raw,
+        excludedYears,
+        metadataWarnings,
         totalCases: Number(r.total_cases ?? 0),
         municipalities: Number(r.municipios ?? 0),
         gves: Number(r.gves ?? 0)
