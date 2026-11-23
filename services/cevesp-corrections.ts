@@ -3,8 +3,10 @@ import { createNotificationConnection, getNotificationTableName } from "@/lib/ex
 import { createAdminClient } from "@/lib/supabase/admin";
 import { excluidoFlag } from "@/lib/cevesp-clean";
 import { auditStructure, conteudoKey, unidadeKey, type StructuralFinding } from "@/lib/cevesp-audit";
+import { isProbableTotalOnly } from "@/lib/cevesp-data-profile";
 
 export interface InvalidRecord {
+  totalOnlyProbable?: boolean;
   recordId: string;
   pkColumn: string;
   controlaSubmit: string | null;
@@ -117,6 +119,7 @@ function mapInvalidCacheRowAt(r: Record<string, unknown>, now: Date, clock: Retu
   const anoData = rawDt ? parseInt(rawDt.slice(0, 4), 10) : null;
   const se = toNumber(r.SemEpidemio);
   const totalCaso = toNumber(r.TotalCaso);
+  const totalOnlyProbable = isProbableTotalOnly(r);
   const totalFaixa =
     (toNumber(r.FxMenorUmAno) ?? 0) +
     (toNumber(r.FxUmQuatro) ?? 0) +
@@ -180,17 +183,17 @@ function mapInvalidCacheRowAt(r: Record<string, unknown>, now: Date, clock: Retu
     issue = `Total de casos negativo: ${totalCaso}`;
     suggestedField = "TotalCaso";
     suggestedValue = "";
-  } else if (totalCaso > 0 && totalFaixa === 0) {
+  } else if (!totalOnlyProbable && totalCaso > 0 && totalFaixa === 0) {
     problema = "faixa_etaria_ausente";
     issue = `Faixa etária ausente: nenhuma faixa informada para ${totalCaso} caso(s)`;
   } else if (!Number.isInteger(totalCaso)) {
     problema = "casos_invalidos";
     issue = `Total de casos inválido: ${totalCaso}`;
     suggestedField = "TotalCaso";
-  } else if (totalCaso > 0 && totalFaixa !== totalCaso) {
+  } else if (!totalOnlyProbable && totalCaso > 0 && totalFaixa !== totalCaso) {
     problema = "faixa_etaria_divergente";
     issue = `Faixa etária diverge: soma das faixas=${totalFaixa} ≠ TotalCaso=${totalCaso}`;
-  } else if (totalCaso > 0 && totalSexo !== totalCaso) {
+  } else if (!totalOnlyProbable && totalCaso > 0 && totalSexo !== totalCaso) {
     problema = "sexo_divergente";
     issue = `Sexo diverge: Masc+Fem=${totalSexo} ≠ TotalCaso=${totalCaso}`;
   } else {
@@ -200,6 +203,7 @@ function mapInvalidCacheRowAt(r: Record<string, unknown>, now: Date, clock: Retu
   const DATA_TEMPO = new Set(["data_ausente", "dia_impossivel", "data_futura", "ano_impossivel", "se_invalida", "se_futura"]);
   const recordId = recordIdOf(r);
   return conservativeSuggestion({
+    totalOnlyProbable,
     recordId,
     pkColumn: "ID",
     controlaSubmit: r.ControlaSubmit != null ? String(r.ControlaSubmit) : null,
@@ -250,6 +254,7 @@ function structuralRecord(r: Record<string, unknown>, f: StructuralFinding, rowB
   }
   const rawDt = r.DtNotificacao || r.dt_notificacao_raw ? String(r.DtNotificacao || r.dt_notificacao_raw).split("T")[0] : null;
   return {
+    totalOnlyProbable: isProbableTotalOnly(r),
     recordId,
     pkColumn: "ID",
     controlaSubmit: r.ControlaSubmit != null ? String(r.ControlaSubmit) : null,
@@ -290,6 +295,7 @@ export function auditCevespRows(
   const clock = auditClock(now);
   const active = rows.filter((r) => excluidoFlag(r.Excluido) === 0);
   const structural = auditStructure(active.map((r, i) => ({
+    totalOnlyProbable: isProbableTotalOnly(r),
     key: String(i),
     ANO: toNumber(r.ANO),
     SemEpidemio: toNumber(r.SemEpidemio),

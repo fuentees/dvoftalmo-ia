@@ -46,6 +46,8 @@ export interface StructuralFinding {
 }
 
 export interface AuditRow {
+  /** Only totals appear to have been collected; entry time is not the reference week. */
+  totalOnlyProbable?: boolean;
   key: string;
   ANO: number | null;
   SemEpidemio: number | null;
@@ -157,7 +159,7 @@ export function auditStructure(rows: AuditRow[], now = new Date()): Map<string, 
   const isFree = (unidade: string, idx: number) => !occupied.get(unidade)?.get(idx);
   for (const r of prepared) if (r.idx != null) reserve(r.unidade, r.idx);
   // Última semana fechada no momento da digitação (ou hoje, sem created_at)
-  const lastClosed = (r: Prepared) => r.createdIdx ?? todayIdx - 1;
+  const lastClosed = (r: Prepared) => r.totalOnlyProbable ? todayIdx - 1 : r.createdIdx ?? todayIdx - 1;
 
   /** Primeira semana candidata que é válida, já fechada, livre e do ano exigido. */
   function pick(r: Prepared, candidates: Array<number | null>, ano?: number | null): number | null {
@@ -190,7 +192,7 @@ export function auditStructure(rows: AuditRow[], now = new Date()): Map<string, 
 
   // 1) Ano errado
   for (const r of ordered) {
-    if (r.createdYear == null || isBulk(r)) continue;
+    if (r.createdYear == null || isBulk(r) || r.totalOnlyProbable) continue;
     let motivo: string | null = null;
     if (r.ANO == null) motivo = "ANO não informado";
     else if (r.ANO > r.createdYear) motivo = `ANO ${r.ANO} posterior à digitação (${r.createdDay})`;
@@ -224,7 +226,7 @@ export function auditStructure(rows: AuditRow[], now = new Date()): Map<string, 
     if (flagged.has(r.key)) continue;
     const ano = r.ANO != null && r.ANO >= 1990 ? r.ANO : r.createdYear;
     if (r.idx == null) {
-      const target = pick(r, [r.createdIdx, r.dtIdx], ano);
+      const target = r.totalOnlyProbable ? null : pick(r, [r.createdIdx, r.dtIdx], ano);
       const se = r.SemEpidemio == null ? "não informada" : String(r.SemEpidemio);
       add(r.key, {
         problem: "se_invalida",
@@ -234,8 +236,8 @@ export function auditStructure(rows: AuditRow[], now = new Date()): Map<string, 
       flagged.add(r.key);
       if (target != null) moved.add(r.key);
     } else if (r.idx > lastClosed(r) + 1) {
-      const target = pick(r, [r.createdIdx, r.dtIdx], ano);
-      const ref = r.createdIdx != null
+      const target = r.totalOnlyProbable ? null : pick(r, [r.createdIdx, r.dtIdx], ano);
+      const ref = !r.totalOnlyProbable && r.createdIdx != null
         ? `digitado em ${r.createdDay}, ${fmt(indexToWeek(r.createdIdx + 1))}`
         : `SE atual: ${indexToWeek(todayIdx).se}`;
       add(r.key, {
@@ -265,7 +267,7 @@ export function auditStructure(rows: AuditRow[], now = new Date()): Map<string, 
 
     // A) a digitação aponta para uma semana vazia próxima
     const viaCreated = group.map((r) =>
-      r.createdIdx != null && r.createdIdx !== n &&
+      !r.totalOnlyProbable && r.createdIdx != null && r.createdIdx !== n &&
       (Math.abs(r.createdIdx - n) <= CREATED_AT_WINDOW || futureWeek) ? r.createdIdx : null);
     let remaining = group.length;
     group.forEach((r, i) => {
@@ -287,7 +289,7 @@ export function auditStructure(rows: AuditRow[], now = new Date()): Map<string, 
     // B) semana vizinha vazia (N+1 para o mais recente, N-1 para o mais antigo)
     if (stay.length > 1) {
       const newest = stay[stay.length - 1];
-      if (isFree(newest.unidade, n + 1) && newest.createdIdx != null && newest.createdIdx >= n + 1) {
+      if (!newest.totalOnlyProbable && isFree(newest.unidade, n + 1) && newest.createdIdx != null && newest.createdIdx >= n + 1) {
         reserve(newest.unidade, n + 1);
         stay.pop();
         add(newest.key, {
@@ -300,7 +302,7 @@ export function auditStructure(rows: AuditRow[], now = new Date()): Map<string, 
     }
     if (stay.length > 1) {
       const oldest = stay[0];
-      if (isFree(oldest.unidade, n - 1) && n - 1 <= lastClosed(oldest)) {
+      if (!oldest.totalOnlyProbable && isFree(oldest.unidade, n - 1) && n - 1 <= lastClosed(oldest)) {
         reserve(oldest.unidade, n - 1);
         stay.shift();
         add(oldest.key, {

@@ -7,6 +7,7 @@ import { auditStructure, indexToWeek, weekIndex, weeksInYear, type AuditRow } fr
 import { cleanRow, excluidoFlag, rowKey } from "@/lib/cevesp-clean";
 import { auditCevespRows } from "@/services/cevesp-corrections";
 import { qualityBucket } from "@/lib/cevesp-quality-buckets";
+import { isProbableTotalOnly } from "@/lib/cevesp-data-profile";
 
 const NOW = new Date("2026-10-08T15:00:00-03:00"); // SE 40/2026
 
@@ -156,7 +157,7 @@ assert.deepEqual(indexToWeek(weekIndex(2026, 1) - 1), { ano: 2025, se: 53 });
 
   const base = {
     MunicipioNotificacao: "TEJUPA", IbgeNotificacao: "355390", GVE_NOME: "AVARE", Unid_notificacao: "UBS",
-    TotalCaso: 0, SexMasc: 0, SexFem: 0, FxMenorUmAno: 0, FxUmQuatro: 0, FxCincoNove: 0, FxDezQuatorze: 0, FxQuizeOuMais: 0
+    TotalCaso: 1, SexMasc: 1, SexFem: 0, FxMenorUmAno: 0, FxUmQuatro: 1, FxCincoNove: 0, FxDezQuatorze: 0, FxQuizeOuMais: 0
   };
   const records = auditCevespRows([
     { ...base, ID: "178553", ANO: 2023, SemEpidemio: 10, DtNotificacao: "2023-03-16", created_at_origem: "2026-03-16T11:27:16", Excluido: 0 },
@@ -173,6 +174,34 @@ assert.deepEqual(indexToWeek(weekIndex(2026, 1) - 1), { ano: 2025, se: 53 });
   assert.equal(qualityBucket(anoErrado), "pronta", "com sugestão: a central só aprova");
   assert.equal(qualityBucket({ problem: "duplicata_conflito", suggestions: [] }), "decisao");
   assert.equal(qualityBucket({ problem: "faixa_etaria_divergente", suggestions: [] }), "unidade");
+}
+
+// Historical total-only collection: recent entry does not change its reference year.
+{
+  const historical = {
+    ID: "100", ANO: 2023, SemEpidemio: 10, DtNotificacao: "2023-03-16",
+    created_at_origem: "2026-03-16 11:00:00", MunicipioNotificacao: "TESTE", GVE_NOME: "TESTE",
+    TotalCaso: 8, SexMasc: 0, SexFem: null, FxMenorUmAno: "", FxUmQuatro: 0,
+    FxCincoNove: null, FxDezQuatorze: 0, FxQuizeOuMais: 0
+  };
+  assert.equal(isProbableTotalOnly(historical), true);
+  assert.deepEqual(auditCevespRows([{ ...historical, TotalCaso: 0 }], NOW), [], "Zero-case historical entries also keep their reference year");
+  assert.equal(isProbableTotalOnly({ TotalCaso: null }), false);
+  assert.equal(isProbableTotalOnly({ TotalCaso: "" }), false);
+  assert.deepEqual(auditCevespRows([historical], NOW), [], "No demographic demands or year change for probable total-only history");
+  const partial = { ...historical, SexMasc: 3 };
+  assert.equal(isProbableTotalOnly(partial), false);
+  assert.ok(auditCevespRows([partial], NOW).some((r) => r.problem === "faixa_etaria_ausente"), "Partial detail still requires review");
+  assert.equal(isProbableTotalOnly({ ...historical, SexMasc: -1 }), false);
+  assert.equal(isProbableTotalOnly({ ...historical, TotalCaso: -8 }), false);
+  assert.ok(auditCevespRows([{ ...historical, TotalCaso: -8 }], NOW).some((r) => r.problem === "casos_negativos"));
+  assert.ok(auditCevespRows([{ ...historical, DtNotificacao: "2023-02-30" }], NOW).some((r) => r.problem === "dia_impossivel"));
+  const invalidWeek = auditCevespRows([{ ...historical, SemEpidemio: 0 }], NOW);
+  assert.ok(invalidWeek.some((r) => r.problem === "se_invalida"));
+  assert.ok(invalidWeek.every((r) => r.suggestions.length === 0), "Do not invent a reference week from entry time");
+  const duplicates = auditCevespRows([historical, { ...historical, ID: "101" }], NOW);
+  assert.ok(duplicates.some((r) => r.problem === "duplicata"));
+  assert.ok(duplicates.every((r) => r.suggestions.length === 0), "Do not move historical duplicates into nearby empty weeks");
 }
 
 console.log("cevesp audit tests passed ✓");

@@ -981,6 +981,12 @@ export function CevespQualidadeView({ externalFilters, hideFilters = false, onSe
         <Button size="sm" variant="outline" disabled={isFetching || completudeQuery.isFetching} onClick={() => void refreshQuality()}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Atualizar auditoria</Button>
       </div>}
 
+      <p className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
+        Somente total (identificação provável): registros com total válido e todos os campos de sexo e idade vazios ou zerados
+        são tratados como coleta resumida. Não cobramos esse detalhamento nem usamos a data de digitação para sugerir
+        outro ano ou semana. A origem não identifica o formulário; esse perfil também pode incluir preenchimento incompleto.
+        Total, território, datas e possíveis duplicidades continuam em revisão. Os gráficos de completude mostram a disponibilidade bruta dos campos.
+      </p>
       <QualityBucketCards
         counts={data?.byBucket ?? { pronta: 0, decisao: 0, unidade: 0 }}
         active={bucket}
@@ -1212,6 +1218,7 @@ export function CevespQualidadeView({ externalFilters, hideFilters = false, onSe
                                     {r.issue}
                                   </span>
                                 </div>
+                                {r.totalOnlyProbable && <div className="mt-1 text-xs text-muted-foreground">Somente total · identificação provável</div>}
                                 {r.group && <div className="mt-0.5 pl-5 text-[11px] text-muted-foreground">Grupo: {r.group}</div>}
                               </td>
                               <td className="px-3 py-2">
